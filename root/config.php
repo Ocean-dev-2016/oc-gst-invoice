@@ -12,10 +12,10 @@ define('APP_NAME', 'OC-GST Invice');
 
 define('SITE_LOCAL_URL', 'http://localhost/OC-GST-invoice/');
 // define('SITE_NAME', 'Site Name');
-define('SITE_LIVE_URL', 'https://oceaninfotech.co.in/');
+define('SITE_LIVE_URL', 'https://oc-gst.oceanhub.co.in/');
 
 // site running in live server or locaL
-define('SITE_MODE', '0');
+define('SITE_MODE', '1');
 define('DB_PREFIX', 'tbl_');
 
 // dynamic site url detection
@@ -42,9 +42,9 @@ if (SITE_MODE == 0) {
     define('ADMIN_URL', SITE_URL);
     // db configuration
     define('DB_HOST', 'localhost');
-    define('DB_USER', 'oc-gst-invoice');
-    define('DB_PASS', 'oc-gst-invoice');
-    define('DB_DATABASE', 'oc-gst-invoice');
+    define('DB_USER', 'jrosvllq_oc_gst');
+    define('DB_PASS', 'xUVo=7-K#uGM4?5=');
+    define('DB_DATABASE', 'jrosvllq_oc_gst');
 }
 
 require_once ('define.php');
