@@ -1,0 +1,26 @@
+{
+  "pages": [
+    {
+      "name": "Dashboard",
+      "icon": "ti-smart-home",
+      "url": "dashboard.php"
+    },
+    {
+      "name": "Manage Company",
+      "icon": "ti-building",
+      "url": "manage-company-list.php"
+    },
+    {
+      "name": "Manage State",
+      "icon": "ti-map-pin",
+      "url": "manage-state-list.php"
+    },
+    {
+      "name": "Manage City",
+      "icon": "ti-building-community",
+      "url": "manage-city-list.php"
+    }
+  ],
+  "files": [],
+  "members": []
+}

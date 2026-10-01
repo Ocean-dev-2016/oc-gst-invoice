@@ -1,0 +1,62 @@
+=== Singal Value Get DB ===
+$ai_core->aiGetValue();
+
+=== Get Number Of Rows ===
+$ai_core->aiGetCount();
+
+=== Remove Space in string === 
+$ai_core->aiGetString();
+
+=== Get Error Message ===
+$ai_core->aiGetError();
+
+=== set date formate === 
+$ai_core->aiGetDate($current_date,$date_formate);
+
+=== Image Upload in folder ===
+$ai_core->aiUpload($image_name,$image_path,$file_type,$old_image_name, $convertToWebp, $quality);
+
+=== image remove in folder ===
+$ai_core->aiDelete($image_full_path);
+
+=== date diffrent in day,hours,minutes,seconds === 
+$ai_core->aiGetAgo($deff_date);
+
+=== get sult in string ===
+$ai_core->aiSlug($string);
+
+=== genrated password === 
+$ai_core->aiGetPassword();
+
+=== send push notification ====
+$ai_core->sendPushNotification($tokens,$payload,$title);
+
+=== send html email in SMTP ===
+$ai_core->aiSendHtmlEmail($to, $sub, $body);
+
+=== genrated pin ===
+$ai_core->aiGeneratePIN(); 
+
+=== set pagingnation ===
+$ai_core->aiGetPaging($qry, $paged=1, $per_page = 10, $url);
+
+=== run query in db ===
+$ai_db->aiQuery($qry);
+
+=== get multiple data in dababase === 
+$ai_db->aiFetchArray($rsourse);
+
+=== get Single row in dababase === 
+$ai_db->aiFetchObject($rsourse);
+
+
+=== get Single row in dababase === 
+$ai_db->aiGetQuery($qry);
+
+
+=== get Single row in dababase === 
+$ai_db->aiGetQueryObj($qry);
+
+=== get last inserted id === 
+$ai_db->aiLastInsert();
+
