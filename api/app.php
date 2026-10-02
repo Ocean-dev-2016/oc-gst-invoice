@@ -65,7 +65,6 @@ if ($action === 'register') {
 
     // Input fields mapping
     $name = trim($input['name'] ?? ($input['username'] ?? ''));
-    $businessName = trim($input['business_name'] ?? ($input['company_name'] ?? ''));
     $email = trim($input['email'] ?? '');
     $mobileNo = trim($input['mobile_no'] ?? ($input['mobile'] ?? ''));
     $password = $input['password'] ?? '';
@@ -73,10 +72,6 @@ if ($action === 'register') {
     // Validation
     if ($name === '') {
         apiResponse(400, 'Name is required.');
-    }
-
-    if ($businessName === '') {
-        apiResponse(400, 'Business name is required.');
     }
 
     if ($email === '') {
@@ -98,7 +93,6 @@ if ($action === 'register') {
 
     // Escape values
     $safeUsername = mysqli_real_escape_string($ai_conn, $name);
-    $safeCompanyName = mysqli_real_escape_string($ai_conn, $businessName);
     $safeEmail = mysqli_real_escape_string($ai_conn, $email);
     $safeMobile = mysqli_real_escape_string($ai_conn, $mobileNo);
     $hashedPassword = md5($password);
@@ -106,9 +100,8 @@ if ($action === 'register') {
     $safeToken = mysqli_real_escape_string($ai_conn, $apiToken);
 
     // Duplicate check in tbl_company
-    $dupCheckQry = "SELECT id, company_name, email, mobile_no, username FROM tbl_company 
-                    WHERE LOWER(company_name) = '" . strtolower($safeCompanyName) . "' 
-                       OR LOWER(email) = '" . strtolower($safeEmail) . "' 
+    $dupCheckQry = "SELECT id, email, mobile_no, username FROM tbl_company 
+                    WHERE LOWER(email) = '" . strtolower($safeEmail) . "' 
                        OR mobile_no = '" . $safeMobile . "' 
                        OR LOWER(username) = '" . strtolower($safeUsername) . "' 
                     LIMIT 1";
@@ -116,9 +109,7 @@ if ($action === 'register') {
     $existing = $ai_db->aiGetQueryObj($dupCheckQry);
     if (!empty($existing)) {
         $row = $existing[0];
-        if (strtolower($row->company_name) === strtolower($businessName)) {
-            apiResponse(409, 'Business name is already registered.');
-        } elseif (strtolower($row->username) === strtolower($name)) {
+        if (strtolower($row->username) === strtolower($name)) {
             apiResponse(409, 'Name/Username is already registered.');
         } elseif (strtolower($row->email) === strtolower($email)) {
             apiResponse(409, 'Email address is already registered.');
@@ -130,8 +121,8 @@ if ($action === 'register') {
     }
 
     // Insert into tbl_company
-    $insertQry = "INSERT INTO tbl_company (company_name, owner_name, username, email, mobile_no, password, status, created_at) 
-                  VALUES ('{$safeCompanyName}', '{$safeUsername}', '{$safeUsername}', '{$safeEmail}', '{$safeMobile}', '{$hashedPassword}', 'active', NOW())";
+    $insertQry = "INSERT INTO tbl_company (username, email, mobile_no, password, status, created_at) 
+                  VALUES ('{$safeUsername}', '{$safeEmail}', '{$safeMobile}', '{$hashedPassword}', 'active', NOW())";
 
     $result = mysqli_query($ai_conn, $insertQry);
     if (!$result) {
@@ -142,7 +133,6 @@ if ($action === 'register') {
 
     apiResponse(200, 'Registration successful.', [
         'id'            => $companyId,
-        'company_name'  => $businessName,
         'username'      => $name,
         'email'         => $email,
         'mobile_no'     => $mobileNo,
