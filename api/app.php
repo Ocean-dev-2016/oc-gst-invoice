@@ -42,13 +42,44 @@ $action = $_GET['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 
 
-// Ensure api_token column exists in tbl_company
+// Ensure api_token and shipping columns exist in tbl_company
 static $tokenColChecked = false;
 if (!$tokenColChecked) {
     $colRes = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_company LIKE 'api_token'");
     if ($colRes && mysqli_num_rows($colRes) === 0) {
         @mysqli_query($ai_conn, "ALTER TABLE tbl_company ADD COLUMN `api_token` VARCHAR(255) NULL DEFAULT NULL AFTER `password`");
     }
+    $shipAddrRes = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_company LIKE 'shipping_address'");
+    if ($shipAddrRes && mysqli_num_rows($shipAddrRes) === 0) {
+        @mysqli_query($ai_conn, "ALTER TABLE tbl_company ADD COLUMN `shipping_address` TEXT NULL DEFAULT NULL AFTER `address`");
+    }
+    $shipStateRes = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_company LIKE 'shipping_state_id'");
+    if ($shipStateRes && mysqli_num_rows($shipStateRes) === 0) {
+        @mysqli_query($ai_conn, "ALTER TABLE tbl_company ADD COLUMN `shipping_state_id` BIGINT(20) NULL DEFAULT 0 AFTER `shipping_address`");
+    }
+    $shipCityRes = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_company LIKE 'shipping_city_id'");
+    if ($shipCityRes && mysqli_num_rows($shipCityRes) === 0) {
+        @mysqli_query($ai_conn, "ALTER TABLE tbl_company ADD COLUMN `shipping_city_id` BIGINT(20) NULL DEFAULT 0 AFTER `shipping_state_id`");
+    }
+
+    // Ensure missing columns in tbl_party exist (especially on live server)
+    $partyEmailRes = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_party LIKE 'email'");
+    if ($partyEmailRes && mysqli_num_rows($partyEmailRes) === 0) {
+        @mysqli_query($ai_conn, "ALTER TABLE `tbl_party` ADD COLUMN `email` VARCHAR(150) NULL DEFAULT '' AFTER `mobile_no`");
+    }
+    $partyPinRes = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_party LIKE 'pincode'");
+    if ($partyPinRes && mysqli_num_rows($partyPinRes) === 0) {
+        @mysqli_query($ai_conn, "ALTER TABLE `tbl_party` ADD COLUMN `pincode` VARCHAR(20) NULL DEFAULT '' AFTER `city_id`");
+    }
+    $partyPanRes = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_party LIKE 'pan_no'");
+    if ($partyPanRes && mysqli_num_rows($partyPanRes) === 0) {
+        @mysqli_query($ai_conn, "ALTER TABLE `tbl_party` ADD COLUMN `pan_no` VARCHAR(20) NULL DEFAULT '' AFTER `gst_no`");
+    }
+    $partyStatusRes = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_party LIKE 'party_status'");
+    if ($partyStatusRes && mysqli_num_rows($partyStatusRes) === 0) {
+        @mysqli_query($ai_conn, "ALTER TABLE `tbl_party` ADD COLUMN `party_status` VARCHAR(50) NULL DEFAULT 'Sales' AFTER `pan_no`");
+    }
+
     $tokenColChecked = true;
 }
 
@@ -312,22 +343,22 @@ if ($action === 'profile') {
 
     // Identify Company: via api_token OR company_id
     $company = null;
+    $compSelect = "SELECT c.*, 
+                          s.state_name, ct.city_name,
+                          ss.state_name AS shipping_state_name, sc.city_name AS shipping_city_name
+                   FROM tbl_company c 
+                   LEFT JOIN tbl_state s ON c.state_id = s.id 
+                   LEFT JOIN tbl_city ct ON c.city_id = ct.id 
+                   LEFT JOIN tbl_state ss ON c.shipping_state_id = ss.id 
+                   LEFT JOIN tbl_city sc ON c.shipping_city_id = sc.id ";
     if (!empty($token)) {
         $safeToken = mysqli_real_escape_string($ai_conn, $token);
-        $res = $ai_db->aiGetQuery("SELECT c.*, s.state_name, ct.city_name 
-                                   FROM tbl_company c 
-                                   LEFT JOIN tbl_state s ON c.state_id = s.id 
-                                   LEFT JOIN tbl_city ct ON c.city_id = ct.id 
-                                   WHERE c.api_token='{$safeToken}' LIMIT 1");
+        $res = $ai_db->aiGetQuery("{$compSelect} WHERE c.api_token='{$safeToken}' LIMIT 1");
         if (!empty($res)) {
             $company = $res[0];
         }
     } elseif ($companyId > 0) {
-        $res = $ai_db->aiGetQuery("SELECT c.*, s.state_name, ct.city_name 
-                                   FROM tbl_company c 
-                                   LEFT JOIN tbl_state s ON c.state_id = s.id 
-                                   LEFT JOIN tbl_city ct ON c.city_id = ct.id 
-                                   WHERE c.id={$companyId} LIMIT 1");
+        $res = $ai_db->aiGetQuery("{$compSelect} WHERE c.id={$companyId} LIMIT 1");
         if (!empty($res)) {
             $company = $res[0];
         }
@@ -340,21 +371,27 @@ if ($action === 'profile') {
     $cId = (int)$company['id'];
 
     // ==========================================
+    // ==========================================
     // 1. GET PROFILE
     // ==========================================
     if ($method === 'GET') {
         apiResponse(200, 'Profile retrieved successfully.', [
-            'id'           => (int)$company['id'],
-            'company_name' => $company['company_name'] ?? '',
-            'owner_name'   => $company['owner_name'] ?? '',
-            'mobile_no'    => $company['mobile_no'] ?? '',
-            'email'        => $company['email'] ?? '',
-            'username'     => $company['username'] ?? '',
-            'gst_no'       => $company['gst_no'] ?? '',
-            'state_id'     => (int)($company['state_id'] ?? 0),
-            'city_id'      => (int)($company['city_id'] ?? 0),
-            'address'      => $company['address'] ?? '',
-            'status'       => $company['status'] ?? 'active'
+            'id'                   => (int)$company['id'],
+            'company_name'         => $company['company_name'] ?? '',
+            'owner_name'           => $company['owner_name'] ?? '',
+            'mobile_no'            => $company['mobile_no'] ?? '',
+            'email'                => $company['email'] ?? '',
+            'username'             => $company['username'] ?? '',
+            'gst_no'               => $company['gst_no'] ?? '',
+            'state_id'             => (int)($company['state_id'] ?? 0),
+            'state_name'           => $company['state_name'] ?? '',
+            'city_id'              => (int)($company['city_id'] ?? 0),
+            'city_name'            => $company['city_name'] ?? '',
+            'address'              => $company['address'] ?? '',
+            'shipping_address'     => $company['shipping_address'] ?? '',
+            'shipping_state_id'    => (int)($company['shipping_state_id'] ?? 0),
+            'shipping_city_id'     => (int)($company['shipping_city_id'] ?? 0),
+            'status'               => $company['status'] ?? 'active'
         ]);
     }
 
@@ -362,15 +399,18 @@ if ($action === 'profile') {
     // 2. UPDATE PROFILE (POST / PUT)
     // ==========================================
     if ($method === 'POST' || $method === 'PUT') {
-        $company_name = trim($input['company_name'] ?? ($company['company_name'] ?? ''));
-        $owner_name   = trim($input['owner_name'] ?? ($company['owner_name'] ?? ''));
-        $mobile_no    = trim($input['mobile_no'] ?? ($company['mobile_no'] ?? ''));
-        $email        = trim($input['email'] ?? ($company['email'] ?? ''));
-        $username     = trim($input['username'] ?? ($company['username'] ?? ''));
-        $gst_no       = trim($input['gst_no'] ?? ($company['gst_no'] ?? ''));
-        $state_id     = isset($input['state_id']) ? (int)$input['state_id'] : (int)($company['state_id'] ?? 0);
-        $city_id      = isset($input['city_id']) ? (int)$input['city_id'] : (int)($company['city_id'] ?? 0);
-        $address      = trim($input['address'] ?? ($company['address'] ?? ''));
+        $company_name       = trim($input['company_name'] ?? ($company['company_name'] ?? ''));
+        $owner_name         = trim($input['owner_name'] ?? ($company['owner_name'] ?? ''));
+        $mobile_no          = trim($input['mobile_no'] ?? ($company['mobile_no'] ?? ''));
+        $email              = trim($input['email'] ?? ($company['email'] ?? ''));
+        $username           = trim($input['username'] ?? ($company['username'] ?? ''));
+        $gst_no             = trim($input['gst_no'] ?? ($company['gst_no'] ?? ''));
+        $state_id           = isset($input['state_id']) ? (int)$input['state_id'] : (int)($company['state_id'] ?? 0);
+        $city_id            = isset($input['city_id']) ? (int)$input['city_id'] : (int)($company['city_id'] ?? 0);
+        $address            = trim($input['address'] ?? ($company['address'] ?? ''));
+        $shipping_address   = trim($input['shipping_address'] ?? ($company['shipping_address'] ?? ''));
+        $shipping_state_id  = isset($input['shipping_state_id']) ? (int)$input['shipping_state_id'] : (int)($company['shipping_state_id'] ?? 0);
+        $shipping_city_id   = isset($input['shipping_city_id']) ? (int)$input['shipping_city_id'] : (int)($company['shipping_city_id'] ?? 0);
 
         // Validation
         if ($company_name === '') {
@@ -390,13 +430,14 @@ if ($action === 'profile') {
         }
 
         // Duplicate checks (excluding current company)
-        $safeCompany = mysqli_real_escape_string($ai_conn, $company_name);
-        $safeOwner   = mysqli_real_escape_string($ai_conn, $owner_name);
-        $safeMobile  = mysqli_real_escape_string($ai_conn, $mobile_no);
-        $safeEmail   = mysqli_real_escape_string($ai_conn, $email);
-        $safeUname   = mysqli_real_escape_string($ai_conn, $username);
-        $safeGst     = mysqli_real_escape_string($ai_conn, $gst_no);
-        $safeAddress = mysqli_real_escape_string($ai_conn, $address);
+        $safeCompany       = mysqli_real_escape_string($ai_conn, $company_name);
+        $safeOwner         = mysqli_real_escape_string($ai_conn, $owner_name);
+        $safeMobile        = mysqli_real_escape_string($ai_conn, $mobile_no);
+        $safeEmail         = mysqli_real_escape_string($ai_conn, $email);
+        $safeUname         = mysqli_real_escape_string($ai_conn, $username);
+        $safeGst           = mysqli_real_escape_string($ai_conn, $gst_no);
+        $safeAddress       = mysqli_real_escape_string($ai_conn, $address);
+        $safeShippingAddr  = mysqli_real_escape_string($ai_conn, $shipping_address);
 
         $dupQry = "SELECT id, email, mobile_no, username FROM tbl_company 
                    WHERE id != {$cId} AND (
@@ -421,16 +462,19 @@ if ($action === 'profile') {
 
         // Update company profile
         $updateQry = "UPDATE tbl_company SET 
-                      company_name = '{$safeCompany}',
-                      owner_name   = '{$safeOwner}',
-                      mobile_no    = '{$safeMobile}',
-                      email        = '{$safeEmail}',
-                      username     = '{$safeUname}',
-                      gst_no       = '{$safeGst}',
-                      state_id     = {$state_id},
-                      city_id      = {$city_id},
-                      address      = '{$safeAddress}',
-                      modified_at  = NOW() 
+                      company_name       = '{$safeCompany}',
+                      owner_name         = '{$safeOwner}',
+                      mobile_no          = '{$safeMobile}',
+                      email              = '{$safeEmail}',
+                      username           = '{$safeUname}',
+                      gst_no             = '{$safeGst}',
+                      state_id           = {$state_id},
+                      city_id            = {$city_id},
+                      address            = '{$safeAddress}',
+                      shipping_address   = '{$safeShippingAddr}',
+                      shipping_state_id  = {$shipping_state_id},
+                      shipping_city_id   = {$shipping_city_id},
+                      modified_at        = NOW() 
                       WHERE id = {$cId}";
 
         if (!mysqli_query($ai_conn, $updateQry)) {
@@ -438,21 +482,28 @@ if ($action === 'profile') {
         }
 
         // Fetch state and city names for updated response
-        $stateRow = $state_id > 0 ? $ai_db->aiGetQueryObj("SELECT state_name FROM tbl_state WHERE id={$state_id} LIMIT 1") : [];
-        $cityRow  = $city_id > 0 ? $ai_db->aiGetQueryObj("SELECT city_name FROM tbl_city WHERE id={$city_id} LIMIT 1") : [];
+        $stateRow        = $state_id > 0 ? $ai_db->aiGetQueryObj("SELECT state_name FROM tbl_state WHERE id={$state_id} LIMIT 1") : [];
+        $cityRow         = $city_id > 0 ? $ai_db->aiGetQueryObj("SELECT city_name FROM tbl_city WHERE id={$city_id} LIMIT 1") : [];
+        $shipStateRow    = $shipping_state_id > 0 ? $ai_db->aiGetQueryObj("SELECT state_name FROM tbl_state WHERE id={$shipping_state_id} LIMIT 1") : [];
+        $shipCityRow     = $shipping_city_id > 0 ? $ai_db->aiGetQueryObj("SELECT city_name FROM tbl_city WHERE id={$shipping_city_id} LIMIT 1") : [];
 
         apiResponse(200, 'Profile updated successfully.', [
-            'id'           => $cId,
-            'company_name' => $company_name,
-            'owner_name'   => $owner_name,
-            'mobile_no'    => $mobile_no,
-            'email'        => $email,
-            'username'     => $username,
-            'gst_no'       => $gst_no,
-            'state_id'     => $state_id,
-            'city_id'      => $city_id,
-            'address'      => $address,
-            'status'       => $company['status'] ?? 'active'
+            'id'                   => $cId,
+            'company_name'         => $company_name,
+            'owner_name'           => $owner_name,
+            'mobile_no'            => $mobile_no,
+            'email'                => $email,
+            'username'             => $username,
+            'gst_no'               => $gst_no,
+            'state_id'             => $state_id,
+            'state_name'           => !empty($stateRow) ? $stateRow[0]->state_name : '',
+            'city_id'              => $city_id,
+            'city_name'            => !empty($cityRow) ? $cityRow[0]->city_name : '',
+            'address'              => $address,
+            'shipping_address'     => $shipping_address,
+            'shipping_state_id'    => $shipping_state_id,
+            'shipping_city_id'     => $shipping_city_id,
+            'status'               => $company['status'] ?? 'active'
         ]);
     }
 

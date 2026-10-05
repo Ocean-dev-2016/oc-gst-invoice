@@ -43,6 +43,9 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
     $address = addslashes(trim($_POST['address'] ?? ''));
+    $shipping_address = addslashes(trim($_POST['shipping_address'] ?? ''));
+    $shipping_state_id = intval($_POST['shipping_state_id'] ?? 0);
+    $shipping_city_id = intval($_POST['shipping_city_id'] ?? 0);
     $owner_name = addslashes(trim($_POST['owner_name'] ?? ''));
     $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
     $email = addslashes(trim($_POST['email'] ?? ''));
@@ -95,6 +98,9 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
                 state_id='" . $state_id . "',
                 city_id='" . $city_id . "',
                 address='" . $address . "',
+                shipping_address='" . $shipping_address . "',
+                shipping_state_id='" . $shipping_state_id . "',
+                shipping_city_id='" . $shipping_city_id . "',
                 owner_name='" . $owner_name . "',
                 mobile_no='" . $mobile_no . "',
                 email='" . $email . "',
@@ -116,6 +122,9 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
     $address = addslashes(trim($_POST['address'] ?? ''));
+    $shipping_address = addslashes(trim($_POST['shipping_address'] ?? ''));
+    $shipping_state_id = intval($_POST['shipping_state_id'] ?? 0);
+    $shipping_city_id = intval($_POST['shipping_city_id'] ?? 0);
     $owner_name = addslashes(trim($_POST['owner_name'] ?? ''));
     $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
     $email = addslashes(trim($_POST['email'] ?? ''));
@@ -168,6 +177,9 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
                 state_id='" . $state_id . "',
                 city_id='" . $city_id . "',
                 address='" . $address . "',
+                shipping_address='" . $shipping_address . "',
+                shipping_state_id='" . $shipping_state_id . "',
+                shipping_city_id='" . $shipping_city_id . "',
                 owner_name='" . $owner_name . "',
                 mobile_no='" . $mobile_no . "',
                 email='" . $email . "',
@@ -202,6 +214,12 @@ $selected_state_id = $_POST['state_id'] ?? $categoryData->state_id ?? 0;
 $cities = [];
 if ($selected_state_id > 0) {
     $cities = $ai_db->aiGetQueryObj("SELECT id, city_name FROM tbl_city WHERE state_id='" . intval($selected_state_id) . "' AND status='active' ORDER BY order_no ASC, city_name ASC");
+}
+
+$selected_shipping_state_id = $_POST['shipping_state_id'] ?? $categoryData->shipping_state_id ?? 0;
+$shipping_cities = [];
+if ($selected_shipping_state_id > 0) {
+    $shipping_cities = $ai_db->aiGetQueryObj("SELECT id, city_name FROM tbl_city WHERE state_id='" . intval($selected_shipping_state_id) . "' AND status='active' ORDER BY order_no ASC, city_name ASC");
 }
 ?>
 
@@ -280,6 +298,56 @@ if ($selected_state_id > 0) {
                                             <div class="col-md-4">
                                                 <label class="form-label">Address</label>
                                                 <textarea name="address" class="form-control" rows="2" placeholder="Enter full address..."><?= htmlspecialchars($_POST['address'] ?? $categoryData->address ?? '') ?></textarea>
+                                            </div>
+
+                                            <!-- Shipping Details Section -->
+                                            <div class="col-12 mt-3">
+                                                <h6 class="fw-bold mb-1"><i class="ti ti-truck me-1"></i> Shipping Details</h6>
+                                                <p class="text-muted small mb-2">Optional shipping address and destination details.</p>
+                                                <hr class="mt-1 mb-2">
+                                            </div>
+
+                                            <!-- Shipping State (Select2) -->
+                                            <div class="col-md-4">
+                                                <label class="form-label">Shipping State</label>
+                                                <select name="shipping_state_id" id="shipping_state_id" class="form-select select2">
+                                                    <option value="">-- Select Shipping State --</option>
+                                                    <?php if (!empty($states)) {
+                                                        foreach ($states as $st) { ?>
+                                                            <option value="<?= $st->id ?>" <?= ($selected_shipping_state_id == $st->id) ? 'selected' : '' ?>>
+                                                                <?= htmlspecialchars($st->state_name) ?> (Code: <?= htmlspecialchars($st->state_code) ?>)
+                                                            </option>
+                                                        <?php }
+                                                    } ?>
+                                                </select>
+                                            </div>
+
+                                            <!-- Shipping City (Select2 Dynamic) -->
+                                            <div class="col-md-4">
+                                                <label class="form-label">Shipping City</label>
+                                                <select name="shipping_city_id" id="shipping_city_id" class="form-select select2">
+                                                    <option value="">-- Select Shipping City --</option>
+                                                    <?php if (!empty($shipping_cities)) {
+                                                        $selected_shipping_city_id = $_POST['shipping_city_id'] ?? $categoryData->shipping_city_id ?? 0;
+                                                        foreach ($shipping_cities as $ct) { ?>
+                                                            <option value="<?= $ct->id ?>" <?= ($selected_shipping_city_id == $ct->id) ? 'selected' : '' ?>>
+                                                                <?= htmlspecialchars($ct->city_name) ?>
+                                                            </option>
+                                                        <?php }
+                                                    } ?>
+                                                </select>
+                                            </div>
+
+                                            <!-- Shipping Address -->
+                                            <div class="col-md-4">
+                                                <label class="form-label">Shipping Address</label>
+                                                <textarea name="shipping_address" class="form-control" rows="2" placeholder="Enter shipping address..."><?= htmlspecialchars($_POST['shipping_address'] ?? $categoryData->shipping_address ?? '') ?></textarea>
+                                            </div>
+
+                                            <!-- Company Owner & Contact Details Section -->
+                                            <div class="col-12 mt-3">
+                                                <h6 class="fw-bold mb-1"><i class="ti ti-user me-1"></i> Contact & Credentials</h6>
+                                                <hr class="mt-1 mb-2">
                                             </div>
 
                                             <!-- Owner Name -->
@@ -442,6 +510,41 @@ if ($selected_state_id > 0) {
                     $cityDropdown.html('<option value="">-- Select City --</option>');
                     if ($.fn.select2) {
                         $cityDropdown.trigger('change');
+                    }
+                }
+            });
+
+            // Dynamic Shipping City Loading on Shipping State Change
+            $('#shipping_state_id').on('change', function() {
+                var stateId = $(this).val();
+                var $shipCityDropdown = $('#shipping_city_id');
+                $shipCityDropdown.html('<option value="">Loading cities...</option>');
+
+                if (stateId > 0) {
+                    $.ajax({
+                        type: "POST",
+                        url: "ajax.php",
+                        data: {
+                            action: "get_cities_by_state",
+                            state_id: stateId
+                        },
+                        dataType: "json",
+                        success: function(response) {
+                            $shipCityDropdown.html('<option value="">-- Select Shipping City --</option>');
+                            if (response.status === "success" && response.cities.length > 0) {
+                                $.each(response.cities, function(i, city) {
+                                    $shipCityDropdown.append('<option value="' + city.id + '">' + city.city_name + '</option>');
+                                });
+                            }
+                            if ($.fn.select2) {
+                                $shipCityDropdown.trigger('change');
+                            }
+                        }
+                    });
+                } else {
+                    $shipCityDropdown.html('<option value="">-- Select Shipping City --</option>');
+                    if ($.fn.select2) {
+                        $shipCityDropdown.trigger('change');
                     }
                 }
             });
