@@ -105,8 +105,83 @@ if (tableExists('tbl_company')) {
     } else {
         echo '<div class="log-item log-info">ℹ `tbl_company`.`api_token` column already exists.</div>';
     }
+
+    if (!columnExists('tbl_company', 'shipping_address')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_company` ADD COLUMN `shipping_address` TEXT NULL DEFAULT NULL AFTER `address`",
+            "Added `shipping_address` column to `tbl_company` table successfully.",
+            "Failed to add `shipping_address` column to `tbl_company`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_company`.`shipping_address` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_company', 'shipping_state_id')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_company` ADD COLUMN `shipping_state_id` BIGINT(20) NULL DEFAULT 0 AFTER `shipping_address`",
+            "Added `shipping_state_id` column to `tbl_company` table successfully.",
+            "Failed to add `shipping_state_id` column to `tbl_company`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_company`.`shipping_state_id` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_company', 'shipping_city_id')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_company` ADD COLUMN `shipping_city_id` BIGINT(20) NULL DEFAULT 0 AFTER `shipping_state_id`",
+            "Added `shipping_city_id` column to `tbl_company` table successfully.",
+            "Failed to add `shipping_city_id` column to `tbl_company`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_company`.`shipping_city_id` column already exists.</div>';
+    }
 } else {
     echo '<div class="log-item log-warn">⚠ Table `tbl_company` does not exist!</div>';
+}
+
+// 2. tbl_party -> Missing columns check (email, pincode, pan_no, party_status)
+if (tableExists('tbl_party')) {
+    if (!columnExists('tbl_party', 'email')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `email` VARCHAR(150) NULL DEFAULT '' AFTER `mobile_no`",
+            "Added `email` column to `tbl_party` table successfully.",
+            "Failed to add `email` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`email` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_party', 'pincode')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `pincode` VARCHAR(20) NULL DEFAULT '' AFTER `city_id`",
+            "Added `pincode` column to `tbl_party` table successfully.",
+            "Failed to add `pincode` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`pincode` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_party', 'pan_no')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `pan_no` VARCHAR(20) NULL DEFAULT '' AFTER `gst_no`",
+            "Added `pan_no` column to `tbl_party` table successfully.",
+            "Failed to add `pan_no` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`pan_no` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_party', 'party_status')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `party_status` VARCHAR(50) NULL DEFAULT 'Sales' AFTER `pan_no`",
+            "Added `party_status` column to `tbl_party` table successfully.",
+            "Failed to add `party_status` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`party_status` column already exists.</div>';
+    }
+} else {
+    echo '<div class="log-item log-warn">⚠ Table `tbl_party` does not exist!</div>';
 }
 
 // 2. tbl_api_tokens (Bearer authentication token log table if needed)
