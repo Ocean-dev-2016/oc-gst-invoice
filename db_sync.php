@@ -142,7 +142,18 @@ if (tableExists('tbl_company')) {
     }
 }
 
-// 4. Ensure upload directories exist
+// 4. tbl_product -> Index check for company-wise fast lookup (product_name, hsn_code)
+if (tableExists('tbl_product')) {
+    $idxProduct = mysqli_query($conn, "SHOW INDEX FROM `tbl_product` WHERE Key_name = 'idx_comp_hsn_product'");
+    if ($idxProduct && mysqli_num_rows($idxProduct) === 0) {
+        @mysqli_query($conn, "ALTER TABLE `tbl_product` ADD INDEX `idx_comp_hsn_product` (`company_id`, `hsn_code`, `product_name`)");
+        echo '<div class="log-item log-success">✓ Added `idx_comp_hsn_product` index to `tbl_product`.</div>';
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_product` company & HSN code index already exists.</div>';
+    }
+}
+
+// 5. Ensure upload directories exist
 $uploadDirs = [
     __DIR__ . '/uploads/',
     __DIR__ . '/uploads/company/'

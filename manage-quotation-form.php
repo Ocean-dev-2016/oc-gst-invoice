@@ -56,42 +56,58 @@ $err_msg = '';
 $quotationData = null;
 $quotationItems = [];
 
-// Fetch master data for dropdowns
-$companies = $ai_db->aiGetQueryObj("SELECT id, company_name FROM tbl_company WHERE status='active' ORDER BY company_name ASC");
-$parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' ORDER BY party_name ASC");
-$products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price FROM tbl_product WHERE status='active' ORDER BY product_name ASC");
-$states = $ai_db->aiGetQueryObj("SELECT id, state_name, state_code FROM tbl_state WHERE status='active' ORDER BY order_no ASC, state_name ASC");
-
-// Auto Generate Quotation No if mode=add
-function generateQuotationNo($ai_db) {
+// Auto Generate Quotation No company wise if mode=add
+function generateQuotationNo($ai_db, $company_id = 0) {
     $currentYear = date('y');
     $nextYear = date('y', strtotime('+1 year'));
     $fy = $currentYear . '-' . $nextYear;
     
-    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation ORDER BY id DESC LIMIT 1");
+    $whereComp = ($company_id > 0) ? "WHERE company_id='$company_id'" : "";
+    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation $whereComp ORDER BY id DESC LIMIT 1");
     $nextNum = 1;
     if (!empty($maxRow)) {
         $qNo = $maxRow[0]->quotation_no;
-        preg_match('~/(\d+)/~', $qNo, $matches);
-        if (!empty($matches[1])) {
+        if (preg_match('~/(\d+)/~', $qNo, $matches)) {
             $nextNum = intval($matches[1]) + 1;
         } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation")) + 1;
+            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation $whereComp")) + 1;
         }
     }
     
     return 'OQ/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
 }
 
-$default_quotation_no = generateQuotationNo($ai_db);
+$userType = $_SESSION['user_type'] ?? '';
+$session_company_id = intval($_SESSION['company_id'] ?? 0);
+$current_company_id = ($userType === 'company') ? $session_company_id : intval($_POST['company_id'] ?? 0);
+
+// Fetch master data for dropdowns
+$companies = $ai_db->aiGetQueryObj("SELECT id, company_name FROM tbl_company WHERE status='active' ORDER BY company_name ASC");
+
+// Fetch parties and products based on logged-in company or selected company
+$partyWhere = ($current_company_id > 0) ? "WHERE status='active' AND company_id='$current_company_id'" : "WHERE status='active'";
+$parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party $partyWhere ORDER BY party_name ASC");
+
+$productWhere = ($current_company_id > 0) ? "WHERE status='active' AND company_id='$current_company_id'" : "WHERE status='active'";
+$products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price FROM tbl_product $productWhere ORDER BY product_name ASC");
+
+$states = $ai_db->aiGetQueryObj("SELECT id, state_name, state_code FROM tbl_state WHERE status='active' ORDER BY order_no ASC, state_name ASC");
+
+$default_quotation_no = generateQuotationNo($ai_db, $current_company_id);
 
 // Handle POST save / update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $company_id = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
+    if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id'])) {
+        $company_id = intval($_SESSION['company_id']);
+    }
     $party_id = intval($_POST['party_id'] ?? 0);
     $party_name = addslashes(trim($_POST['party_name'] ?? ''));
     $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
     $quotation_no = addslashes(trim($_POST['quotation_no'] ?? ''));
+    if (empty($quotation_no) && $mode === 'add') {
+        $quotation_no = generateQuotationNo($ai_db, $company_id);
+    }
     $rca = addslashes(trim($_POST['rca'] ?? 'No'));
     $address = addslashes(trim($_POST['address'] ?? ''));
     $state_id = intval($_POST['state_id'] ?? 0);
@@ -119,6 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
         $err_msg = "Please enter or select Party Name!";
     } elseif (empty($quotation_no)) {
         $err_msg = "Please enter Quotation Number!";
+    } elseif (!empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
         if ($mode === 'add') {
             $insert_qry = "INSERT INTO tbl_quotation SET
@@ -151,6 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 foreach ($_POST['item_description'] as $idx => $desc) {
                     $desc = addslashes(trim($desc));
                     if (empty($desc)) continue;
+                    $prod_id = intval($_POST['item_product_id'][$idx] ?? 0);
                     $hsn = addslashes(trim($_POST['item_hsn'][$idx] ?? ''));
                     $rate = floatval($_POST['item_rate'][$idx] ?? 0);
                     $gst_pct = floatval($_POST['item_gst_pct'][$idx] ?? 0);
@@ -161,6 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
 
                     $item_qry = "INSERT INTO tbl_quotation_items SET
                         quotation_id='$quotation_id',
+                        product_id='$prod_id',
                         description='$desc',
                         hsn_code='$hsn',
                         rate='$rate',
@@ -208,6 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 foreach ($_POST['item_description'] as $idx => $desc) {
                     $desc = addslashes(trim($desc));
                     if (empty($desc)) continue;
+                    $prod_id = intval($_POST['item_product_id'][$idx] ?? 0);
                     $hsn = addslashes(trim($_POST['item_hsn'][$idx] ?? ''));
                     $rate = floatval($_POST['item_rate'][$idx] ?? 0);
                     $gst_pct = floatval($_POST['item_gst_pct'][$idx] ?? 0);
@@ -218,6 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
 
                     $item_qry = "INSERT INTO tbl_quotation_items SET
                         quotation_id='$id',
+                        product_id='$prod_id',
                         description='$desc',
                         hsn_code='$hsn',
                         rate='$rate',
@@ -242,10 +264,30 @@ if ($mode === 'edit' && $id > 0) {
     if ($qRes) {
         $quotationData = $qRes[0];
         $quotationItems = $ai_db->aiGetQueryObj("SELECT * FROM tbl_quotation_items WHERE quotation_id='$id'");
+        if (!empty($quotationItems)) {
+            foreach ($quotationItems as &$qItem) {
+                if (empty($qItem->product_id) || intval($qItem->product_id) <= 0) {
+                    $escDesc = addslashes($qItem->description);
+                    $compFlt = !empty($quotationData->company_id) ? " AND company_id='{$quotationData->company_id}'" : "";
+                    $pFind = $ai_db->aiGetQueryObj("SELECT id FROM tbl_product WHERE LOWER(TRIM(product_name)) = LOWER(TRIM('$escDesc')) $compFlt LIMIT 1");
+                    if ($pFind && !empty($pFind[0]->id)) {
+                        $qItem->product_id = intval($pFind[0]->id);
+                    }
+                }
+            }
+            unset($qItem);
+        }
     }
 }
 
 $selected_company_id = $_POST['company_id'] ?? $quotationData->company_id ?? ($_SESSION['company_id'] ?? 0);
+if ($selected_company_id > 0) {
+    $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND company_id='$selected_company_id' ORDER BY party_name ASC");
+    $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price FROM tbl_product WHERE status='active' AND company_id='$selected_company_id' ORDER BY product_name ASC");
+    if ($mode === 'add' && empty($_POST['quotation_no'])) {
+        $default_quotation_no = generateQuotationNo($ai_db, $selected_company_id);
+    }
+}
 $selected_state_id = $_POST['state_id'] ?? $quotationData->state_id ?? 0;
 $selected_city_id = $_POST['city_id'] ?? $quotationData->city_id ?? 0;
 $cities = [];
@@ -388,12 +430,12 @@ if ($selected_state_id > 0) {
 
                                     <div class="col-md-3">
                                         <label class="form-label fw-bold text-uppercase small text-muted">GST NO.</label>
-                                        <input type="text" name="gst_no" id="gst_no" class="form-control" placeholder="Enter GST no." value="<?= htmlspecialchars($quotationData->gst_no ?? '') ?>">
+                                        <input type="text" name="gst_no" id="gst_no" class="form-control bg-light" placeholder="Party GST no." value="<?= htmlspecialchars($quotationData->gst_no ?? '') ?>" readonly>
                                     </div>
 
                                     <div class="col-md-3">
                                         <label class="form-label fw-bold text-uppercase small text-muted">QUOTATION NO. <span class="text-danger">*</span></label>
-                                        <input type="text" name="quotation_no" id="quotation_no" class="form-control" placeholder="OQ/008/26-27" value="<?= htmlspecialchars($quotationData->quotation_no ?? $default_quotation_no) ?>" required>
+                                        <input type="text" name="quotation_no" id="quotation_no" class="form-control bg-light" placeholder="OQ/008/26-27" value="<?= htmlspecialchars($quotationData->quotation_no ?? $default_quotation_no) ?>" readonly required>
                                     </div>
 
                                     <div class="col-md-3">
@@ -595,6 +637,7 @@ if ($selected_state_id > 0) {
         <?php if (!empty($quotationItems)) { ?>
             <?php foreach ($quotationItems as $item) { ?>
                 itemsList.push({
+                    product_id: <?= intval($item->product_id ?? 0) ?>,
                     description: <?= json_encode($item->description) ?>,
                     hsn_code: <?= json_encode($item->hsn_code) ?>,
                     rate: <?= floatval($item->rate) ?>,
@@ -605,6 +648,136 @@ if ($selected_state_id > 0) {
         <?php } ?>
 
         renderTable();
+        updateProductDropdown();
+
+        // Function to disable or hide already-added products in #product_select
+        function updateProductDropdown() {
+            var addedProductIds = [];
+            var addedDescriptions = [];
+            $.each(itemsList, function(i, item) {
+                if (item.product_id && item.product_id > 0) {
+                    addedProductIds.push(String(item.product_id));
+                }
+                if (item.description) {
+                    addedDescriptions.push($.trim(item.description).toLowerCase());
+                }
+            });
+
+            $('#product_select option').each(function() {
+                var val = $(this).val();
+                if (!val) return; // Keep placeholder enabled
+                var optTitle = $.trim($(this).data('title') || $(this).text()).toLowerCase();
+                var isAdded = (addedProductIds.indexOf(String(val)) !== -1) || (addedDescriptions.indexOf(optTitle) !== -1);
+
+                if (isAdded) {
+                    $(this).prop('disabled', true);
+                    $(this).attr('hidden', true);
+                } else {
+                    $(this).prop('disabled', false);
+                    $(this).removeAttr('hidden');
+                }
+            });
+
+            // If current selected option is disabled, reset select
+            var currentVal = $('#product_select').val();
+            var currentTitle = $.trim($('#product_select').find('option:selected').data('title') || '').toLowerCase();
+            if (currentVal && (addedProductIds.indexOf(String(currentVal)) !== -1 || (currentTitle && addedDescriptions.indexOf(currentTitle) !== -1))) {
+                $('#product_select').val('').trigger('change');
+            }
+
+            if ($.fn.select2) {
+                $('#product_select').trigger('change.select2');
+            }
+        }
+
+        // When Company Changed (for Admin): dynamically reload parties, products, and quotation number
+        $('#company_id').change(function() {
+            var compId = $(this).val();
+            var partySelect = $('#party_select');
+            var prodSelect = $('#product_select');
+
+            partySelect.html('<option value="">Loading parties...</option>');
+            prodSelect.html('<option value="">Loading products...</option>');
+
+            // Clear current items on company change to prevent cross-company products
+            itemsList = [];
+            renderTable();
+
+            if (compId > 0) {
+                $.ajax({
+                    type: "POST",
+                    url: "ajax.php",
+                    data: { action: "get_parties_and_quotation_no", company_id: compId },
+                    dataType: "json",
+                    success: function(res) {
+                        // 1. Populate Parties
+                        var partyHtml = '<option value="">-- Select Party --</option>';
+                        if (res.status === 'success') {
+                            if (res.parties && res.parties.length > 0) {
+                                $.each(res.parties, function(i, p) {
+                                    partyHtml += '<option value="' + p.id + '" ' +
+                                            'data-name="' + (p.party_name || '') + '" ' +
+                                            'data-gst="' + (p.gst_no || '') + '" ' +
+                                            'data-address="' + (p.address || '') + '" ' +
+                                            'data-state="' + (p.state_id || 0) + '" ' +
+                                            'data-city="' + (p.city_id || 0) + '">' +
+                                            p.party_name + '</option>';
+                                });
+                            }
+                            // 2. Populate Products for the chosen company
+                            var prodHtml = '<option value="">-- Select Product --</option>';
+                            if (res.products && res.products.length > 0) {
+                                $.each(res.products, function(i, p) {
+                                    var price = parseFloat(p.sales_price) || 0;
+                                    prodHtml += '<option value="' + p.id + '" ' +
+                                            'data-title="' + escapeHtml(p.product_name) + '" ' +
+                                            'data-hsn="' + escapeHtml(p.hsn_code || '') + '" ' +
+                                            'data-rate="' + price + '">' +
+                                            escapeHtml(p.product_name) + ' (₹' + price.toFixed(2) + ')</option>';
+                                });
+                            }
+                            prodSelect.html(prodHtml);
+
+                            // 3. Update quotation number if in add mode
+                            <?php if ($mode === 'add') { ?>
+                                if (res.quotation_no) {
+                                    $('#quotation_no').val(res.quotation_no);
+                                }
+                            <?php } ?>
+                        } else {
+                            prodSelect.html('<option value="">-- Select Product --</option>');
+                        }
+
+                        partySelect.html(partyHtml);
+
+                        if ($.fn.select2) {
+                            partySelect.trigger('change.select2');
+                            prodSelect.trigger('change.select2');
+                        }
+
+                        updateProductDropdown();
+                    },
+                    error: function() {
+                        partySelect.html('<option value="">-- Select Party --</option>');
+                        prodSelect.html('<option value="">-- Select Product --</option>');
+                    }
+                });
+            } else {
+                partySelect.html('<option value="">-- Select Party --</option>');
+                prodSelect.html('<option value="">-- Select Product --</option>');
+                if ($.fn.select2) {
+                    partySelect.trigger('change.select2');
+                    prodSelect.trigger('change.select2');
+                }
+            }
+
+            // Clear party details
+            $('#party_name').val('');
+            $('#gst_no').val('');
+            $('#address').val('');
+            $('#input_hsn').val('');
+            $('#input_rate').val('');
+        });
 
         // When Party Selected from Dropdown
         $('#party_select').change(function() {
@@ -668,18 +841,34 @@ if ($selected_state_id > 0) {
         $('#btnAddItem').click(function(e) {
             e.preventDefault();
             var selected = $('#product_select').find('option:selected');
+            var prodId = parseInt(selected.val()) || 0;
             var desc = selected.data('title') || (selected.val() ? selected.text().trim() : '');
             var hsn = $('#input_hsn').val().trim();
             var rate = parseFloat($('#input_rate').val()) || 0;
             var gstPct = parseFloat($('#input_gst_pct').val()) || 0;
 
-            if (!selected.val() || desc === '') {
+            if (!prodId || desc === '') {
                 alert('Please select a Product!');
                 $('#product_select').focus();
                 return false;
             }
 
+            // Check if product is already added in the table
+            var normDesc = $.trim(desc).toLowerCase();
+            var alreadyExists = itemsList.some(function(item) {
+                var matchId = (prodId > 0 && item.product_id > 0 && item.product_id === prodId);
+                var matchDesc = (item.description && $.trim(item.description).toLowerCase() === normDesc);
+                return matchId || matchDesc;
+            });
+
+            if (alreadyExists) {
+                alert('This product (' + desc + ') has already been added to the quotation!');
+                $('#product_select').val('').trigger('change');
+                return false;
+            }
+
             itemsList.push({
+                product_id: prodId,
                 description: desc,
                 hsn_code: hsn,
                 rate: rate,
@@ -693,6 +882,7 @@ if ($selected_state_id > 0) {
             $('#input_rate').val('');
 
             renderTable();
+            updateProductDropdown();
         });
 
         // Update item quantity
@@ -709,11 +899,37 @@ if ($selected_state_id > 0) {
             var index = $(this).data('index');
             itemsList.splice(index, 1);
             renderTable();
+            updateProductDropdown();
         });
 
         // GST Type or State change recalculation
         $('#gst_type, #state_id').change(function() {
             calculateTotals();
+        });
+
+        // Form Submit Validation (including GST validation)
+        $('#quotationForm').on('submit', function(e) {
+            var gstVal = $('#gst_no').val().trim().toUpperCase();
+            var gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
+            if (gstVal !== '' && !gstRegex.test(gstVal)) {
+                e.preventDefault();
+                alert('Please enter a valid 15-character GST Number (e.g. 24AAAAA0000A1Z5)!');
+                $('#gst_no').focus();
+                return false;
+            }
+
+            if (itemsList.length === 0) {
+                e.preventDefault();
+                alert('Please add at least one product item to the quotation!');
+                $('#product_select').focus();
+                return false;
+            }
+        });
+
+        // Auto uppercase GST No on typing
+        $('#gst_no').on('input', function() {
+            $(this).val($(this).val().toUpperCase());
         });
 
         // Render Table Rows
@@ -730,6 +946,7 @@ if ($selected_state_id > 0) {
                         '<td>' + (i + 1) + '</td>' +
                         '<td class="text-start">' +
                             '<strong>' + escapeHtml(item.description) + '</strong>' +
+                            '<input type="hidden" name="item_product_id[]" value="' + (item.product_id || 0) + '">' +
                             '<input type="hidden" name="item_description[]" value="' + escapeHtml(item.description) + '">' +
                         '</td>' +
                         '<td>' +
@@ -823,7 +1040,7 @@ if ($selected_state_id > 0) {
         }
 
         function escapeHtml(text) {
-            return text ? text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
+            return text ? String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
         }
     });
     </script>

@@ -303,6 +303,68 @@ if (isset($_POST['action']) && $_POST['action'] == 'get_party_details') {
     exit;
 }
 
+if (isset($_POST['action']) && $_POST['action'] == 'check_product_duplicate') {
+    $company_id   = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
+    $product_name = addslashes(trim($_POST['product_name'] ?? ''));
+    $hsn_code     = addslashes(trim($_POST['hsn_code'] ?? ''));
+    $id           = intval($_POST['id'] ?? 0);
 
+    $id_cond = ($id > 0) ? " AND id != '$id'" : "";
 
+    if (!empty($product_name)) {
+        $check = $ai_db->aiGetQueryObj("SELECT id FROM tbl_product WHERE company_id = '$company_id' AND LOWER(product_name) = '" . strtolower($product_name) . "' $id_cond LIMIT 1");
+        if (!empty($check)) {
+            echo json_encode(['status' => 'duplicate', 'field' => 'product_name', 'message' => 'Product Name already exists for this company!']);
+            exit;
+        }
+    }
 
+    if (!empty($hsn_code)) {
+        $check = $ai_db->aiGetQueryObj("SELECT id FROM tbl_product WHERE company_id = '$company_id' AND LOWER(hsn_code) = '" . strtolower($hsn_code) . "' $id_cond LIMIT 1");
+        if (!empty($check)) {
+            echo json_encode(['status' => 'duplicate', 'field' => 'hsn_code', 'message' => 'HSN Code already exists for this company!']);
+            exit;
+        }
+    }
+
+    echo json_encode(['status' => 'clean']);
+    exit;
+}
+
+if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_quotation_no') {
+    $company_id = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
+
+    // 1. Fetch parties for this company
+    $parties = [];
+    $products = [];
+    if ($company_id > 0) {
+        $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND company_id='$company_id' ORDER BY party_name ASC");
+        $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price FROM tbl_product WHERE status='active' AND company_id='$company_id' ORDER BY product_name ASC");
+    }
+
+    // 2. Generate Next Quotation No for this company
+    $currentYear = date('y');
+    $nextYear = date('y', strtotime('+1 year'));
+    $fy = $currentYear . '-' . $nextYear;
+
+    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation WHERE company_id='$company_id' ORDER BY id DESC LIMIT 1");
+    $nextNum = 1;
+    if (!empty($maxRow)) {
+        $qNo = $maxRow[0]->quotation_no;
+        if (preg_match('~/(\d+)/~', $qNo, $matches)) {
+            $nextNum = intval($matches[1]) + 1;
+        } else {
+            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation WHERE company_id='$company_id'")) + 1;
+        }
+    }
+
+    $quotation_no = 'OQ/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+
+    echo json_encode([
+        'status'       => 'success',
+        'parties'      => $parties,
+        'products'     => $products,
+        'quotation_no' => $quotation_no
+    ]);
+    exit;
+}

@@ -37,35 +37,43 @@ if (!$isLoginPage && !$isLoggedIn) {
 
             if (
                 is_array($ai_page_perm)
-                && ($ai_page_perm['user_type'] ?? '') === 'user'
                 && $currentPage !== 'index.php'
                 && $currentPage !== 'dashboard.php'
             ) {
-                $mode = strtolower($_REQUEST['mode'] ?? '');
-                if ($mode === '' && $currentPage === 'manage-role-permission.php') {
-                    $mode = 'edit';
-                }
-                $hasAnyPermission = !empty($ai_page_perm['can_view'])
-                    || !empty($ai_page_perm['can_add'])
-                    || !empty($ai_page_perm['can_edit'])
-                    || !empty($ai_page_perm['can_delete']);
-
-                $allowed = true;
-                if ($mode === 'add') {
-                    $allowed = !empty($ai_page_perm['can_add']);
-                } elseif ($mode === 'edit') {
-                    $allowed = !empty($ai_page_perm['can_edit']);
-                } elseif ($mode === 'delete') {
-                    $allowed = !empty($ai_page_perm['can_delete']);
-                } elseif (($ai_page_perm['module_key'] ?? '') !== '' && !$hasAnyPermission) {
-                    $allowed = false;
-                }
-
-                if (!$allowed) {
+                // If company user tries to access manage_company pages (list/form), redirect to dashboard
+                if (($ai_page_perm['user_type'] ?? '') === 'company' && ($ai_page_perm['module_key'] ?? '') === 'manage_company') {
                     $ai_core->aiGoPage('dashboard.php');
+                    exit;
+                }
+
+                if (($ai_page_perm['user_type'] ?? '') === 'user') {
+                    $mode = strtolower($_REQUEST['mode'] ?? '');
+                    if ($mode === '' && $currentPage === 'manage-role-permission.php') {
+                        $mode = 'edit';
+                    }
+                    $hasAnyPermission = !empty($ai_page_perm['can_view'])
+                        || !empty($ai_page_perm['can_add'])
+                        || !empty($ai_page_perm['can_edit'])
+                        || !empty($ai_page_perm['can_delete']);
+
+                    $allowed = true;
+                    if ($mode === 'add') {
+                        $allowed = !empty($ai_page_perm['can_add']);
+                    } elseif ($mode === 'edit') {
+                        $allowed = !empty($ai_page_perm['can_edit']);
+                    } elseif ($mode === 'delete') {
+                        $allowed = !empty($ai_page_perm['can_delete']);
+                    } elseif (($ai_page_perm['module_key'] ?? '') !== '' && !$hasAnyPermission) {
+                        $allowed = false;
+                    }
+
+                    if (!$allowed) {
+                        $ai_core->aiGoPage('dashboard.php');
+                        exit;
+                    }
                 }
             }
-            $ai_hide_add_links = ($ai_page_perm['user_type'] ?? '') === 'user' && empty($ai_page_perm['can_add']);
+            $ai_hide_add_links = ((($ai_page_perm['user_type'] ?? '') === 'user' && empty($ai_page_perm['can_add'])) || (($ai_page_perm['user_type'] ?? '') === 'company' && ($ai_page_perm['module_key'] ?? '') === 'manage_company'));
         }
     }
 

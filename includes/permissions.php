@@ -46,6 +46,7 @@ function ai_perm_detect_user_type($ai_db)
 
     if (!empty($compRow) && empty($adminRow)) {
         $_SESSION['user_type'] = 'company';
+        $_SESSION['company_id'] = (int)$compRow[0]->id;
         return 'company';
     }
     if (!empty($adminRow)) {
@@ -100,6 +101,18 @@ function ai_perm_get_current_page_permissions($ai_db, $sidebarMenu, $currentPage
     $moduleKey = ai_perm_find_module_key($sidebarMenu, $currentPage);
 
     if ($userType !== 'user') {
+        // If company user tries to access manage_company, deny access
+        if ($userType === 'company' && $moduleKey === 'manage_company') {
+            return [
+                'user_type' => $userType,
+                'module_key' => $moduleKey,
+                'can_view' => 0,
+                'can_add' => 0,
+                'can_edit' => 0,
+                'can_delete' => 0
+            ];
+        }
+
         return [
             'user_type' => $userType,
             'module_key' => $moduleKey,

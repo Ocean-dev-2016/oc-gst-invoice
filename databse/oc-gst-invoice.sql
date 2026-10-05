@@ -392,7 +392,9 @@ CREATE TABLE `tbl_party` (
   `city_id` int(11) NOT NULL DEFAULT 0,
   `pincode` varchar(20) DEFAULT '',
   `mobile_no` varchar(20) DEFAULT '',
+  `email` varchar(150) DEFAULT '',
   `gst_no` varchar(50) DEFAULT '',
+  `pan_no` varchar(20) DEFAULT '',
   `party_status` varchar(50) DEFAULT 'Registered',
   `status` enum('active','deactive') DEFAULT 'active',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
@@ -402,8 +404,8 @@ CREATE TABLE `tbl_party` (
 -- Dumping data for table `tbl_party`
 --
 
-INSERT INTO `tbl_party` (`id`, `company_id`, `party_name`, `address`, `state_id`, `city_id`, `pincode`, `mobile_no`, `gst_no`, `party_status`, `status`, `created_at`) VALUES
-(1, 1, 'Riddhi Butani', 'rajkot', 7, 64, '360004', '9984035620', '', 'Sales', 'active', '2026-09-17 12:38:31');
+INSERT INTO `tbl_party` (`id`, `company_id`, `party_name`, `address`, `state_id`, `city_id`, `pincode`, `mobile_no`, `email`, `gst_no`, `pan_no`, `party_status`, `status`, `created_at`) VALUES
+(1, 1, 'Riddhi Butani', 'rajkot', 7, 64, '360004', '9984035620', '', '', '', 'Sales', 'active', '2026-09-17 12:38:31');
 
 -- --------------------------------------------------------
 
