@@ -21,14 +21,20 @@ $states = $ai_db->aiGetQueryObj("SELECT id, state_name, state_code FROM tbl_stat
 
 // ===================== ADD =====================
 if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit']))) {
-    $company_id = intval($_POST['company_id'] ?? 0);
+    $company_id = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
+    // If company user, always enforce their own company_id
+    if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id'])) {
+        $company_id = intval($_SESSION['company_id']);
+    }
     $party_name = addslashes(trim($_POST['party_name'] ?? ''));
     $address = addslashes(trim($_POST['address'] ?? ''));
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
     $pincode = addslashes(trim($_POST['pincode'] ?? ''));
     $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
+    $email = addslashes(trim($_POST['email'] ?? ''));
     $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
+    $pan_no = addslashes(strtoupper(trim($_POST['pan_no'] ?? '')));
     $party_status = addslashes(trim($_POST['party_status'] ?? 'Sales'));
     $status = $_POST['status'] ?? 'active';
 
@@ -38,6 +44,10 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
         $err_msg = "Please select Company!";
     } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {
         $err_msg = "Mobile Number must be exactly 10 digits!";
+    } elseif (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $err_msg = "Please enter a valid Email Address!";
+    } elseif (!empty($pan_no) && !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/', $pan_no)) {
+        $err_msg = "PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F)!";
     } else {
         // Duplicate check under same company
         $check_dup = $ai_db->aiGetQueryObj("SELECT id FROM $table WHERE company_id='" . $company_id . "' AND LOWER(party_name)='" . strtolower($party_name) . "' LIMIT 1");
@@ -52,7 +62,9 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
                 city_id='" . $city_id . "',
                 pincode='" . $pincode . "',
                 mobile_no='" . $mobile_no . "',
+                email='" . $email . "',
                 gst_no='" . $gst_no . "',
+                pan_no='" . $pan_no . "',
                 party_status='" . $party_status . "',
                 status='" . $status . "'";
 
@@ -65,14 +77,20 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
 
 // ===================== EDIT =====================
 if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit']))) {
-    $company_id = intval($_POST['company_id'] ?? 0);
+    $company_id = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
+    // If company user, always enforce their own company_id
+    if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id'])) {
+        $company_id = intval($_SESSION['company_id']);
+    }
     $party_name = addslashes(trim($_POST['party_name'] ?? ''));
     $address = addslashes(trim($_POST['address'] ?? ''));
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
     $pincode = addslashes(trim($_POST['pincode'] ?? ''));
     $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
+    $email = addslashes(trim($_POST['email'] ?? ''));
     $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
+    $pan_no = addslashes(strtoupper(trim($_POST['pan_no'] ?? '')));
     $party_status = addslashes(trim($_POST['party_status'] ?? 'Sales'));
     $status = $_POST['status'] ?? 'active';
 
@@ -82,6 +100,10 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
         $err_msg = "Please select Company!";
     } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {
         $err_msg = "Mobile Number must be exactly 10 digits!";
+    } elseif (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $err_msg = "Please enter a valid Email Address!";
+    } elseif (!empty($pan_no) && !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/', $pan_no)) {
+        $err_msg = "PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F)!";
     } else {
         // Duplicate check excluding current ID
         $check_dup = $ai_db->aiGetQueryObj("SELECT id FROM $table WHERE company_id='" . $company_id . "' AND LOWER(party_name)='" . strtolower($party_name) . "' AND id!='" . intval($id) . "' LIMIT 1");
@@ -96,7 +118,9 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
                 city_id='" . $city_id . "',
                 pincode='" . $pincode . "',
                 mobile_no='" . $mobile_no . "',
+                email='" . $email . "',
                 gst_no='" . $gst_no . "',
+                pan_no='" . $pan_no . "',
                 party_status='" . $party_status . "',
                 status='" . $status . "'
                 WHERE id='" . intval($id) . "'";
@@ -159,19 +183,36 @@ if ($selected_state_id > 0) {
                                         <input type="hidden" name="id" id="cat_id" value="<?= $categoryData->id ?? $id ?>">
 
                                         <div class="row g-3">
-                                            <!-- Select Company -->
+                                             <!-- Select Company -->
                                             <div class="col-md-6">
                                                 <label class="form-label">Company Name <span class="text-danger">*</span></label>
-                                                <select name="company_id" id="company_id" class="form-select select2" required>
-                                                    <option value="">-- Select Company --</option>
-                                                    <?php if (!empty($companies)) {
-                                                        foreach ($companies as $comp) { ?>
-                                                            <option value="<?= $comp->id ?>" <?= ($selected_company_id == $comp->id) ? 'selected' : '' ?>>
-                                                                <?= htmlspecialchars($comp->company_name) ?>
-                                                            </option>
-                                                        <?php }
-                                                    } ?>
-                                                </select>
+                                                <?php if (($_SESSION['user_type'] ?? '') === 'company' && !empty($selected_company_id)) { ?>
+                                                    <!-- For Company user: locked to their own company -->
+                                                    <input type="hidden" name="company_id" id="company_id" value="<?= (int)$selected_company_id ?>">
+                                                    <select class="form-select select2" disabled>
+                                                        <?php if (!empty($companies)) {
+                                                            foreach ($companies as $comp) {
+                                                                if ($selected_company_id == $comp->id) { ?>
+                                                                    <option value="<?= $comp->id ?>" selected>
+                                                                        <?= htmlspecialchars($comp->company_name) ?>
+                                                                    </option>
+                                                                <?php }
+                                                            }
+                                                        } ?>
+                                                    </select>
+                                                <?php } else { ?>
+                                                    <!-- For Admin / other users: full dropdown -->
+                                                    <select name="company_id" id="company_id" class="form-select select2" required>
+                                                        <option value="">-- Select Company --</option>
+                                                        <?php if (!empty($companies)) {
+                                                            foreach ($companies as $comp) { ?>
+                                                                <option value="<?= $comp->id ?>" <?= ($selected_company_id == $comp->id) ? 'selected' : '' ?>>
+                                                                    <?= htmlspecialchars($comp->company_name) ?>
+                                                                </option>
+                                                            <?php }
+                                                        } ?>
+                                                    </select>
+                                                <?php } ?>
                                             </div>
 
                                             <!-- Party Name -->
@@ -226,13 +267,25 @@ if ($selected_state_id > 0) {
                                             <!-- Mobile No -->
                                             <div class="col-md-4">
                                                 <label class="form-label">Mobile No.</label>
-                                                <input type="text" name="mobile_no" class="form-control" placeholder="Enter mobile number" value="<?= htmlspecialchars($_POST['mobile_no'] ?? $categoryData->mobile_no ?? '') ?>">
+                                                <input type="text" name="mobile_no" class="form-control" placeholder="Enter mobile number" value="<?= htmlspecialchars($_POST['mobile_no'] ?? $categoryData->mobile_no ?? '') ?>" maxlength="10">
+                                            </div>
+
+                                            <!-- Email -->
+                                            <div class="col-md-4">
+                                                <label class="form-label">Email Address</label>
+                                                <input type="email" name="email" class="form-control" placeholder="Enter email address" value="<?= htmlspecialchars($_POST['email'] ?? $categoryData->email ?? '') ?>">
                                             </div>
 
                                             <!-- GST IN No -->
                                             <div class="col-md-4">
                                                 <label class="form-label">GST IN No.</label>
                                                 <input type="text" name="gst_no" class="form-control" placeholder="Enter GST in number" value="<?= htmlspecialchars($_POST['gst_no'] ?? $categoryData->gst_no ?? '') ?>">
+                                            </div>
+
+                                            <!-- PAN No -->
+                                            <div class="col-md-4">
+                                                <label class="form-label">PAN No.</label>
+                                                <input type="text" name="pan_no" class="form-control text-uppercase" placeholder="Enter PAN number (e.g. ABCDE1234F)" value="<?= htmlspecialchars($_POST['pan_no'] ?? $categoryData->pan_no ?? '') ?>" maxlength="10" style="text-transform: uppercase;">
                                             </div>
 
                                             <!-- Party Status -->
@@ -344,6 +397,9 @@ if ($selected_state_id > 0) {
                 var companyId = $('#company_id').val();
                 var partyName = $('input[name="party_name"]').val().trim();
                 var mobileNo = $('input[name="mobile_no"]').val().trim();
+                var email = $('input[name="email"]').val().trim();
+                var panNo = $('input[name="pan_no"]').val().trim().toUpperCase();
+                $('input[name="pan_no"]').val(panNo);
 
                 function showToastError(msg) {
                     if (typeof Swal !== 'undefined') {
@@ -377,6 +433,18 @@ if ($selected_state_id > 0) {
                 if (mobileNo !== '' && !/^[0-9]{10}$/.test(mobileNo)) {
                     e.preventDefault();
                     showToastError('Mobile Number must be exactly 10 digits!');
+                    return false;
+                }
+
+                if (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                    e.preventDefault();
+                    showToastError('Please enter a valid Email Address!');
+                    return false;
+                }
+
+                if (panNo !== '' && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(panNo)) {
+                    e.preventDefault();
+                    showToastError('PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F)!');
                     return false;
                 }
 

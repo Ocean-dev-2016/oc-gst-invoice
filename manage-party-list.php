@@ -71,13 +71,19 @@ $team = $ai_db->aiGetQueryObj($qry);
                                                         <span class="badge bg-label-primary"><?= htmlspecialchars($cat->company_name ?? 'N/A') ?></span>
                                                     </td>
 
-                                                    <!-- Contact / GST -->
+                                                    <!-- Contact / GST / PAN -->
                                                     <td class="text-start">
                                                         <?php if (!empty($cat->mobile_no)) { ?>
                                                             <div><i class="ti ti-phone me-1"></i><?= htmlspecialchars($cat->mobile_no) ?></div>
                                                         <?php } ?>
+                                                        <?php if (!empty($cat->email)) { ?>
+                                                            <div class="small"><i class="ti ti-mail me-1"></i><?= htmlspecialchars($cat->email) ?></div>
+                                                        <?php } ?>
                                                         <?php if (!empty($cat->gst_no)) { ?>
                                                             <div class="small text-muted"><i class="ti ti-receipt-tax me-1"></i>GST: <?= htmlspecialchars($cat->gst_no) ?></div>
+                                                        <?php } ?>
+                                                        <?php if (!empty($cat->pan_no)) { ?>
+                                                            <div class="small text-muted"><i class="ti ti-id me-1"></i>PAN: <?= htmlspecialchars($cat->pan_no) ?></div>
                                                         <?php } ?>
                                                     </td>
 

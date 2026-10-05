@@ -28,10 +28,21 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
     if (empty($product_name)) {
         $err_msg = "Please enter Product Name!";
     } else {
-        // Duplicate check
-        $check_dup = $ai_db->aiGetQueryObj("SELECT id FROM $table WHERE LOWER(product_name)='" . strtolower($product_name) . "' AND company_id='" . $company_id . "' LIMIT 1");
+        // Duplicate check (product_name OR hsn_code per company)
+        $dup_conds = ["LOWER(product_name)='" . strtolower($product_name) . "'"];
+        if (!empty($hsn_code)) {
+            $dup_conds[] = "LOWER(hsn_code)='" . strtolower($hsn_code) . "'";
+        }
+
+        $check_dup = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code FROM $table WHERE company_id='" . $company_id . "' AND (" . implode(" OR ", $dup_conds) . ") LIMIT 1");
         if (!empty($check_dup)) {
-            $err_msg = "Product Name '$product_name' already exists!";
+            if (strtolower($check_dup[0]->product_name) === strtolower($product_name)) {
+                $err_msg = "Product Name '$product_name' already exists!";
+            } elseif (!empty($hsn_code) && strtolower($check_dup[0]->hsn_code) === strtolower($hsn_code)) {
+                $err_msg = "HSN Code '$hsn_code' already exists for this company!";
+            } else {
+                $err_msg = "Product already exists with given details!";
+            }
         } else {
             $add_qry = "INSERT INTO $table SET 
                 company_id='" . $company_id . "',
@@ -61,9 +72,20 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
         $err_msg = "Please enter Product Name!";
     } else {
         // Duplicate check excluding current ID
-        $check_dup = $ai_db->aiGetQueryObj("SELECT id FROM $table WHERE LOWER(product_name)='" . strtolower($product_name) . "' AND company_id='" . $company_id . "' AND id!='" . intval($id) . "' LIMIT 1");
+        $dup_conds = ["LOWER(product_name)='" . strtolower($product_name) . "'"];
+        if (!empty($hsn_code)) {
+            $dup_conds[] = "LOWER(hsn_code)='" . strtolower($hsn_code) . "'";
+        }
+
+        $check_dup = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code FROM $table WHERE company_id='" . $company_id . "' AND (" . implode(" OR ", $dup_conds) . ") AND id!='" . intval($id) . "' LIMIT 1");
         if (!empty($check_dup)) {
-            $err_msg = "Product Name '$product_name' already exists!";
+            if (strtolower($check_dup[0]->product_name) === strtolower($product_name)) {
+                $err_msg = "Product Name '$product_name' already exists!";
+            } elseif (!empty($hsn_code) && strtolower($check_dup[0]->hsn_code) === strtolower($hsn_code)) {
+                $err_msg = "HSN Code '$hsn_code' already exists for this company!";
+            } else {
+                $err_msg = "Product already exists with given details!";
+            }
         } else {
             $edit_qry = "UPDATE $table SET 
                 company_id='" . $company_id . "',
@@ -225,6 +247,9 @@ $selected_company_id = $_POST['company_id'] ?? $categoryData->company_id ?? ($_S
             $('#mainForm').on('submit', function(e) {
                 var form = this;
                 var productName = $('input[name="product_name"]').val().trim();
+                var hsnCode = $('input[name="hsn_code"]').val().trim();
+                var companyId = $('select[name="company_id"]').val() || '<?= (int)($_SESSION['company_id'] ?? 0) ?>';
+                var catId = $('input[name="id"]').val() || 0;
 
                 function showToastError(msg) {
                     if (typeof Swal !== 'undefined') {
@@ -253,8 +278,38 @@ $selected_company_id = $_POST['company_id'] ?? $categoryData->company_id ?? ($_S
                     return true;
                 }
 
-                $(form).data('valid', true);
-                HTMLFormElement.prototype.submit.call(form);
+                e.preventDefault();
+
+                // AJAX duplicate check for product_name & hsn_code
+                $.ajax({
+                    url: 'ajax.php',
+                    type: 'POST',
+                    dataType: 'json',
+                    data: {
+                        action: 'check_product_duplicate',
+                        company_id: companyId,
+                        product_name: productName,
+                        hsn_code: hsnCode,
+                        id: catId
+                    },
+                    success: function(res) {
+                        if (res.status === 'duplicate') {
+                            showToastError(res.message);
+                            if (res.field === 'hsn_code') {
+                                $('input[name="hsn_code"]').focus();
+                            } else {
+                                $('input[name="product_name"]').focus();
+                            }
+                        } else {
+                            $(form).data('valid', true);
+                            HTMLFormElement.prototype.submit.call(form);
+                        }
+                    },
+                    error: function() {
+                        $(form).data('valid', true);
+                        HTMLFormElement.prototype.submit.call(form);
+                    }
+                });
             });
         });
     </script>

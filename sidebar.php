@@ -21,6 +21,7 @@ if (!function_exists('ai_detect_user_type')) {
 
         if (!empty($compRow) && empty($adminRow)) {
             $_SESSION['user_type'] = 'company';
+            $_SESSION['company_id'] = (int)$compRow[0]->id;
             return 'company';
         }
         if (!empty($adminRow)) {
@@ -163,7 +164,7 @@ if (!function_exists('ai_filter_sidebar_menu')) {
 
 $userType = isset($ai_db) ? ai_detect_user_type($ai_db) : ($_SESSION['user_type'] ?? 'admin');
 $isUserLogin = $userType === 'user';
-$isSuperUser = !$isUserLogin;
+$isSuperUser = ($userType !== 'user');
 $permMap = [];
 if ($isUserLogin && isset($ai_db)) {
     $permMap = ai_get_role_permissions_map($ai_db);
@@ -172,6 +173,13 @@ if ($isUserLogin && isset($ai_db)) {
     }
 }
 $renderMenu = ai_filter_sidebar_menu($sidebarMenu, $permMap, $isSuperUser);
+
+// Only hide Manage Company if current logged in user is a company user
+if ($userType === 'company') {
+    $renderMenu = array_values(array_filter($renderMenu, function($item) {
+        return ($item['key'] ?? '') !== 'manage_company';
+    }));
+}
 ?>
 
 
