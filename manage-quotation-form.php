@@ -22,6 +22,7 @@ $ai_db->aiQuery("CREATE TABLE IF NOT EXISTS `tbl_quotation` (
   `city_id` int(11) DEFAULT 0,
   `city_name` varchar(100) DEFAULT '',
   `quotation_date` date DEFAULT NULL,
+  `due_date` date DEFAULT NULL,
   `gst_type` varchar(20) DEFAULT 'with_gst',
   `total_amount` decimal(12,2) DEFAULT 0.00,
   `cgst_amount` decimal(12,2) DEFAULT 0.00,
@@ -29,10 +30,21 @@ $ai_db->aiQuery("CREATE TABLE IF NOT EXISTS `tbl_quotation` (
   `igst_amount` decimal(12,2) DEFAULT 0.00,
   `tax_amount` decimal(12,2) DEFAULT 0.00,
   `grand_total` decimal(12,2) DEFAULT 0.00,
+  `payment_status` enum('Pending','Paid') NOT NULL DEFAULT 'Pending',
   `status` varchar(20) DEFAULT 'active',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+// Check if columns exist
+$colCheckForm = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation LIKE 'payment_status'");
+if ($colCheckForm && mysqli_num_rows($colCheckForm) === 0) {
+    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation ADD COLUMN `payment_status` ENUM('Pending','Paid') NOT NULL DEFAULT 'Pending' AFTER `grand_total`");
+}
+$colCheckDue = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation LIKE 'due_date'");
+if ($colCheckDue && mysqli_num_rows($colCheckDue) === 0) {
+    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation ADD COLUMN `due_date` DATE NULL DEFAULT NULL AFTER `quotation_date`");
+}
 
 $ai_db->aiQuery("CREATE TABLE IF NOT EXISTS `tbl_quotation_items` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -42,12 +54,22 @@ $ai_db->aiQuery("CREATE TABLE IF NOT EXISTS `tbl_quotation_items` (
   `hsn_code` varchar(50) DEFAULT '',
   `rate` decimal(12,2) DEFAULT 0.00,
   `gst_percent` decimal(5,2) DEFAULT 0.00,
+  `discount_type` enum('percentage','fixed') NOT NULL DEFAULT 'percentage',
+  `discount_value` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `discount_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `qty` decimal(10,2) DEFAULT 1.00,
   `net_amount` decimal(12,2) DEFAULT 0.00,
   `tax_amount` decimal(12,2) DEFAULT 0.00,
   `total_amount` decimal(12,2) DEFAULT 0.00,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+$colCheckDisc = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation_items LIKE 'discount_type'");
+if ($colCheckDisc && mysqli_num_rows($colCheckDisc) === 0) {
+    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation_items ADD COLUMN `discount_type` ENUM('percentage','fixed') NOT NULL DEFAULT 'percentage' AFTER `gst_percent`");
+    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation_items ADD COLUMN `discount_value` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `discount_type`");
+    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation_items ADD COLUMN `discount_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER `discount_value`");
+}
 
 $mode = $_REQUEST['mode'] ?? 'add';
 $id = isset($_REQUEST['id']) ? intval($_REQUEST['id']) : 0;
@@ -58,9 +80,25 @@ $quotationItems = [];
 
 // Auto Generate Quotation No company wise if mode=add
 function generateQuotationNo($ai_db, $company_id = 0) {
+    if (function_exists('generateCompanyQuotationNo')) {
+        return generateCompanyQuotationNo($ai_db, $company_id);
+    }
     $currentYear = date('y');
     $nextYear = date('y', strtotime('+1 year'));
     $fy = $currentYear . '-' . $nextYear;
+    
+    $prefix = 'OQ';
+    if ($company_id > 0) {
+        $compRow = $ai_db->aiGetQueryObj("SELECT company_name FROM tbl_company WHERE id='$company_id' LIMIT 1");
+        if (!empty($compRow) && !empty($compRow[0]->company_name)) {
+            $words = preg_split('/\s+/', trim(preg_replace('/[^a-zA-Z0-9\s]/', '', $compRow[0]->company_name)), -1, PREG_SPLIT_NO_EMPTY);
+            if (count($words) >= 2) {
+                $prefix = strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
+            } else {
+                $prefix = strtoupper(substr($words[0], 0, min(2, strlen($words[0]))));
+            }
+        }
+    }
     
     $whereComp = ($company_id > 0) ? "WHERE company_id='$company_id'" : "";
     $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation $whereComp ORDER BY id DESC LIMIT 1");
@@ -74,7 +112,7 @@ function generateQuotationNo($ai_db, $company_id = 0) {
         }
     }
     
-    return 'OQ/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+    return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
 }
 
 $userType = $_SESSION['user_type'] ?? '';
@@ -114,6 +152,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $city_id = intval($_POST['city_id'] ?? 0);
     $city_name = addslashes(trim($_POST['city_name'] ?? ''));
     $quotation_date = !empty($_POST['quotation_date']) ? date('Y-m-d', strtotime($_POST['quotation_date'])) : date('Y-m-d');
+    $due_date = !empty($_POST['due_date']) ? date('Y-m-d', strtotime($_POST['due_date'])) : null;
+    $due_date_sql = $due_date ? "'$due_date'" : "NULL";
     $gst_type = addslashes(trim($_POST['gst_type'] ?? 'with_gst')); // with_gst OR without_gst
     
     $total_amount = floatval($_POST['total_amount'] ?? 0);
@@ -122,6 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $igst_amount = floatval($_POST['igst_amount'] ?? 0);
     $tax_amount = floatval($_POST['tax_amount'] ?? 0);
     $grand_total = floatval($_POST['grand_total'] ?? 0);
+    $payment_status = (isset($_POST['payment_status']) && $_POST['payment_status'] === 'Paid') ? 'Paid' : 'Pending';
     $status = $_POST['status'] ?? 'active';
 
     // Get State Name
@@ -135,6 +176,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
         $err_msg = "Please enter or select Party Name!";
     } elseif (empty($quotation_no)) {
         $err_msg = "Please enter Quotation Number!";
+    } elseif (!empty($due_date) && !empty($quotation_date) && $due_date < $quotation_date) {
+        $err_msg = "Due Date cannot be earlier than Quotation Date!";
     } elseif (!empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
         $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
@@ -152,6 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 city_id='$city_id',
                 city_name='$city_name',
                 quotation_date='$quotation_date',
+                due_date=$due_date_sql,
                 gst_type='$gst_type',
                 total_amount='$total_amount',
                 cgst_amount='$cgst_amount',
@@ -159,6 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 igst_amount='$igst_amount',
                 tax_amount='$tax_amount',
                 grand_total='$grand_total',
+                payment_status='$payment_status',
                 status='$status'";
 
             $ai_db->aiQuery($insert_qry);
@@ -173,6 +218,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                     $hsn = addslashes(trim($_POST['item_hsn'][$idx] ?? ''));
                     $rate = floatval($_POST['item_rate'][$idx] ?? 0);
                     $gst_pct = floatval($_POST['item_gst_pct'][$idx] ?? 0);
+                    $disc_type = in_array($_POST['item_discount_type'][$idx] ?? '', ['percentage', 'fixed'], true) ? $_POST['item_discount_type'][$idx] : 'percentage';
+                    $disc_val = floatval($_POST['item_discount_val'][$idx] ?? 0);
+                    $disc_amt = floatval($_POST['item_discount_amt'][$idx] ?? 0);
                     $qty = floatval($_POST['item_qty'][$idx] ?? 1);
                     $net_amt = floatval($_POST['item_net_amt'][$idx] ?? 0);
                     $item_tax = floatval($_POST['item_tax_amt'][$idx] ?? 0);
@@ -185,6 +233,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                         hsn_code='$hsn',
                         rate='$rate',
                         gst_percent='$gst_pct',
+                        discount_type='$disc_type',
+                        discount_value='$disc_val',
+                        discount_amount='$disc_amt',
                         qty='$qty',
                         net_amount='$net_amt',
                         tax_amount='$item_tax',
@@ -193,9 +244,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 }
             }
 
+            // Recalculate party outstanding automatically
+            if ($party_id > 0 && function_exists('recalculatePartyOutstanding')) {
+                recalculatePartyOutstanding($party_id);
+            }
+
             $ai_core->aiGoPage($redirection_url . '?msg=1');
             exit;
         } elseif ($mode === 'edit' && $id > 0) {
+            // Check previous party_id in case party was changed
+            $prevQ = $ai_db->aiGetQueryObj("SELECT party_id FROM tbl_quotation WHERE id='$id' LIMIT 1");
+            $prevPartyId = !empty($prevQ) ? intval($prevQ[0]->party_id) : 0;
+
             $update_qry = "UPDATE tbl_quotation SET
                 company_id='$company_id',
                 party_id='$party_id',
@@ -209,6 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 city_id='$city_id',
                 city_name='$city_name',
                 quotation_date='$quotation_date',
+                due_date=$due_date_sql,
                 gst_type='$gst_type',
                 total_amount='$total_amount',
                 cgst_amount='$cgst_amount',
@@ -216,6 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 igst_amount='$igst_amount',
                 tax_amount='$tax_amount',
                 grand_total='$grand_total',
+                payment_status='$payment_status',
                 status='$status'
                 WHERE id='$id'";
 
@@ -232,6 +294,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                     $hsn = addslashes(trim($_POST['item_hsn'][$idx] ?? ''));
                     $rate = floatval($_POST['item_rate'][$idx] ?? 0);
                     $gst_pct = floatval($_POST['item_gst_pct'][$idx] ?? 0);
+                    $disc_type = in_array($_POST['item_discount_type'][$idx] ?? '', ['percentage', 'fixed'], true) ? $_POST['item_discount_type'][$idx] : 'percentage';
+                    $disc_val = floatval($_POST['item_discount_val'][$idx] ?? 0);
+                    $disc_amt = floatval($_POST['item_discount_amt'][$idx] ?? 0);
                     $qty = floatval($_POST['item_qty'][$idx] ?? 1);
                     $net_amt = floatval($_POST['item_net_amt'][$idx] ?? 0);
                     $item_tax = floatval($_POST['item_tax_amt'][$idx] ?? 0);
@@ -244,12 +309,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                         hsn_code='$hsn',
                         rate='$rate',
                         gst_percent='$gst_pct',
+                        discount_type='$disc_type',
+                        discount_value='$disc_val',
+                        discount_amount='$disc_amt',
                         qty='$qty',
                         net_amount='$net_amt',
                         tax_amount='$item_tax',
                         total_amount='$item_total'";
                     $ai_db->aiQuery($item_qry);
                 }
+            }
+
+            // Recalculate party outstanding (both current party and previous party if changed)
+            if (function_exists('recalculatePartyOutstanding')) {
+                if ($party_id > 0) recalculatePartyOutstanding($party_id);
+                if ($prevPartyId > 0 && $prevPartyId !== $party_id) recalculatePartyOutstanding($prevPartyId);
             }
 
             $ai_core->aiGoPage($redirection_url . '?msg=2');
@@ -368,9 +442,19 @@ if ($selected_state_id > 0) {
 
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h4 class="fw-bold m-0"><?= ($mode === 'edit') ? 'Edit' : 'Add' ?> Quotation</h4>
-                            <a href="<?= $redirection_url ?>" class="btn btn-secondary">
-                                <i class="ti ti-arrow-left me-1"></i> Back to List
-                            </a>
+                            <div class="d-flex gap-2">
+                                <?php if ($mode === 'edit' && $id > 0) { ?>
+                                    <a href="quotation-print.php?id=<?= $id ?>&download=1" target="_blank" class="btn btn-success">
+                                        <i class="ti ti-download me-1"></i> Download PDF
+                                    </a>
+                                    <a href="quotation-print.php?id=<?= $id ?>" target="_blank" class="btn btn-info">
+                                        <i class="ti ti-printer me-1"></i> Print / PDF
+                                    </a>
+                                <?php } ?>
+                                <a href="<?= $redirection_url ?>" class="btn btn-secondary">
+                                    <i class="ti ti-arrow-left me-1"></i> Back to List
+                                </a>
+                            </div>
                         </div>
 
                         <?php if (!empty($err_msg)) { ?>
@@ -484,6 +568,11 @@ if ($selected_state_id > 0) {
                                         <input type="date" name="quotation_date" id="quotation_date" class="form-control" value="<?= htmlspecialchars($quotationData->quotation_date ?? date('Y-m-d')) ?>">
                                     </div>
 
+                                    <div class="col-md-2">
+                                        <label class="form-label fw-bold text-uppercase small text-muted">DUE DATE</label>
+                                        <input type="date" name="due_date" id="due_date" class="form-control" min="<?= htmlspecialchars($quotationData->quotation_date ?? date('Y-m-d')) ?>" value="<?= htmlspecialchars(!empty($quotationData->due_date) ? $quotationData->due_date : date('Y-m-d')) ?>">
+                                    </div>
+
                                     <!-- REQUESTED GST TYPE DROPDOWN -->
                                     <div class="col-md-3">
                                         <label class="form-label fw-bold text-uppercase small text-muted">GST TYPE <span class="text-danger">*</span></label>
@@ -503,7 +592,7 @@ if ($selected_state_id > 0) {
 
                                 <!-- PRODUCT INPUT ROW -->
                                 <div class="row g-2 align-items-end mb-4 bg-light p-3 rounded">
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <label class="form-label fw-bold text-uppercase small text-muted">DESCRIPTION</label>
                                         <select id="product_select" class="form-select select2">
                                             <option value="">-- Select Product --</option>
@@ -523,12 +612,25 @@ if ($selected_state_id > 0) {
                                         <input type="text" id="input_hsn" class="form-control" placeholder="HSN Code">
                                     </div>
 
-                                    <div class="col-md-2">
+                                    <div class="col-md-1">
                                         <label class="form-label fw-bold text-uppercase small text-muted">RATE</label>
                                         <input type="number" step="0.01" id="input_rate" class="form-control" placeholder="Rate">
                                     </div>
 
-                                    <div class="col-md-3">
+                                    <div class="col-md-2">
+                                        <label class="form-label fw-bold text-uppercase small text-muted">DISCOUNT TYPE</label>
+                                        <select id="input_discount_type" class="form-select">
+                                            <option value="percentage">Percentage (%)</option>
+                                            <option value="fixed">Fixed Amount (₹)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="col-md-2">
+                                        <label class="form-label fw-bold text-uppercase small text-muted">DISCOUNT VALUE</label>
+                                        <input type="number" step="0.01" min="0" id="input_discount_val" class="form-control" placeholder="0.00" value="0">
+                                    </div>
+
+                                    <div class="col-md-2">
                                         <label class="form-label fw-bold text-uppercase small text-muted">SELECT GST</label>
                                         <div class="input-group">
                                             <select id="input_gst_pct" class="form-select">
@@ -550,13 +652,15 @@ if ($selected_state_id > 0) {
                                     <table class="table table-bordered align-middle text-center" id="itemsTable">
                                         <thead class="table-light">
                                             <tr>
-                                                <th style="width: 60px;">SR NO.</th>
-                                                <th class="text-start">DESCRIPTION</th>
-                                                <th style="width: 140px;">HSN CODE</th>
-                                                <th style="width: 120px;">RATE</th>
-                                                <th style="width: 100px;">QTY</th>
-                                                <th style="width: 140px;">NET AMOUNT</th>
-                                                <th style="width: 60px;">ACTION</th>
+                                                <th style="width: 5%;">SR NO.</th>
+                                                <th style="width: 25%;" class="text-start">DESCRIPTION</th>
+                                                <th style="width: 10%;">HSN CODE</th>
+                                                <th style="width: 10%;">RATE</th>
+                                                <th style="width: 10%;">QTY</th>
+                                                <th style="width: 15%;">DISCOUNT TYPE</th>
+                                                <th style="width: 10%;">DISCOUNT VALUE</th>
+                                                <th style="width: 10%;">NET AMOUNT</th>
+                                                <th style="width: 5%;">ACTION</th>
                                             </tr>
                                         </thead>
                                         <tbody id="itemsTableBody">
@@ -601,13 +705,30 @@ if ($selected_state_id > 0) {
                                                 <input type="text" name="grand_total" id="grand_total" class="form-control summary-input fs-5 fw-bold text-dark" value="0.00" readonly>
                                             </div>
 
+                                            <!-- Payment Status -->
+                                            <div class="input-group mb-3">
+                                                <span class="summary-label fw-bold" style="background:#f1f5f9;">Payment Status</span>
+                                                <select name="payment_status" id="payment_status" class="form-select summary-input fw-semibold">
+                                                    <option value="Pending" <?= (($quotationData->payment_status ?? 'Pending') === 'Pending') ? 'selected' : '' ?>>⏳ Pending</option>
+                                                    <option value="Paid" <?= (($quotationData->payment_status ?? '') === 'Paid') ? 'selected' : '' ?>>✓ Paid</option>
+                                                </select>
+                                            </div>
+
                                             <!-- ACTION BUTTONS -->
-                                            <div class="pt-4">
-                                            <button type="submit" name="btn_submit" class="btn btn-primary me-sm-3 me-1 waves-effect waves-light" id="btnSubmit">
-                                                <?= ($mode == 'edit') ? 'Update' : 'Submit' ?>
-                                            </button>
-                                            <a href="<?= $redirection_url ?>" class="btn btn-label-secondary waves-effect">Cancel</a>
-                                        </div>
+                                            <div class="pt-4 d-flex align-items-center flex-wrap gap-2">
+                                                <button type="submit" name="btn_submit" class="btn btn-primary waves-effect waves-light" id="btnSubmit">
+                                                    <?= ($mode == 'edit') ? 'Update' : 'Submit' ?>
+                                                </button>
+                                                <?php if ($mode === 'edit' && $id > 0) { ?>
+                                                    <a href="quotation-print.php?id=<?= $id ?>&download=1" target="_blank" class="btn btn-success waves-effect waves-light">
+                                                        <i class="ti ti-download me-1"></i> Download PDF
+                                                    </a>
+                                                    <a href="quotation-print.php?id=<?= $id ?>" target="_blank" class="btn btn-info waves-effect waves-light">
+                                                        <i class="ti ti-printer me-1"></i> Print / PDF
+                                                    </a>
+                                                <?php } ?>
+                                                <a href="<?= $redirection_url ?>" class="btn btn-label-secondary waves-effect">Cancel</a>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -642,6 +763,8 @@ if ($selected_state_id > 0) {
                     hsn_code: <?= json_encode($item->hsn_code) ?>,
                     rate: <?= floatval($item->rate) ?>,
                     gst_percent: <?= floatval($item->gst_percent) ?>,
+                    discount_type: <?= json_encode(!empty($item->discount_type) ? $item->discount_type : 'percentage') ?>,
+                    discount_value: <?= floatval($item->discount_value ?? 0) ?>,
                     qty: <?= floatval($item->qty) ?>
                 });
             <?php } ?>
@@ -777,6 +900,7 @@ if ($selected_state_id > 0) {
             $('#address').val('');
             $('#input_hsn').val('');
             $('#input_rate').val('');
+            $('#input_discount_val').val('0');
         });
 
         // When Party Selected from Dropdown
@@ -846,6 +970,9 @@ if ($selected_state_id > 0) {
             var hsn = $('#input_hsn').val().trim();
             var rate = parseFloat($('#input_rate').val()) || 0;
             var gstPct = parseFloat($('#input_gst_pct').val()) || 0;
+            var discType = $('#input_discount_type').val() || 'percentage';
+            var discVal = parseFloat($('#input_discount_val').val()) || 0;
+            if (discVal < 0) discVal = 0;
 
             if (!prodId || desc === '') {
                 alert('Please select a Product!');
@@ -873,6 +1000,8 @@ if ($selected_state_id > 0) {
                 hsn_code: hsn,
                 rate: rate,
                 gst_percent: gstPct,
+                discount_type: discType,
+                discount_value: discVal,
                 qty: 1
             });
 
@@ -880,6 +1009,7 @@ if ($selected_state_id > 0) {
             $('#product_select').val('').trigger('change');
             $('#input_hsn').val('');
             $('#input_rate').val('');
+            $('#input_discount_val').val('0');
 
             renderTable();
             updateProductDropdown();
@@ -891,6 +1021,22 @@ if ($selected_state_id > 0) {
             var val = parseFloat($(this).val()) || 0;
             if (val < 0) val = 0;
             itemsList[index].qty = val;
+            renderTable();
+        });
+
+        // Update item discount type
+        $(document).on('change', '.item-disc-type-select', function() {
+            var index = $(this).data('index');
+            itemsList[index].discount_type = $(this).val();
+            renderTable();
+        });
+
+        // Update item discount value
+        $(document).on('input change', '.item-disc-val-input', function() {
+            var index = $(this).data('index');
+            var val = parseFloat($(this).val()) || 0;
+            if (val < 0) val = 0;
+            itemsList[index].discount_value = val;
             renderTable();
         });
 
@@ -938,10 +1084,23 @@ if ($selected_state_id > 0) {
             tbody.empty();
 
             if (itemsList.length === 0) {
-                tbody.html('<tr><td colspan="7" class="text-muted py-3">No products added yet. Use the inputs above to add items.</td></tr>');
+                tbody.html('<tr><td colspan="9" class="text-muted py-3">No products added yet. Use the inputs above to add items.</td></tr>');
             } else {
                 $.each(itemsList, function(i, item) {
-                    var netAmt = (item.rate * item.qty);
+                    var baseAmt = (item.rate * item.qty);
+                    var discType = item.discount_type || 'percentage';
+                    var discVal = parseFloat(item.discount_value) || 0;
+                    var discAmt = 0;
+
+                    if (discType === 'percentage') {
+                        discAmt = (baseAmt * discVal) / 100;
+                    } else {
+                        discAmt = Math.min(baseAmt, discVal);
+                    }
+                    if (discAmt > baseAmt) discAmt = baseAmt;
+
+                    var netAmt = baseAmt - discAmt;
+
                     var html = '<tr>' +
                         '<td>' + (i + 1) + '</td>' +
                         '<td class="text-start">' +
@@ -961,9 +1120,20 @@ if ($selected_state_id > 0) {
                         '<td>' +
                             '<input type="number" step="1" min="1" class="form-control form-control-sm text-center item-qty-input" data-index="' + i + '" name="item_qty[]" value="' + item.qty + '">' +
                         '</td>' +
+                        '<td>' +
+                            '<select name="item_discount_type[]" class="form-select form-select-sm text-center item-disc-type-select" data-index="' + i + '">' +
+                                '<option value="percentage"' + (discType === 'percentage' ? ' selected' : '') + '>Percentage (%)</option>' +
+                                '<option value="fixed"' + (discType === 'fixed' ? ' selected' : '') + '>Fixed (₹)</option>' +
+                            '</select>' +
+                        '</td>' +
+                        '<td>' +
+                            '<input type="number" step="0.01" min="0" name="item_discount_val[]" class="form-control form-control-sm text-center item-disc-val-input" data-index="' + i + '" value="' + discVal + '">' +
+                            (discAmt > 0 ? '<div class="text-muted small mt-1" style="font-size:11px;">-₹' + discAmt.toFixed(2) + '</div>' : '') +
+                            '<input type="hidden" name="item_discount_amt[]" class="item-discount-amt" value="' + discAmt.toFixed(2) + '">' +
+                        '</td>' +
                         '<td class="fw-bold">' +
                             netAmt.toFixed(2) +
-                            '<input type="hidden" name="item_net_amt[]" class="item-net-amt" value="' + netAmt + '">' +
+                            '<input type="hidden" name="item_net_amt[]" class="item-net-amt" value="' + netAmt.toFixed(2) + '">' +
                             '<input type="hidden" name="item_tax_amt[]" class="item-tax-amt" value="0">' +
                             '<input type="hidden" name="item_total_amt[]" class="item-total-amt" value="0">' +
                         '</td>' +
@@ -987,7 +1157,19 @@ if ($selected_state_id > 0) {
             var isGujarat = (selectedStateText.indexOf('gujarat') !== -1);
 
             $.each(itemsList, function(i, item) {
-                var net = (item.rate * item.qty);
+                var baseAmt = (item.rate * item.qty);
+                var discType = item.discount_type || 'percentage';
+                var discVal = parseFloat(item.discount_value) || 0;
+                var discAmt = 0;
+
+                if (discType === 'percentage') {
+                    discAmt = (baseAmt * discVal) / 100;
+                } else {
+                    discAmt = Math.min(baseAmt, discVal);
+                }
+                if (discAmt > baseAmt) discAmt = baseAmt;
+
+                var net = baseAmt - discAmt;
                 totalAmt += net;
 
                 var tax = 0;
@@ -997,6 +1179,8 @@ if ($selected_state_id > 0) {
                 totalTax += tax;
 
                 // Update hidden inputs per row
+                $('#itemsTableBody tr').eq(i).find('.item-discount-amt').val(discAmt.toFixed(2));
+                $('#itemsTableBody tr').eq(i).find('.item-net-amt').val(net.toFixed(2));
                 $('#itemsTableBody tr').eq(i).find('.item-tax-amt').val(tax.toFixed(2));
                 $('#itemsTableBody tr').eq(i).find('.item-total-amt').val((net + tax).toFixed(2));
             });
@@ -1038,6 +1222,27 @@ if ($selected_state_id > 0) {
             var grandTotal = totalAmt + (gstType === 'with_gst' ? totalTax : 0);
             $('#grand_total').val(grandTotal.toFixed(2));
         }
+
+        // Synchronize Quotation Date and Due Date (Due date cannot be less than quotation date)
+        $('#quotation_date').on('change', function() {
+            var qDate = $(this).val();
+            if (qDate) {
+                $('#due_date').attr('min', qDate);
+                var curDueDate = $('#due_date').val();
+                if (curDueDate && curDueDate < qDate) {
+                    $('#due_date').val(qDate);
+                }
+            }
+        });
+
+        $('#due_date').on('change', function() {
+            var qDate = $('#quotation_date').val();
+            var dDate = $(this).val();
+            if (qDate && dDate && dDate < qDate) {
+                alert('Due Date cannot be earlier than Quotation Date (' + qDate + ')!');
+                $(this).val(qDate);
+            }
+        });
 
         function escapeHtml(text) {
             return text ? String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';

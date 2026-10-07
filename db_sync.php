@@ -105,36 +105,6 @@ if (tableExists('tbl_company')) {
     } else {
         echo '<div class="log-item log-info">ℹ `tbl_company`.`api_token` column already exists.</div>';
     }
-
-    if (!columnExists('tbl_company', 'shipping_address')) {
-        runMigrationQuery(
-            "ALTER TABLE `tbl_company` ADD COLUMN `shipping_address` TEXT NULL DEFAULT NULL AFTER `address`",
-            "Added `shipping_address` column to `tbl_company` table successfully.",
-            "Failed to add `shipping_address` column to `tbl_company`"
-        );
-    } else {
-        echo '<div class="log-item log-info">ℹ `tbl_company`.`shipping_address` column already exists.</div>';
-    }
-
-    if (!columnExists('tbl_company', 'shipping_state_id')) {
-        runMigrationQuery(
-            "ALTER TABLE `tbl_company` ADD COLUMN `shipping_state_id` BIGINT(20) NULL DEFAULT 0 AFTER `shipping_address`",
-            "Added `shipping_state_id` column to `tbl_company` table successfully.",
-            "Failed to add `shipping_state_id` column to `tbl_company`"
-        );
-    } else {
-        echo '<div class="log-item log-info">ℹ `tbl_company`.`shipping_state_id` column already exists.</div>';
-    }
-
-    if (!columnExists('tbl_company', 'shipping_city_id')) {
-        runMigrationQuery(
-            "ALTER TABLE `tbl_company` ADD COLUMN `shipping_city_id` BIGINT(20) NULL DEFAULT 0 AFTER `shipping_state_id`",
-            "Added `shipping_city_id` column to `tbl_company` table successfully.",
-            "Failed to add `shipping_city_id` column to `tbl_company`"
-        );
-    } else {
-        echo '<div class="log-item log-info">ℹ `tbl_company`.`shipping_city_id` column already exists.</div>';
-    }
 } else {
     echo '<div class="log-item log-warn">⚠ Table `tbl_company` does not exist!</div>';
 }
@@ -161,6 +131,46 @@ if (tableExists('tbl_party')) {
         echo '<div class="log-item log-info">ℹ `tbl_party`.`pincode` column already exists.</div>';
     }
 
+    if (!columnExists('tbl_party', 'shipping_pincode')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `shipping_pincode` VARCHAR(20) NULL DEFAULT '' AFTER `pincode`",
+            "Added `shipping_pincode` column to `tbl_party` table successfully.",
+            "Failed to add `shipping_pincode` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`shipping_pincode` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_party', 'shipping_address')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `shipping_address` TEXT NULL DEFAULT NULL AFTER `shipping_pincode`",
+            "Added `shipping_address` column to `tbl_party` table successfully.",
+            "Failed to add `shipping_address` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`shipping_address` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_party', 'shipping_state_id')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `shipping_state_id` INT(11) NOT NULL DEFAULT 0 AFTER `shipping_address`",
+            "Added `shipping_state_id` column to `tbl_party` table successfully.",
+            "Failed to add `shipping_state_id` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`shipping_state_id` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_party', 'shipping_city_id')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `shipping_city_id` INT(11) NOT NULL DEFAULT 0 AFTER `shipping_state_id`",
+            "Added `shipping_city_id` column to `tbl_party` table successfully.",
+            "Failed to add `shipping_city_id` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`shipping_city_id` column already exists.</div>';
+    }
+
     if (!columnExists('tbl_party', 'pan_no')) {
         runMigrationQuery(
             "ALTER TABLE `tbl_party` ADD COLUMN `pan_no` VARCHAR(20) NULL DEFAULT '' AFTER `gst_no`",
@@ -180,8 +190,125 @@ if (tableExists('tbl_party')) {
     } else {
         echo '<div class="log-item log-info">ℹ `tbl_party`.`party_status` column already exists.</div>';
     }
+
+    if (!columnExists('tbl_party', 'business_type')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `business_type` ENUM('Individual','Business') NOT NULL DEFAULT 'Business' AFTER `party_status`",
+            "Added `business_type` column to `tbl_party` table successfully.",
+            "Failed to add `business_type` column to `tbl_party`"
+        );
+    }
+
+    if (!columnExists('tbl_party', 'opening_balance')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `opening_balance` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `business_type`",
+            "Added `opening_balance` column to `tbl_party` table successfully.",
+            "Failed to add `opening_balance` column to `tbl_party`"
+        );
+    }
+
+    if (!columnExists('tbl_party', 'balance_type')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `balance_type` ENUM('Credit','Debit') NOT NULL DEFAULT 'Debit' AFTER `opening_balance`",
+            "Added `balance_type` column to `tbl_party` table successfully.",
+            "Failed to add `balance_type` column to `tbl_party`"
+        );
+    }
+
+    if (!columnExists('tbl_party', 'credit_limit')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `credit_limit` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `balance_type`",
+            "Added `credit_limit` column to `tbl_party` table successfully.",
+            "Failed to add `credit_limit` column to `tbl_party`"
+        );
+    }
+
+    if (!columnExists('tbl_party', 'outstanding')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `outstanding` DECIMAL(15,2) NOT NULL DEFAULT 0.00 AFTER `credit_limit`",
+            "Added `outstanding` column to `tbl_party` table successfully.",
+            "Failed to add `outstanding` column to `tbl_party`"
+        );
+    }
+
+    if (!columnExists('tbl_party', 'remark')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `remark` TEXT NULL AFTER `outstanding`",
+            "Added `remark` column to `tbl_party` table successfully.",
+            "Failed to add `remark` column to `tbl_party`"
+        );
+    }
 } else {
     echo '<div class="log-item log-warn">⚠ Table `tbl_party` does not exist!</div>';
+}
+
+// 2. tbl_quotation -> payment_status & due_date columns
+if (tableExists('tbl_quotation')) {
+    if (!columnExists('tbl_quotation', 'payment_status')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_quotation` ADD COLUMN `payment_status` ENUM('Pending','Paid') NOT NULL DEFAULT 'Pending' AFTER `grand_total`",
+            "Added `payment_status` column to `tbl_quotation` table successfully.",
+            "Failed to add `payment_status` column to `tbl_quotation`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_quotation`.`payment_status` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_quotation', 'due_date')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_quotation` ADD COLUMN `due_date` DATE NULL DEFAULT NULL AFTER `quotation_date`",
+            "Added `due_date` column to `tbl_quotation` table successfully.",
+            "Failed to add `due_date` column to `tbl_quotation`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_quotation`.`due_date` column already exists.</div>';
+    }
+}
+
+// 2.1 tbl_product -> sku column
+if (tableExists('tbl_product')) {
+    if (!columnExists('tbl_product', 'sku')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_product` ADD COLUMN `sku` VARCHAR(100) NULL DEFAULT '' AFTER `product_name`",
+            "Added `sku` column to `tbl_product` table successfully.",
+            "Failed to add `sku` column to `tbl_product`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_product`.`sku` column already exists.</div>';
+    }
+}
+
+// 2.2 tbl_quotation_items -> discount columns
+if (tableExists('tbl_quotation_items')) {
+    if (!columnExists('tbl_quotation_items', 'discount_type')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_quotation_items` ADD COLUMN `discount_type` ENUM('percentage','fixed') NOT NULL DEFAULT 'percentage' AFTER `gst_percent`",
+            "Added `discount_type` column to `tbl_quotation_items` successfully.",
+            "Failed to add `discount_type` to `tbl_quotation_items`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_quotation_items`.`discount_type` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_quotation_items', 'discount_value')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_quotation_items` ADD COLUMN `discount_value` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `discount_type`",
+            "Added `discount_value` column to `tbl_quotation_items` successfully.",
+            "Failed to add `discount_value` to `tbl_quotation_items`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_quotation_items`.`discount_value` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_quotation_items', 'discount_amount')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_quotation_items` ADD COLUMN `discount_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER `discount_value`",
+            "Added `discount_amount` column to `tbl_quotation_items` successfully.",
+            "Failed to add `discount_amount` to `tbl_quotation_items`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_quotation_items`.`discount_amount` column already exists.</div>';
+    }
 }
 
 // 2. tbl_api_tokens (Bearer authentication token log table if needed)

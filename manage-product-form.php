@@ -20,6 +20,7 @@ $companies = $ai_db->aiGetQueryObj("SELECT id, company_name FROM tbl_company WHE
 if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit']))) {
     $company_id = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
     $product_name = addslashes(trim($_POST['product_name'] ?? ''));
+    $sku = addslashes(trim($_POST['sku'] ?? ''));
     $hsn_code = addslashes(trim($_POST['hsn_code'] ?? ''));
     $purchase_price = floatval($_POST['purchase_price'] ?? 0);
     $sales_price = floatval($_POST['sales_price'] ?? 0);
@@ -47,6 +48,7 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
             $add_qry = "INSERT INTO $table SET 
                 company_id='" . $company_id . "',
                 product_name='" . $product_name . "',
+                sku='" . $sku . "',
                 hsn_code='" . $hsn_code . "',
                 purchase_price='" . $purchase_price . "',
                 sales_price='" . $sales_price . "',
@@ -63,6 +65,7 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
 if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit']))) {
     $company_id = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
     $product_name = addslashes(trim($_POST['product_name'] ?? ''));
+    $sku = addslashes(trim($_POST['sku'] ?? ''));
     $hsn_code = addslashes(trim($_POST['hsn_code'] ?? ''));
     $purchase_price = floatval($_POST['purchase_price'] ?? 0);
     $sales_price = floatval($_POST['sales_price'] ?? 0);
@@ -90,6 +93,7 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
             $edit_qry = "UPDATE $table SET 
                 company_id='" . $company_id . "',
                 product_name='" . $product_name . "',
+                sku='" . $sku . "',
                 hsn_code='" . $hsn_code . "',
                 purchase_price='" . $purchase_price . "',
                 sales_price='" . $sales_price . "',
@@ -167,6 +171,12 @@ $selected_company_id = $_POST['company_id'] ?? $categoryData->company_id ?? ($_S
                                             <div class="col-md-12">
                                                 <label class="form-label">Product Name <span class="text-danger">*</span></label>
                                                 <input type="text" name="product_name" class="form-control" placeholder="Enter product Name" value="<?= htmlspecialchars($_POST['product_name'] ?? $categoryData->product_name ?? '') ?>" required>
+                                            </div>
+
+                                            <!-- SKU -->
+                                            <div class="col-md-12">
+                                                <label class="form-label">SKU (Stock Keeping Unit)</label>
+                                                <input type="text" name="sku" class="form-control" placeholder="Enter SKU (e.g. SKU-PROD-001)" value="<?= htmlspecialchars($_POST['sku'] ?? $categoryData->sku ?? '') ?>">
                                             </div>
 
                                             <!-- HSN Code -->

@@ -343,22 +343,39 @@ if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_quotation_no
     }
 
     // 2. Generate Next Quotation No for this company
-    $currentYear = date('y');
-    $nextYear = date('y', strtotime('+1 year'));
-    $fy = $currentYear . '-' . $nextYear;
+    if (function_exists('generateCompanyQuotationNo')) {
+        $quotation_no = generateCompanyQuotationNo($ai_db, $company_id);
+    } else {
+        $currentYear = date('y');
+        $nextYear = date('y', strtotime('+1 year'));
+        $fy = $currentYear . '-' . $nextYear;
 
-    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation WHERE company_id='$company_id' ORDER BY id DESC LIMIT 1");
-    $nextNum = 1;
-    if (!empty($maxRow)) {
-        $qNo = $maxRow[0]->quotation_no;
-        if (preg_match('~/(\d+)/~', $qNo, $matches)) {
-            $nextNum = intval($matches[1]) + 1;
-        } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation WHERE company_id='$company_id'")) + 1;
+        $prefix = 'OQ';
+        if ($company_id > 0) {
+            $compRow = $ai_db->aiGetQueryObj("SELECT company_name FROM tbl_company WHERE id='$company_id' LIMIT 1");
+            if (!empty($compRow) && !empty($compRow[0]->company_name)) {
+                $words = preg_split('/\s+/', trim(preg_replace('/[^a-zA-Z0-9\s]/', '', $compRow[0]->company_name)), -1, PREG_SPLIT_NO_EMPTY);
+                if (count($words) >= 2) {
+                    $prefix = strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
+                } else {
+                    $prefix = strtoupper(substr($words[0], 0, min(2, strlen($words[0]))));
+                }
+            }
         }
-    }
 
-    $quotation_no = 'OQ/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+        $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation WHERE company_id='$company_id' ORDER BY id DESC LIMIT 1");
+        $nextNum = 1;
+        if (!empty($maxRow)) {
+            $qNo = $maxRow[0]->quotation_no;
+            if (preg_match('~/(\d+)/~', $qNo, $matches)) {
+                $nextNum = intval($matches[1]) + 1;
+            } else {
+                $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation WHERE company_id='$company_id'")) + 1;
+            }
+        }
+
+        $quotation_no = $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+    }
 
     echo json_encode([
         'status'       => 'success',
