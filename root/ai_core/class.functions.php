@@ -628,7 +628,97 @@ class AI_Core
         return $slug;
     }
 }
- 
+
 $ai_core = new AI_Core();
- 
- 
+
+/**
+ * Recalculate and update the party's current outstanding balance
+ * Outstanding = (Opening Balance based on Debit/Credit) + (Total Pending Quotations/Invoices)
+ */
+function recalculatePartyOutstanding($partyId) {
+    global $ai_conn, $ai_db;
+    $partyId = intval($partyId);
+    if ($partyId <= 0) return false;
+
+    // Get party opening balance and balance_type
+    $pRow = $ai_db->aiGetQueryObj("SELECT id, opening_balance, balance_type FROM tbl_party WHERE id='$partyId' LIMIT 1");
+    if (empty($pRow)) return false;
+
+    $party = $pRow[0];
+    $opBal = floatval($party->opening_balance ?? 0);
+    $balType = $party->balance_type ?? 'Debit';
+    
+    // Debit opening balance means party owes us money (+).
+    // Credit opening balance means party gave advance money (-).
+    $baseBalance = ($balType === 'Debit') ? $opBal : -$opBal;
+
+    // Sum of all active Pending quotations for this party
+    $qRow = $ai_db->aiGetQueryObj("SELECT COALESCE(SUM(grand_total), 0) AS pending_total 
+                                    FROM tbl_quotation 
+                                    WHERE party_id='$partyId' 
+                                      AND payment_status='Pending' 
+                                      AND status='active'");
+    $pendingTotal = !empty($qRow) ? floatval($qRow[0]->pending_total) : 0.00;
+
+    $calcOutstanding = $baseBalance + $pendingTotal;
+
+    // Outstanding represents money the customer owes us.
+    // If quotation is deactive or paid and customer has credit advance, outstanding should be 0.00 (not negative).
+    $finalOutstanding = ($calcOutstanding > 0) ? $calcOutstanding : 0.00;
+
+    // Update in tbl_party
+    $safeOutstanding = number_format($finalOutstanding, 2, '.', '');
+    mysqli_query($ai_conn, "UPDATE tbl_party SET outstanding='{$safeOutstanding}' WHERE id='$partyId'");
+
+    return $finalOutstanding;
+}
+
+/**
+ * Generate company-specific quotation prefix (e.g. 'Json Infotech' -> 'JI', 'Ocean' -> 'OC')
+ */
+function getCompanyQuotationPrefix($companyName) {
+    $clean = trim(preg_replace('/[^a-zA-Z0-9\s]/', '', $companyName ?? ''));
+    if (empty($clean)) {
+        return 'OQ';
+    }
+    $words = preg_split('/\s+/', $clean, -1, PREG_SPLIT_NO_EMPTY);
+    $prefix = '';
+    if (count($words) >= 2) {
+        $prefix = strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
+    } else {
+        $prefix = strtoupper(substr($words[0], 0, min(2, strlen($words[0]))));
+    }
+    return !empty($prefix) ? $prefix : 'OQ';
+}
+
+/**
+ * Auto Generate Quotation No company wise
+ * Prefix based on Company Name (e.g. Json Infotech -> JI/001/26-27)
+ */
+function generateCompanyQuotationNo($ai_db, $company_id = 0) {
+    $currentYear = date('y');
+    $nextYear = date('y', strtotime('+1 year'));
+    $fy = $currentYear . '-' . $nextYear;
+    
+    $prefix = 'OQ';
+    if ($company_id > 0) {
+        $compRow = $ai_db->aiGetQueryObj("SELECT company_name FROM tbl_company WHERE id='$company_id' LIMIT 1");
+        if (!empty($compRow) && !empty($compRow[0]->company_name)) {
+            $prefix = getCompanyQuotationPrefix($compRow[0]->company_name);
+        }
+    }
+    
+    $whereComp = ($company_id > 0) ? "WHERE company_id='$company_id'" : "";
+    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation $whereComp ORDER BY id DESC LIMIT 1");
+    $nextNum = 1;
+    if (!empty($maxRow)) {
+        $qNo = $maxRow[0]->quotation_no;
+        if (preg_match('~/(\d+)/~', $qNo, $matches)) {
+            $nextNum = intval($matches[1]) + 1;
+        } else {
+            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation $whereComp")) + 1;
+        }
+    }
+    
+    return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+}

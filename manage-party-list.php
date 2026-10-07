@@ -49,7 +49,8 @@ $team = $ai_db->aiGetQueryObj($qry);
                                             <th>Company Name</th>
                                             <th>Contact / GST</th>
                                             <th>State / City</th>
-                                            <th>Party Status</th>
+                                            <th>Business / Status</th>
+                                            <th>Balance & Limit</th>
                                             <th>Status</th>
                                             <th style="width:100px;">Action</th>
                                         </tr>
@@ -95,13 +96,27 @@ $team = $ai_db->aiGetQueryObj($qry);
                                                         <?php } ?>
                                                     </td>
 
-                                                    <!-- Party Status -->
+                                                    <!-- Party Status & Business Type -->
                                                     <td>
                                                         <?php
                                                         $pStatus = $cat->party_status ?? 'Sales';
                                                         $badgeClass = ($pStatus === 'Sales') ? 'bg-label-success' : 'bg-label-info';
+                                                        $bType = $cat->business_type ?? 'Business';
+                                                        $bTypeBadge = ($bType === 'Business') ? 'bg-label-primary' : 'bg-label-warning';
                                                         ?>
-                                                        <span class="badge <?= $badgeClass ?> px-3 py-2 fs-6"><?= htmlspecialchars($pStatus) ?></span>
+                                                        <div><span class="badge <?= $badgeClass ?> px-2 py-1 fs-6"><?= htmlspecialchars($pStatus) ?></span></div>
+                                                        <div class="mt-1"><span class="badge <?= $bTypeBadge ?> px-2 py-1"><?= htmlspecialchars($bType) ?></span></div>
+                                                    </td>
+
+                                                    <!-- Balance & Limit -->
+                                                    <td class="text-start small">
+                                                        <div><strong>Opening:</strong> ₹<?= number_format((float)($cat->opening_balance ?? 0), 2) ?> <span class="badge <?= (($cat->balance_type ?? 'Debit') === 'Credit') ? 'bg-label-info' : 'bg-label-secondary' ?> py-0 px-1"><?= htmlspecialchars($cat->balance_type ?? 'Debit') ?></span></div>
+                                                        <?php 
+                                                            $outVal = (float)($cat->outstanding ?? 0);
+                                                            $outColor = ($outVal > 0) ? 'text-danger fw-bold' : 'text-success fw-bold';
+                                                        ?>
+                                                        <div><strong>Outstanding:</strong> <span class="<?= $outColor ?>">₹<?= number_format($outVal, 2) ?></span></div>
+                                                        <div><strong>Credit Limit:</strong> ₹<?= number_format((float)($cat->credit_limit ?? 0), 2) ?></div>
                                                     </td>
 
                                                     <!-- Status -->

@@ -44,6 +44,7 @@ $team = $ai_db->aiGetQueryObj($qry);
                                         <tr>
                                             <th style="width:40px;">#</th>
                                             <th>Product Name</th>
+                                            <th>SKU</th>
                                             <th>HSN Code</th>
                                             <th>Purchase Price</th>
                                             <th>Sales Price</th>
@@ -62,6 +63,15 @@ $team = $ai_db->aiGetQueryObj($qry);
                                                     <!-- Product Name -->
                                                     <td class="text-start">
                                                         <strong><?= htmlspecialchars($cat->product_name) ?></strong>
+                                                    </td>
+
+                                                    <!-- SKU -->
+                                                    <td>
+                                                        <?php if (!empty($cat->sku)) { ?>
+                                                            <span class="badge bg-label-secondary font-monospace"><?= htmlspecialchars($cat->sku) ?></span>
+                                                        <?php } else { ?>
+                                                            <span class="text-muted">-</span>
+                                                        <?php } ?>
                                                     </td>
 
                                                     <!-- HSN Code -->
@@ -137,7 +147,7 @@ $team = $ai_db->aiGetQueryObj($qry);
             responsive: false,
             autoWidth: false,
             columnDefs: [{
-                targets: [6, 7],
+                targets: [7, 8],
                 orderable: false
             }]
         });
