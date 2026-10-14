@@ -14,7 +14,17 @@ $err_msg = '';
 $categoryData = null;
 
 // Fetch all active companies for dropdown
-$companies = $ai_db->aiGetQueryObj("SELECT id, company_name FROM tbl_company WHERE status='active' ORDER BY company_name ASC");
+$companies = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_applicable FROM tbl_company WHERE status='active' ORDER BY company_name ASC");
+
+function isPartyCompanyGstApplicable($companyId)
+{
+    global $ai_db;
+    if (empty($companyId)) {
+        return false;
+    }
+    $comp = $ai_db->aiGetQueryObj("SELECT gst_applicable FROM tbl_company WHERE id='" . intval($companyId) . "' LIMIT 1");
+    return (!empty($comp) && (int)$comp[0]->gst_applicable === 1);
+}
 
 // Fetch all active states for dropdown
 $states = $ai_db->aiGetQueryObj("SELECT id, state_name, state_code FROM tbl_state WHERE status='active' ORDER BY order_no ASC, state_name ASC");
@@ -37,13 +47,13 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
     $shipping_city_id = intval($_POST['shipping_city_id'] ?? 0);
     $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
     $email = addslashes(trim($_POST['email'] ?? ''));
-    $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
+    $company_has_gst = isPartyCompanyGstApplicable($company_id);
+    $gst_no = $company_has_gst ? addslashes(trim($_POST['gst_no'] ?? '')) : '';
     $pan_no = addslashes(strtoupper(trim($_POST['pan_no'] ?? '')));
     $party_status = addslashes(trim($_POST['party_status'] ?? 'Sales'));
     $business_type = in_array($_POST['business_type'] ?? '', ['Individual', 'Business']) ? $_POST['business_type'] : 'Business';
     $opening_balance = floatval($_POST['opening_balance'] ?? 0);
     $balance_type = in_array($_POST['balance_type'] ?? '', ['Credit', 'Debit']) ? $_POST['balance_type'] : 'Debit';
-    $credit_limit = floatval($_POST['credit_limit'] ?? 0);
     // Initial outstanding based on Opening Balance (Debit = customer owes money, Credit = advance/0.00)
     $outstanding = ($balance_type === 'Debit') ? $opening_balance : 0.00;
     $remark = addslashes(trim($_POST['remark'] ?? ''));
@@ -59,6 +69,8 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
         $err_msg = "Please enter a valid Email Address!";
     } elseif (!empty($pan_no) && !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/', $pan_no)) {
         $err_msg = "PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F)!";
+    } elseif ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
         // Duplicate check under same company
         $check_dup = $ai_db->aiGetQueryObj("SELECT id FROM $table WHERE company_id='" . $company_id . "' AND LOWER(party_name)='" . strtolower($party_name) . "' LIMIT 1");
@@ -84,7 +96,6 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
                 business_type='" . $business_type . "',
                 opening_balance='" . $opening_balance . "',
                 balance_type='" . $balance_type . "',
-                credit_limit='" . $credit_limit . "',
                 outstanding='" . $outstanding . "',
                 remark='" . $remark . "',
                 status='" . $status . "'";
@@ -120,13 +131,13 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
     $shipping_city_id = intval($_POST['shipping_city_id'] ?? 0);
     $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
     $email = addslashes(trim($_POST['email'] ?? ''));
-    $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
+    $company_has_gst = isPartyCompanyGstApplicable($company_id);
+    $gst_no = $company_has_gst ? addslashes(trim($_POST['gst_no'] ?? '')) : '';
     $pan_no = addslashes(strtoupper(trim($_POST['pan_no'] ?? '')));
     $party_status = addslashes(trim($_POST['party_status'] ?? 'Sales'));
     $business_type = in_array($_POST['business_type'] ?? '', ['Individual', 'Business']) ? $_POST['business_type'] : 'Business';
     $opening_balance = floatval($_POST['opening_balance'] ?? 0);
     $balance_type = in_array($_POST['balance_type'] ?? '', ['Credit', 'Debit']) ? $_POST['balance_type'] : 'Debit';
-    $credit_limit = floatval($_POST['credit_limit'] ?? 0);
     $remark = addslashes(trim($_POST['remark'] ?? ''));
     $status = $_POST['status'] ?? 'active';
 
@@ -140,6 +151,8 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
         $err_msg = "Please enter a valid Email Address!";
     } elseif (!empty($pan_no) && !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/', $pan_no)) {
         $err_msg = "PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F)!";
+    } elseif ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
         // Duplicate check excluding current ID
         $check_dup = $ai_db->aiGetQueryObj("SELECT id FROM $table WHERE company_id='" . $company_id . "' AND LOWER(party_name)='" . strtolower($party_name) . "' AND id!='" . intval($id) . "' LIMIT 1");
@@ -165,7 +178,6 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
                 business_type='" . $business_type . "',
                 opening_balance='" . $opening_balance . "',
                 balance_type='" . $balance_type . "',
-                credit_limit='" . $credit_limit . "',
                 remark='" . $remark . "',
                 status='" . $status . "'
                 WHERE id='" . intval($id) . "'";
@@ -198,6 +210,7 @@ if ($mode === 'edit' && $id && !isset($_POST['btn_submit'])) {
 
 // Dynamic state & city default values
 $selected_company_id = $_POST['company_id'] ?? $categoryData->company_id ?? ($_SESSION['company_id'] ?? 0);
+$show_party_gst = isPartyCompanyGstApplicable($selected_company_id);
 $selected_state_id = $_POST['state_id'] ?? $categoryData->state_id ?? 0;
 $cities = [];
 if ($selected_state_id > 0) {
@@ -249,7 +262,7 @@ if ($selected_shipping_state_id > 0) {
                                                         <?php if (!empty($companies)) {
                                                             foreach ($companies as $comp) {
                                                                 if ($selected_company_id == $comp->id) { ?>
-                                                                    <option value="<?= $comp->id ?>" selected>
+                                                                    <option value="<?= $comp->id ?>" data-gst-applicable="<?= (int)($comp->gst_applicable ?? 0) ?>" selected>
                                                                         <?= htmlspecialchars($comp->company_name) ?>
                                                                     </option>
                                                                 <?php }
@@ -259,10 +272,10 @@ if ($selected_shipping_state_id > 0) {
                                                 <?php } else { ?>
                                                     <!-- For Admin / other users: full dropdown -->
                                                     <select name="company_id" id="company_id" class="form-select select2" required>
-                                                        <option value="">-- Select Company --</option>
+                                                        <option value="" data-gst-applicable="0">-- Select Company --</option>
                                                         <?php if (!empty($companies)) {
                                                             foreach ($companies as $comp) { ?>
-                                                                <option value="<?= $comp->id ?>" <?= ($selected_company_id == $comp->id) ? 'selected' : '' ?>>
+                                                                <option value="<?= $comp->id ?>" data-gst-applicable="<?= (int)($comp->gst_applicable ?? 0) ?>" <?= ($selected_company_id == $comp->id) ? 'selected' : '' ?>>
                                                                     <?= htmlspecialchars($comp->company_name) ?>
                                                                 </option>
                                                             <?php }
@@ -290,9 +303,12 @@ if ($selected_shipping_state_id > 0) {
                                             </div>
 
                                             <!-- GST IN No -->
-                                            <div class="col-md-3">
+                                            <div class="col-md-3" id="party_gst_wrapper" style="<?= $show_party_gst ? '' : 'display:none;' ?>">
                                                 <label class="form-label">GST IN No.</label>
-                                                <input type="text" name="gst_no" class="form-control" placeholder="Enter GST in number" value="<?= htmlspecialchars($_POST['gst_no'] ?? $categoryData->gst_no ?? '') ?>">
+                                                <input type="text" name="gst_no" id="party_gst_no" class="form-control text-uppercase" placeholder="Enter GSTIN (e.g. 24AAAAA0000A1Z5)" value="<?= htmlspecialchars($_POST['gst_no'] ?? $categoryData->gst_no ?? '') ?>" maxlength="15" style="text-transform: uppercase;">
+                                                <div class="form-text text-muted mt-1" style="font-size: 11px;">
+                                                    Format: <span class="fw-semibold text-primary">24AAAAA0000A1Z5</span> (15 digits)
+                                                </div>
                                             </div>
 
                                             <!-- PAN No -->
@@ -335,11 +351,6 @@ if ($selected_shipping_state_id > 0) {
                                                 </div>
                                             </div>
 
-                                            <!-- Credit Limit -->
-                                            <div class="col-md-3">
-                                                <label class="form-label">Credit Limit</label>
-                                                <input type="number" step="0.01" min="0" name="credit_limit" class="form-control" placeholder="0.00" value="<?= htmlspecialchars($_POST['credit_limit'] ?? $categoryData->credit_limit ?? '0.00') ?>">
-                                            </div>
 
                                             <!-- Status -->
                                             <div class="col-md-3">
@@ -649,6 +660,29 @@ if ($selected_shipping_state_id > 0) {
                 }
             });
 
+            function updatePartyGstVisibility() {
+                var $compSelect = $('select[name="company_id"]');
+                var isGstApplicable = false;
+
+                if ($compSelect.length > 0) {
+                    var selectedOption = $compSelect.find('option:selected');
+                    isGstApplicable = (selectedOption.data('gst-applicable') == 1);
+                } else {
+                    isGstApplicable = <?= $show_party_gst ? 'true' : 'false' ?>;
+                }
+
+                if (isGstApplicable) {
+                    $('#party_gst_wrapper').slideDown(200);
+                } else {
+                    $('#party_gst_wrapper').slideUp(200);
+                    $('#party_gst_no').val('');
+                }
+            }
+
+            $('select[name="company_id"]').on('change select2:select', function() {
+                updatePartyGstVisibility();
+            });
+
             // Form Submit Client Validation
             $('#mainForm').on('submit', function(e) {
                 var form = this;
@@ -658,6 +692,9 @@ if ($selected_shipping_state_id > 0) {
                 var email = $('input[name="email"]').val().trim();
                 var panNo = $('input[name="pan_no"]').val().trim().toUpperCase();
                 $('input[name="pan_no"]').val(panNo);
+                var isGstVisible = $('#party_gst_wrapper').is(':visible');
+                var gstNo = isGstVisible ? $('input[name="gst_no"]').val().trim().toUpperCase() : '';
+                $('input[name="gst_no"]').val(gstNo);
 
                 function showToastError(msg) {
                     if (typeof Swal !== 'undefined') {
@@ -703,6 +740,12 @@ if ($selected_shipping_state_id > 0) {
                 if (panNo !== '' && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(panNo)) {
                     e.preventDefault();
                     showToastError('PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F)!');
+                    return false;
+                }
+
+                if (isGstVisible && gstNo !== '' && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i.test(gstNo)) {
+                    e.preventDefault();
+                    showToastError('Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!');
                     return false;
                 }
 

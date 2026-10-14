@@ -417,6 +417,7 @@ CREATE TABLE `tbl_product` (
   `id` int(11) NOT NULL,
   `company_id` int(11) NOT NULL DEFAULT 0,
   `product_name` varchar(255) NOT NULL,
+  `sku` varchar(100) DEFAULT '',
   `hsn_code` varchar(50) DEFAULT '',
   `purchase_price` decimal(12,2) DEFAULT 0.00,
   `sales_price` decimal(12,2) DEFAULT 0.00,

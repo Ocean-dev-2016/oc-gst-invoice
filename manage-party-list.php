@@ -12,7 +12,7 @@ if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id
     $company_where = " WHERE p.company_id = '" . intval($_SESSION['company_id']) . "'";
 }
 
-$qry = "SELECT p.*, c.company_name, s.state_name, ct.city_name 
+$qry = "SELECT p.*, c.company_name, c.gst_applicable, s.state_name, ct.city_name 
         FROM tbl_party p 
         LEFT JOIN tbl_company c ON p.company_id = c.id 
         LEFT JOIN tbl_state s ON p.state_id = s.id 
@@ -20,6 +20,45 @@ $qry = "SELECT p.*, c.company_name, s.state_name, ct.city_name
         $company_where
         ORDER BY p.id DESC";
 $team = $ai_db->aiGetQueryObj($qry);
+
+// Compute Party Metrics based on logged-in user (admin sees all, company sees their own)
+$party_filter_sql = "";
+$inv_company_filter_sql = "";
+if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id'])) {
+    $cid = intval($_SESSION['company_id']);
+    $party_filter_sql = " AND company_id = '$cid'";
+    $inv_company_filter_sql = " AND company_id = '$cid'";
+}
+
+// 1. Total Parties Count
+$totalPartiesRes = $ai_db->aiGetQueryObj("SELECT COUNT(id) AS total_count FROM tbl_party WHERE 1=1 {$party_filter_sql}");
+$statTotalParties = intval($totalPartiesRes[0]->total_count ?? 0);
+
+// 2. Total Receivable Amount (Debit Outstanding) and Count of parties having receivable amount
+$receivableRes = $ai_db->aiGetQueryObj("SELECT 
+    COALESCE(SUM(outstanding), 0) AS total_receivable_amt,
+    COUNT(id) AS receivable_parties_count
+FROM tbl_party 
+WHERE 1=1 
+  AND outstanding > 0 
+  AND (outstanding_type = 'Debit' OR outstanding_type IS NULL OR outstanding_type = '') 
+  {$party_filter_sql}");
+$statReceivableAmt = floatval($receivableRes[0]->total_receivable_amt ?? 0);
+$statReceivableParties = intval($receivableRes[0]->receivable_parties_count ?? 0);
+
+// 3. Total Overdue Amount (from unpaid invoices past their due date) and Count of parties with overdue invoices
+$todayDate = date('Y-m-d');
+$overdueRes = $ai_db->aiGetQueryObj("SELECT 
+    COALESCE(SUM(grand_total - paid_amount), 0) AS total_overdue_amt,
+    COUNT(DISTINCT party_id) AS overdue_parties_count
+FROM tbl_invoice 
+WHERE status = 'active' 
+  AND payment_status != 'Paid' 
+  AND due_date IS NOT NULL 
+  AND due_date < '{$todayDate}'
+  {$inv_company_filter_sql}");
+$statOverdueAmt = floatval($overdueRes[0]->total_overdue_amt ?? 0);
+$statOverdueParties = intval($overdueRes[0]->overdue_parties_count ?? 0);
 ?>
 
 <body>
@@ -32,6 +71,26 @@ $team = $ai_db->aiGetQueryObj($qry);
 
                 <div class="content-wrapper">
                     <div class="container-xxl flex-grow-1 container-p-y">
+
+                        <!-- Notification messages -->
+                        <?php if (isset($_GET['msg']) && $_GET['msg'] == '1') { ?>
+                            <div class="alert alerts-success alert-dismissible fade show" role="alert">
+                                Party added successfully!
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        <?php } elseif (isset($_GET['msg']) && $_GET['msg'] == '2') { ?>
+                            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                                Party updated successfully!
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        <?php } elseif (isset($_GET['msg']) && $_GET['msg'] == '3') { ?>
+                            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                                Party deleted successfully!
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        <?php } ?>
+
+
                         <div class="card" id="teamTable">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <h5 class="mb-0"><?= $page_nm ?> List</h5>
@@ -50,7 +109,7 @@ $team = $ai_db->aiGetQueryObj($qry);
                                             <th>Contact / GST</th>
                                             <th>State / City</th>
                                             <th>Business / Status</th>
-                                            <th>Balance & Limit</th>
+                                            <th>Balance</th>
                                             <th>Status</th>
                                             <th style="width:100px;">Action</th>
                                         </tr>
@@ -80,7 +139,7 @@ $team = $ai_db->aiGetQueryObj($qry);
                                                         <?php if (!empty($cat->email)) { ?>
                                                             <div class="small"><i class="ti ti-mail me-1"></i><?= htmlspecialchars($cat->email) ?></div>
                                                         <?php } ?>
-                                                        <?php if (!empty($cat->gst_no)) { ?>
+                                                        <?php if ((int)($cat->gst_applicable ?? 0) === 1 && !empty($cat->gst_no)) { ?>
                                                             <div class="small text-muted"><i class="ti ti-receipt-tax me-1"></i>GST: <?= htmlspecialchars($cat->gst_no) ?></div>
                                                         <?php } ?>
                                                         <?php if (!empty($cat->pan_no)) { ?>
@@ -108,15 +167,25 @@ $team = $ai_db->aiGetQueryObj($qry);
                                                         <div class="mt-1"><span class="badge <?= $bTypeBadge ?> px-2 py-1"><?= htmlspecialchars($bType) ?></span></div>
                                                     </td>
 
-                                                    <!-- Balance & Limit -->
+                                                    <!-- Balance -->
                                                     <td class="text-start small">
                                                         <div><strong>Opening:</strong> ₹<?= number_format((float)($cat->opening_balance ?? 0), 2) ?> <span class="badge <?= (($cat->balance_type ?? 'Debit') === 'Credit') ? 'bg-label-info' : 'bg-label-secondary' ?> py-0 px-1"><?= htmlspecialchars($cat->balance_type ?? 'Debit') ?></span></div>
                                                         <?php 
                                                             $outVal = (float)($cat->outstanding ?? 0);
-                                                            $outColor = ($outVal > 0) ? 'text-danger fw-bold' : 'text-success fw-bold';
+                                                            $outType = $cat->outstanding_type ?? 'Debit';
+                                                            if ($outVal > 0) {
+                                                                $outColor = ($outType === 'Debit') ? 'text-danger fw-bold' : 'text-success fw-bold';
+                                                                $badgeClass = ($outType === 'Debit') ? 'bg-label-danger' : 'bg-label-success';
+                                                            } else {
+                                                                $outColor = 'text-muted fw-bold';
+                                                                $badgeClass = 'bg-label-secondary';
+                                                            }
                                                         ?>
-                                                        <div><strong>Outstanding:</strong> <span class="<?= $outColor ?>">₹<?= number_format($outVal, 2) ?></span></div>
-                                                        <div><strong>Credit Limit:</strong> ₹<?= number_format((float)($cat->credit_limit ?? 0), 2) ?></div>
+                                                        <div class="mt-1">
+                                                            <strong>Outstanding:</strong> 
+                                                            <span class="<?= $outColor ?>">₹<?= number_format($outVal, 2) ?></span>
+                                                            <span class="badge <?= $badgeClass ?> py-0 px-1 ms-1"><?= htmlspecialchars($outType) ?></span>
+                                                        </div>
                                                     </td>
 
                                                     <!-- Status -->

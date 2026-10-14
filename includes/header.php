@@ -57,11 +57,12 @@ if (!$isLoginPage && !$isLoggedIn) {
                         || !empty($ai_page_perm['can_delete']);
 
                     $allowed = true;
+                    $action = strtolower($_REQUEST['action'] ?? '');
                     if ($mode === 'add') {
                         $allowed = !empty($ai_page_perm['can_add']);
                     } elseif ($mode === 'edit') {
                         $allowed = !empty($ai_page_perm['can_edit']);
-                    } elseif ($mode === 'delete') {
+                    } elseif ($mode === 'delete' || $action === 'delete') {
                         $allowed = !empty($ai_page_perm['can_delete']);
                     } elseif (($ai_page_perm['module_key'] ?? '') !== '' && !$hasAnyPermission) {
                         $allowed = false;

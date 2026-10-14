@@ -306,7 +306,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'get_party_details') {
 if (isset($_POST['action']) && $_POST['action'] == 'check_product_duplicate') {
     $company_id   = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
     $product_name = addslashes(trim($_POST['product_name'] ?? ''));
-    $hsn_code     = addslashes(trim($_POST['hsn_code'] ?? ''));
+    $sku          = addslashes(trim($_POST['sku'] ?? ''));
     $id           = intval($_POST['id'] ?? 0);
 
     $id_cond = ($id > 0) ? " AND id != '$id'" : "";
@@ -319,10 +319,10 @@ if (isset($_POST['action']) && $_POST['action'] == 'check_product_duplicate') {
         }
     }
 
-    if (!empty($hsn_code)) {
-        $check = $ai_db->aiGetQueryObj("SELECT id FROM tbl_product WHERE company_id = '$company_id' AND LOWER(hsn_code) = '" . strtolower($hsn_code) . "' $id_cond LIMIT 1");
+    if (!empty($sku)) {
+        $check = $ai_db->aiGetQueryObj("SELECT id FROM tbl_product WHERE company_id = '$company_id' AND LOWER(sku) = '" . strtolower($sku) . "' $id_cond LIMIT 1");
         if (!empty($check)) {
-            echo json_encode(['status' => 'duplicate', 'field' => 'hsn_code', 'message' => 'HSN Code already exists for this company!']);
+            echo json_encode(['status' => 'duplicate', 'field' => 'sku', 'message' => 'SKU already exists for this company!']);
             exit;
         }
     }
@@ -338,11 +338,19 @@ if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_quotation_no
     $parties = [];
     $products = [];
     if ($company_id > 0) {
-        $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND company_id='$company_id' ORDER BY party_name ASC");
-        $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price FROM tbl_product WHERE status='active' AND company_id='$company_id' ORDER BY product_name ASC");
+        $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND party_status='Sales' AND company_id='$company_id' ORDER BY party_name ASC");
+        $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price, gst_rate FROM tbl_product WHERE status='active' AND company_id='$company_id' ORDER BY product_name ASC");
     }
 
-    // 2. Generate Next Quotation No for this company
+    // 2. Generate Next Quotation No and fetch gst_applicable for this company
+    $gst_applicable = 0;
+    if ($company_id > 0) {
+        $compRowGst = $ai_db->aiGetQueryObj("SELECT gst_applicable FROM tbl_company WHERE id='$company_id' LIMIT 1");
+        if (!empty($compRowGst)) {
+            $gst_applicable = (int)($compRowGst[0]->gst_applicable ?? 0);
+        }
+    }
+
     if (function_exists('generateCompanyQuotationNo')) {
         $quotation_no = generateCompanyQuotationNo($ai_db, $company_id);
     } else {
@@ -351,26 +359,15 @@ if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_quotation_no
         $fy = $currentYear . '-' . $nextYear;
 
         $prefix = 'OQ';
-        if ($company_id > 0) {
-            $compRow = $ai_db->aiGetQueryObj("SELECT company_name FROM tbl_company WHERE id='$company_id' LIMIT 1");
-            if (!empty($compRow) && !empty($compRow[0]->company_name)) {
-                $words = preg_split('/\s+/', trim(preg_replace('/[^a-zA-Z0-9\s]/', '', $compRow[0]->company_name)), -1, PREG_SPLIT_NO_EMPTY);
-                if (count($words) >= 2) {
-                    $prefix = strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
-                } else {
-                    $prefix = strtoupper(substr($words[0], 0, min(2, strlen($words[0]))));
-                }
-            }
-        }
 
-        $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation WHERE company_id='$company_id' ORDER BY id DESC LIMIT 1");
+        $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation ORDER BY id DESC LIMIT 1");
         $nextNum = 1;
         if (!empty($maxRow)) {
             $qNo = $maxRow[0]->quotation_no;
             if (preg_match('~/(\d+)/~', $qNo, $matches)) {
                 $nextNum = intval($matches[1]) + 1;
             } else {
-                $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation WHERE company_id='$company_id'")) + 1;
+                $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation")) + 1;
             }
         }
 
@@ -378,10 +375,346 @@ if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_quotation_no
     }
 
     echo json_encode([
-        'status'       => 'success',
-        'parties'      => $parties,
-        'products'     => $products,
-        'quotation_no' => $quotation_no
+        'status'         => 'success',
+        'parties'        => $parties,
+        'products'       => $products,
+        'quotation_no'   => $quotation_no,
+        'gst_applicable' => $gst_applicable
     ]);
     exit;
 }
+
+if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_invoice_no') {
+    $company_id = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
+
+    // 1. Fetch parties for this company
+    $parties = [];
+    $products = [];
+    if ($company_id > 0) {
+        $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND party_status='Sales' AND company_id='$company_id' ORDER BY party_name ASC");
+        $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price, gst_rate, stock, min_stock_alert, track_stock FROM tbl_product WHERE status='active' AND company_id='$company_id' ORDER BY product_name ASC");
+    }
+
+    // 2. Generate Next Invoice No and fetch gst_applicable for this company
+    $gst_applicable = 0;
+    if ($company_id > 0) {
+        $compRowGst = $ai_db->aiGetQueryObj("SELECT gst_applicable FROM tbl_company WHERE id='$company_id' LIMIT 1");
+        if (!empty($compRowGst)) {
+            $gst_applicable = (int)($compRowGst[0]->gst_applicable ?? 0);
+        }
+    }
+
+    if (function_exists('generateCompanyInvoiceNo')) {
+        $invoice_no = generateCompanyInvoiceNo($ai_db, $company_id);
+    } else {
+        $currentYear = date('y');
+        $nextYear = date('y', strtotime('+1 year'));
+        $fy = $currentYear . '-' . $nextYear;
+        $prefix = 'INV';
+
+        $maxRow = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice ORDER BY id DESC LIMIT 1");
+        $nextNum = 1;
+        if (!empty($maxRow)) {
+            $iNo = $maxRow[0]->invoice_no;
+            if (preg_match('~/(\d+)/~', $iNo, $matches)) {
+                $nextNum = intval($matches[1]) + 1;
+            } else {
+                $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_invoice")) + 1;
+            }
+        }
+        $invoice_no = $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+    }
+
+    echo json_encode([
+        'status'         => 'success',
+        'parties'        => $parties,
+        'products'       => $products,
+        'invoice_no'     => $invoice_no,
+        'gst_applicable' => $gst_applicable
+    ]);
+    exit;
+}
+
+if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_purchase_no') {
+    $company_id = intval($_POST['company_id'] ?? ($_SESSION['company_id'] ?? 0));
+
+    // 1. Fetch Purchase parties for this company
+    $parties = [];
+    $products = [];
+    if ($company_id > 0) {
+        $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND party_status='Purchase' AND company_id='$company_id' ORDER BY party_name ASC");
+        $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, purchase_price, sales_price, gst_rate, stock, min_stock_alert, track_stock FROM tbl_product WHERE status='active' AND company_id='$company_id' ORDER BY product_name ASC");
+    }
+
+    // 2. Generate Next Purchase No and fetch gst_applicable for this company
+    $gst_applicable = 0;
+    if ($company_id > 0) {
+        $compRowGst = $ai_db->aiGetQueryObj("SELECT gst_applicable FROM tbl_company WHERE id='$company_id' LIMIT 1");
+        if (!empty($compRowGst)) {
+            $gst_applicable = (int)($compRowGst[0]->gst_applicable ?? 0);
+        }
+    }
+
+    if (function_exists('generateCompanyPurchaseNo')) {
+        $purchase_no = generateCompanyPurchaseNo($ai_db, $company_id);
+    } else {
+        $currentYear = date('y');
+        $nextYear = date('y', strtotime('+1 year'));
+        $fy = $currentYear . '-' . $nextYear;
+        $prefix = 'PUR';
+
+        $maxRow = $ai_db->aiGetQueryObj("SELECT purchase_no FROM tbl_purchase ORDER BY id DESC LIMIT 1");
+        $nextNum = 1;
+        if (!empty($maxRow)) {
+            $pNo = $maxRow[0]->purchase_no;
+            if (preg_match('~/(\d+)/~', $pNo, $matches)) {
+                $nextNum = intval($matches[1]) + 1;
+            } else {
+                $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_purchase")) + 1;
+            }
+        }
+        $purchase_no = $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+    }
+
+    echo json_encode([
+        'status'         => 'success',
+        'parties'        => $parties,
+        'products'       => $products,
+        'purchase_no'    => $purchase_no,
+        'gst_applicable' => $gst_applicable
+    ]);
+    exit;
+}
+
+if (isset($_POST['action']) && $_POST['action'] == 'convert_quotation_to_invoice') {
+    $quotation_id = intval($_POST['quotation_id'] ?? 0);
+    if ($quotation_id <= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid Quotation ID.']);
+        exit;
+    }
+
+    $qRow = $ai_db->aiGetQueryObj("SELECT * FROM tbl_quotation WHERE id='$quotation_id' LIMIT 1");
+    if (empty($qRow)) {
+        echo json_encode(['status' => 'error', 'message' => 'Quotation not found.']);
+        exit;
+    }
+    $quot = $qRow[0];
+
+    // Check if already converted
+    if (!empty($quot->converted_invoice_id) && intval($quot->converted_invoice_id) > 0) {
+        $existingInvId = intval($quot->converted_invoice_id);
+        echo json_encode([
+            'status' => 'already_converted',
+            'invoice_id' => $existingInvId,
+            'message' => 'This quotation has already been converted to Invoice #' . $existingInvId
+        ]);
+        exit;
+    }
+
+    // Check stock availability for all products in this quotation BEFORE creating invoice
+    $qItemsCheck = $ai_db->aiGetQueryObj("SELECT * FROM tbl_quotation_items WHERE quotation_id='$quotation_id'");
+    $outOfStockErrors = [];
+    if (!empty($qItemsCheck)) {
+        foreach ($qItemsCheck as $chkItem) {
+            $pId = intval($chkItem->product_id ?? 0);
+            $reqQty = floatval($chkItem->qty ?? 0);
+            $itemDesc = trim($chkItem->description ?? '');
+
+            // Fallback product_id lookup by product_name if missing
+            if ($pId <= 0 && !empty($itemDesc)) {
+                $escDesc = addslashes($itemDesc);
+                $pFind = $ai_db->aiGetQueryObj("SELECT id FROM tbl_product WHERE LOWER(TRIM(product_name)) = LOWER(TRIM('$escDesc')) AND company_id='{$quot->company_id}' LIMIT 1");
+                if ($pFind && !empty($pFind[0]->id)) {
+                    $pId = intval($pFind[0]->id);
+                }
+            }
+
+            if ($pId > 0 && function_exists('checkProductStockAvailability')) {
+                $avail = checkProductStockAvailability($pId, $reqQty);
+                if (!empty($avail['track']) && !$avail['available']) {
+                    $pTitle = !empty($avail['product_name']) ? $avail['product_name'] : $itemDesc;
+                    $outOfStockErrors[] = "• " . htmlspecialchars($pTitle) . " (Required: " . number_format($reqQty, 2) . ", Available Stock: " . number_format($avail['stock'], 2) . ")";
+                }
+            }
+        }
+    }
+
+    if (!empty($outOfStockErrors)) {
+        echo json_encode([
+            'status' => 'insufficient_stock',
+            'message' => "Cannot convert quotation to invoice because of insufficient stock:\n\n" . implode("\n", $outOfStockErrors) . "\n\nPlease update product stock or adjust quotation quantity."
+        ]);
+        exit;
+    }
+
+    // Generate new Invoice Number
+    $invNo = function_exists('generateCompanyInvoiceNo') 
+        ? generateCompanyInvoiceNo($ai_db, $quot->company_id) 
+        : 'INV/001/' . date('y') . '-' . date('y', strtotime('+1 year'));
+
+    $today = date('Y-m-d');
+    $dueDate = !empty($quot->due_date) ? $quot->due_date : $today;
+
+    // Insert Invoice
+    $insInvSql = "INSERT INTO tbl_invoice (
+        quotation_id, company_id, party_id, party_name, gst_no, invoice_no, rca, address,
+        state_id, state_name, city_id, city_name, invoice_date, due_date, gst_type,
+        total_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, grand_total,
+        payment_status, status, created_at
+    ) VALUES (
+        '{$quot->id}',
+        '{$quot->company_id}',
+        '{$quot->party_id}',
+        '" . addslashes($quot->party_name) . "',
+        '" . addslashes($quot->gst_no) . "',
+        '" . addslashes($invNo) . "',
+        '" . addslashes($quot->rca) . "',
+        '" . addslashes($quot->address) . "',
+        '{$quot->state_id}',
+        '" . addslashes($quot->state_name) . "',
+        '{$quot->city_id}',
+        '" . addslashes($quot->city_name) . "',
+        '{$today}',
+        '{$dueDate}',
+        '{$quot->gst_type}',
+        '{$quot->total_amount}',
+        '{$quot->cgst_amount}',
+        '{$quot->sgst_amount}',
+        '{$quot->igst_amount}',
+        '{$quot->tax_amount}',
+        '{$quot->grand_total}',
+        '{$quot->payment_status}',
+        'active',
+        NOW()
+    )";
+
+    $res = mysqli_query($ai_conn, $insInvSql);
+    if (!$res) {
+        echo json_encode(['status' => 'error', 'message' => 'Failed to create invoice: ' . mysqli_error($ai_conn)]);
+        exit;
+    }
+
+    $newInvoiceId = mysqli_insert_id($ai_conn);
+
+    // Copy items from quotation
+    $qItems = $ai_db->aiGetQueryObj("SELECT * FROM tbl_quotation_items WHERE quotation_id='$quotation_id'");
+    if (!empty($qItems)) {
+        foreach ($qItems as $item) {
+            $pId = intval($item->product_id ?? 0);
+            $desc = addslashes($item->description ?? '');
+            $hsn = addslashes($item->hsn_code ?? '');
+            $rate = floatval($item->rate ?? 0);
+            $gstP = floatval($item->gst_percent ?? 0);
+            $discType = addslashes($item->discount_type ?? 'percentage');
+            $discVal = floatval($item->discount_value ?? 0);
+            $discAmt = floatval($item->discount_amount ?? 0);
+            $qty = floatval($item->qty ?? 1);
+            $netAmt = floatval($item->net_amount ?? 0);
+            $taxAmt = floatval($item->tax_amount ?? 0);
+            $totAmt = floatval($item->total_amount ?? 0);
+
+            $insItemSql = "INSERT INTO tbl_invoice_items (
+                invoice_id, product_id, description, hsn_code, rate, gst_percent,
+                discount_type, discount_value, discount_amount, qty, net_amount, tax_amount, total_amount
+            ) VALUES (
+                '$newInvoiceId', '$pId', '$desc', '$hsn', '$rate', '$gstP',
+                '$discType', '$discVal', '$discAmt', '$qty', '$netAmt', '$taxAmt', '$totAmt'
+            )";
+            mysqli_query($ai_conn, $insItemSql);
+
+            // Deduct stock for converted invoice item
+            if ($pId > 0 && function_exists('deductProductStock')) {
+                deductProductStock($pId, $qty);
+            }
+        }
+    }
+
+    // Update Quotation converted_invoice_id
+    mysqli_query($ai_conn, "UPDATE tbl_quotation SET converted_invoice_id='$newInvoiceId' WHERE id='$quotation_id'");
+
+    // Recalculate party outstanding
+    if (function_exists('recalculatePartyOutstanding') && !empty($quot->party_id)) {
+        recalculatePartyOutstanding($quot->party_id);
+    }
+
+    echo json_encode([
+        'status' => 'success',
+        'invoice_id' => $newInvoiceId,
+        'invoice_no' => $invNo,
+        'message' => 'Quotation successfully converted to Invoice ' . $invNo
+    ]);
+    exit;
+}
+
+if ($_POST['action'] === 'get_dashboard_outstanding') {
+    header('Content-Type: application/json');
+    $type = trim($_POST['type'] ?? 'sales'); // 'sales' or 'purchase'
+    $fromDate = !empty($_POST['from_date']) ? date('Y-m-d', strtotime($_POST['from_date'])) : '';
+    $toDate = !empty($_POST['to_date']) ? date('Y-m-d', strtotime($_POST['to_date'])) : '';
+
+    $userType = $_SESSION['user_type'] ?? 'admin';
+    $companyFilter = "";
+    if ($userType === 'company' && !empty($_SESSION['company_id'])) {
+        $cid = intval($_SESSION['company_id']);
+        $companyFilter = " AND company_id = '$cid'";
+    }
+
+    if ($type === 'sales') {
+        $dateWhere = "";
+        if (!empty($fromDate)) $dateWhere .= " AND invoice_date >= '$fromDate'";
+        if (!empty($toDate)) $dateWhere .= " AND invoice_date <= '$toDate'";
+
+        $invRow = $ai_db->aiGetQueryObj("SELECT 
+            COALESCE(SUM(grand_total), 0) AS total_payment,
+            COALESCE(SUM(paid_amount), 0) AS total_received,
+            COALESCE(SUM(cgst_amount), 0) AS total_cgst,
+            COALESCE(SUM(sgst_amount), 0) AS total_sgst
+            FROM tbl_invoice 
+            WHERE status = 'active' {$companyFilter} {$dateWhere}");
+
+        $totPayment = !empty($invRow) ? floatval($invRow[0]->total_payment) : 0.00;
+        $totReceived = !empty($invRow) ? floatval($invRow[0]->total_received) : 0.00;
+        $totPending = max(0, $totPayment - $totReceived);
+        $totCgst = !empty($invRow) ? floatval($invRow[0]->total_cgst) : 0.00;
+        $totSgst = !empty($invRow) ? floatval($invRow[0]->total_sgst) : 0.00;
+
+        echo json_encode([
+            'status' => true,
+            'total_payment' => number_format($totPayment, 2, '.', ''),
+            'total_received' => number_format($totReceived, 2, '.', ''),
+            'total_pending' => number_format($totPending, 2, '.', ''),
+            'total_cgst' => number_format($totCgst, 2, '.', ''),
+            'total_sgst' => number_format($totSgst, 2, '.', '')
+        ]);
+        exit;
+    } else {
+        $dateWhere = "";
+        if (!empty($fromDate)) $dateWhere .= " AND purchase_date >= '$fromDate'";
+        if (!empty($toDate)) $dateWhere .= " AND purchase_date <= '$toDate'";
+
+        $purRow = $ai_db->aiGetQueryObj("SELECT 
+            COALESCE(SUM(grand_total), 0) AS total_payment,
+            COALESCE(SUM(paid_amount), 0) AS total_payable,
+            COALESCE(SUM(cgst_amount), 0) AS total_cgst,
+            COALESCE(SUM(sgst_amount), 0) AS total_sgst
+            FROM tbl_purchase 
+            WHERE status = 'active' {$companyFilter} {$dateWhere}");
+
+        $totPayment = !empty($purRow) ? floatval($purRow[0]->total_payment) : 0.00;
+        $totPaid = !empty($purRow) ? floatval($purRow[0]->total_payable) : 0.00;
+        $totPending = max(0, $totPayment - $totPaid);
+        $totCgst = !empty($purRow) ? floatval($purRow[0]->total_cgst) : 0.00;
+        $totSgst = !empty($purRow) ? floatval($purRow[0]->total_sgst) : 0.00;
+
+        echo json_encode([
+            'status' => true,
+            'total_payment' => number_format($totPayment, 2, '.', ''),
+            'total_payable' => number_format($totPaid, 2, '.', ''),
+            'total_pending' => number_format($totPending, 2, '.', ''),
+            'total_cgst' => number_format($totCgst, 2, '.', ''),
+            'total_sgst' => number_format($totSgst, 2, '.', '')
+        ]);
+        exit;
+    }
+}
+

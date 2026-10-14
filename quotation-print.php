@@ -81,10 +81,22 @@ function getIndianCurrencyWords(float $number) {
     return ($Rupees ? $Rupees . 'Rupees ' : '') . $paise . " Only";
 }
 
-$amountInWords = getIndianCurrencyWords(floatval($q->grand_total));
-$isGst = ($q->gst_type === 'with_gst');
-$hasCgstSgst = ($q->cgst_amount > 0 || $q->sgst_amount > 0);
-$hasIgst = ($q->igst_amount > 0);
+$isCompanyGst = (!empty($company) && isset($company->gst_applicable)) ? ((int)$company->gst_applicable === 1) : true;
+$isGst = ($isCompanyGst && $q->gst_type === 'with_gst');
+$hasCgstSgst = ($isGst && ($q->cgst_amount > 0 || $q->sgst_amount > 0));
+$hasIgst = ($isGst && $q->igst_amount > 0);
+
+$hasDiscount = false;
+if (!empty($items)) {
+    foreach ($items as $it) {
+        if (floatval($it->discount_value ?? 0) > 0 || floatval($it->discount_amount ?? 0) > 0) {
+            $hasDiscount = true;
+            break;
+        }
+    }
+}
+
+$amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -450,7 +462,7 @@ $hasIgst = ($q->igst_amount > 0);
                             <?= !empty($company->email) ? '<strong>Email:</strong> ' . htmlspecialchars($company->email) : '' ?>
                         </p>
                     <?php } ?>
-                    <?php if (!empty($company->gst_no)) { ?>
+                    <?php if ($isCompanyGst && !empty($company->gst_no)) { ?>
                         <p><strong>GSTIN:</strong> <?= htmlspecialchars($company->gst_no) ?></p>
                     <?php } ?>
                 </div>
@@ -490,7 +502,7 @@ $hasIgst = ($q->igst_amount > 0);
                         <?php if (!empty($q->city_name) || !empty($q->state_name)) { ?>
                             <div><?= htmlspecialchars(trim(($q->city_name ? $q->city_name . ', ' : '') . $q->state_name)) ?></div>
                         <?php } ?>
-                        <?php if (!empty($q->gst_no)) { ?>
+                        <?php if ($isCompanyGst && !empty($q->gst_no)) { ?>
                             <div style="margin-top: 4px;"><strong>GSTIN:</strong> <?= htmlspecialchars($q->gst_no) ?></div>
                         <?php } ?>
                         <?php if (!empty($party->mobile_no)) { ?>
@@ -505,7 +517,9 @@ $hasIgst = ($q->igst_amount > 0);
                 <div class="party-box">
                     <div class="party-box-title">QUOTATION DETAILS</div>
                     <div class="party-desc" style="line-height: 1.8;">
-                        <div><strong>GST Type:</strong> <?= ($q->gst_type === 'with_gst') ? 'With GST' : 'Without GST' ?></div>
+                        <?php if ($isCompanyGst) { ?>
+                            <div><strong>GST Type:</strong> <?= ($q->gst_type === 'with_gst') ? 'With GST' : 'Without GST' ?></div>
+                        <?php } ?>
                         <div><strong>Reverse Charge (RCM):</strong> <?= htmlspecialchars($q->rca ?? 'No') ?></div>
                         <div><strong>Place of Supply:</strong> <?= !empty($q->state_name) ? htmlspecialchars($q->state_name) : 'Gujarat' ?></div>
                     </div>
@@ -517,16 +531,18 @@ $hasIgst = ($q->igst_amount > 0);
                 <thead>
                     <tr>
                         <th style="width: 5%;">#</th>
-                        <th style="width: 30%;" class="text-start">Item Description</th>
+                        <th style="width: <?= $hasDiscount ? '28%' : '35%' ?>;" class="text-start">Item Description</th>
                         <th style="width: 10%;">HSN/SAC</th>
-                        <th style="width: 10%;">Rate</th>
+                        <th style="width: 12%;">Rate</th>
                         <th style="width: 8%;">Qty</th>
-                        <th style="width: 12%;">Discount</th>
-                        <th style="width: 11%;">Taxable Amt</th>
+                        <?php if ($hasDiscount) { ?>
+                            <th style="width: 12%;">Discount</th>
+                        <?php } ?>
+                        <th style="width: 12%;">Taxable Amt</th>
                         <?php if ($isGst) { ?>
                             <th style="width: 8%;">GST</th>
                         <?php } ?>
-                        <th style="width: 12%;">Total</th>
+                        <th style="width: 13%;">Total</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -561,7 +577,9 @@ $hasIgst = ($q->igst_amount > 0);
                             <td class="text-center"><?= !empty($item->hsn_code) ? htmlspecialchars($item->hsn_code) : '-' ?></td>
                             <td class="text-end">₹<?= number_format($rate, 2) ?></td>
                             <td class="text-center"><?= number_format($qty, 2) ?></td>
-                            <td class="text-center"><?= $discLabel ?></td>
+                            <?php if ($hasDiscount) { ?>
+                                <td class="text-center"><?= $discLabel ?></td>
+                            <?php } ?>
                             <td class="text-end">₹<?= number_format($netAmt, 2) ?></td>
                             <?php if ($isGst) { ?>
                                 <td class="text-center"><?= $gstPct ?>%</td>
@@ -570,9 +588,11 @@ $hasIgst = ($q->igst_amount > 0);
                         </tr>
                     <?php 
                         }
-                    } else { ?>
+                    } else { 
+                        $colSpan = 6 + ($hasDiscount ? 1 : 0) + ($isGst ? 1 : 0);
+                    ?>
                         <tr>
-                            <td colspan="<?= $isGst ? '9' : '8' ?>" class="text-center" style="padding: 24px; color: #94a3b8;">
+                            <td colspan="<?= $colSpan ?>" class="text-center" style="padding: 24px; color: #94a3b8;">
                                 No items found in this quotation.
                             </td>
                         </tr>
@@ -584,7 +604,7 @@ $hasIgst = ($q->igst_amount > 0);
             <div class="summary-wrapper">
                 <div class="amount-words-box">
                     <div class="amount-words-title">Amount in Words:</div>
-                    <div class="amount-words-text"><?= htmlspecialchars($amountInWords) ?></div>
+                    <div class="amount-words-text"><?= htmlspecialchars($amountInWords ?? '') ?></div>
                 </div>
 
                 <table class="calculation-table">

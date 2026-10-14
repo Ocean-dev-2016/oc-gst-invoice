@@ -457,6 +457,7 @@ if ($action === 'profile') {
         apiResponse(200, 'Profile retrieved successfully.', [
             'id'                   => (int)$company['id'],
             'company_name'         => $company['company_name'] ?? '',
+            'gst_applicable'       => (int)($company['gst_applicable'] ?? 0),
             'owner_name'           => $company['owner_name'] ?? '',
             'mobile_no'            => $company['mobile_no'] ?? '',
             'email'                => $company['email'] ?? '',
@@ -480,7 +481,8 @@ if ($action === 'profile') {
         $mobile_no          = trim($input['mobile_no'] ?? ($company['mobile_no'] ?? ''));
         $email              = trim($input['email'] ?? ($company['email'] ?? ''));
         $username           = trim($input['username'] ?? ($company['username'] ?? ''));
-        $gst_no             = trim($input['gst_no'] ?? ($company['gst_no'] ?? ''));
+        $gst_applicable     = isset($input['gst_applicable']) ? (int)$input['gst_applicable'] : (int)($company['gst_applicable'] ?? 0);
+        $gst_no             = ($gst_applicable === 1) ? trim($input['gst_no'] ?? ($company['gst_no'] ?? '')) : '';
         $state_id           = isset($input['state_id']) ? (int)$input['state_id'] : (int)($company['state_id'] ?? 0);
         $city_id            = isset($input['city_id']) ? (int)$input['city_id'] : (int)($company['city_id'] ?? 0);
         $address            = trim($input['address'] ?? ($company['address'] ?? ''));
@@ -488,6 +490,10 @@ if ($action === 'profile') {
         // Validation
         if ($company_name === '') {
             apiResponse(400, 'Business name is required.');
+        }
+
+        if ($gst_applicable === 1 && $gst_no === '') {
+            apiResponse(400, 'GST Number is required when GST is Applicable.');
         }
 
         if ($email === '') {
@@ -535,6 +541,7 @@ if ($action === 'profile') {
         // Update company profile
         $updateQry = "UPDATE tbl_company SET 
                       company_name       = '{$safeCompany}',
+                      gst_applicable     = {$gst_applicable},
                       owner_name         = '{$safeOwner}',
                       mobile_no          = '{$safeMobile}',
                       email              = '{$safeEmail}',
@@ -557,6 +564,7 @@ if ($action === 'profile') {
         apiResponse(200, 'Profile updated successfully.', [
             'id'                   => $cId,
             'company_name'         => $company_name,
+            'gst_applicable'       => $gst_applicable,
             'owner_name'           => $owner_name,
             'mobile_no'            => $mobile_no,
             'email'                => $email,
@@ -2049,9 +2057,97 @@ if ($action === 'invoice-add') {
     ]);
 }
 
+if ($action === 'product-list') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $raw = file_get_contents('php://input');
+    $input = json_decode($raw, true);
+    if (!is_array($input)) {
+        $input = $_POST;
+    }
+
+    $token = '';
+    $headers = function_exists('getallheaders') ? getallheaders() : [];
+    $authHeader = $headers['Authorization'] ?? ($headers['authorization'] ?? ($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
+    if (!empty($authHeader) && preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+        $token = trim($matches[1]);
+    }
+    if (empty($token)) {
+        $token = trim($input['api_token'] ?? ($input['token'] ?? ($_GET['api_token'] ?? ($_GET['token'] ?? ''))));
+    }
+    $companyId = (int)($input['company_id'] ?? ($input['id'] ?? ($_GET['company_id'] ?? ($_GET['id'] ?? 0))));
+
+    $company = null;
+    if (!empty($token)) {
+        $safeToken = mysqli_real_escape_string($ai_conn, $token);
+        $res = $ai_db->aiGetQuery("SELECT * FROM tbl_company WHERE api_token='{$safeToken}' LIMIT 1");
+        if (!empty($res)) {
+            $company = $res[0];
+        }
+    } elseif ($companyId > 0) {
+        $res = $ai_db->aiGetQuery("SELECT * FROM tbl_company WHERE id={$companyId} LIMIT 1");
+        if (!empty($res)) {
+            $company = $res[0];
+        }
+    }
+
+    if (!$company) {
+        apiResponse(401, 'Unauthorized or Company not found. Please provide a valid API token or company_id.');
+    }
+
+    $cId = (int)$company['id'];
+    $filterStatus = trim($input['status'] ?? ($_GET['status'] ?? ''));
+    if ($filterStatus === 'active' || $filterStatus === 'deactive') {
+        $statusCond = " AND status = '{$filterStatus}'";
+    } elseif ($filterStatus === 'all') {
+        $statusCond = '';
+    } else {
+        $statusCond = " AND status = 'active'";
+    }
+
+    $search = trim($input['search'] ?? ($_GET['search'] ?? ''));
+    $searchCond = '';
+    if ($search !== '') {
+        $safeSearch = mysqli_real_escape_string($ai_conn, $search);
+        $searchCond = " AND (product_name LIKE '%{$safeSearch}%' OR sku LIKE '%{$safeSearch}%' OR hsn_code LIKE '%{$safeSearch}%')";
+    }
+
+    $products = $ai_db->aiGetQueryObj(
+        "SELECT id, company_id, product_name, sku, hsn_code, gst_rate, purchase_price, sales_price, status, created_at
+         FROM tbl_product
+         WHERE company_id = {$cId}{$statusCond}{$searchCond}
+         ORDER BY product_name ASC, id DESC"
+    );
+
+    $list = [];
+    if (!empty($products)) {
+        foreach ($products as $product) {
+            $list[] = [
+                'id'             => (int)$product->id,
+                'company_id'     => (int)$product->company_id,
+                'product_name'   => $product->product_name ?? '',
+                'sku'            => $product->sku ?? '',
+                'hsn_code'       => $product->hsn_code ?? '',
+                'gst_rate'       => (float)($product->gst_rate ?? 18),
+                'purchase_price' => (float)$product->purchase_price,
+                'sales_price'    => (float)$product->sales_price,
+                'status'         => $product->status ?? '',
+                'created_at'     => $product->created_at ?? ''
+            ];
+        }
+    }
+
+    apiResponse(200, 'Product list retrieved successfully.', [
+        'company_id'   => $cId,
+        'company_name' => $company['company_name'] ?? '',
+        'total'        => count($list),
+        'products'     => $list
+    ]);
+}
+
 apiResponse(404, 'Invalid API action.');
-
-
 
 
 
