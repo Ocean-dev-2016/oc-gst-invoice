@@ -633,44 +633,93 @@ $ai_core = new AI_Core();
 
 /**
  * Recalculate and update the party's current outstanding balance
- * Outstanding = (Opening Balance based on Debit/Credit) + (Total Pending Quotations/Invoices)
+ * Outstanding is calculated based purely on INVOICES:
+ * Outstanding = (Opening Balance based on Debit/Credit) + (Total Pending Invoices)
  */
 function recalculatePartyOutstanding($partyId) {
     global $ai_conn, $ai_db;
     $partyId = intval($partyId);
     if ($partyId <= 0) return false;
 
-    // Get party opening balance and balance_type
-    $pRow = $ai_db->aiGetQueryObj("SELECT id, opening_balance, balance_type FROM tbl_party WHERE id='$partyId' LIMIT 1");
+    // Get party opening balance, balance_type and party_status
+    $pRow = $ai_db->aiGetQueryObj("SELECT id, opening_balance, balance_type, party_status FROM tbl_party WHERE id='$partyId' LIMIT 1");
     if (empty($pRow)) return false;
 
     $party = $pRow[0];
     $opBal = floatval($party->opening_balance ?? 0);
     $balType = $party->balance_type ?? 'Debit';
+    $partyStatus = $party->party_status ?? 'Sales';
     
     // Debit opening balance means party owes us money (+).
-    // Credit opening balance means party gave advance money (-).
-    $baseBalance = ($balType === 'Debit') ? $opBal : -$opBal;
+    // Credit opening balance means we owe party or party gave advance money (-).
+    $netBalance = ($balType === 'Debit') ? $opBal : -$opBal;
 
-    // Sum of all active Pending quotations for this party
-    $qRow = $ai_db->aiGetQueryObj("SELECT COALESCE(SUM(grand_total), 0) AS pending_total 
-                                    FROM tbl_quotation 
-                                    WHERE party_id='$partyId' 
-                                      AND payment_status='Pending' 
-                                      AND status='active'");
-    $pendingTotal = !empty($qRow) ? floatval($qRow[0]->pending_total) : 0.00;
+    if ($partyStatus === 'Purchase') {
+        // For Purchase party (Supplier/Vendor):
+        // Credit opening balance means we owe the vendor (Payable).
+        // Debit opening balance means advance given to vendor (Receivable).
+        $purNetCredit = ($balType === 'Credit') ? $opBal : -$opBal;
 
-    $calcOutstanding = $baseBalance + $pendingTotal;
+        $purRow = $ai_db->aiGetQueryObj("SELECT 
+                                            COALESCE(SUM(grand_total), 0) AS total_purchase_amt,
+                                            COALESCE(SUM(paid_amount), 0) AS total_paid_amt
+                                          FROM tbl_purchase 
+                                          WHERE party_id='$partyId' 
+                                            AND status='active'");
+        $totalPurAmt = !empty($purRow) ? floatval($purRow[0]->total_purchase_amt) : 0.00;
+        $totalPaidAmt = !empty($purRow) ? floatval($purRow[0]->total_paid_amt) : 0.00;
+        
+        // Outstanding payable (Credit) = (Opening Credit) + (Total Purchase Unpaid: totalPurAmt - totalPaidAmt)
+        // If purNetCredit > 0 => Credit; if purNetCredit < 0 => Debit.
+        $calcCreditPayable = $purNetCredit + ($totalPurAmt - $totalPaidAmt);
 
-    // Outstanding represents money the customer owes us.
-    // If quotation is deactive or paid and customer has credit advance, outstanding should be 0.00 (not negative).
-    $finalOutstanding = ($calcOutstanding > 0) ? $calcOutstanding : 0.00;
+        if ($calcCreditPayable > 0.0001) {
+            $finalOutstanding = $calcCreditPayable;
+            $outType = 'Credit';
+        } elseif ($calcCreditPayable < -0.0001) {
+            $finalOutstanding = abs($calcCreditPayable);
+            $outType = 'Debit';
+        } else {
+            $finalOutstanding = 0.00;
+            $outType = 'Credit';
+        }
+    } else {
+        // Sum of all active invoices (grand_total and paid_amount) for this Sales party
+        $invRow = $ai_db->aiGetQueryObj("SELECT 
+                                            COALESCE(SUM(grand_total), 0) AS total_invoice_amt,
+                                            COALESCE(SUM(paid_amount), 0) AS total_paid_amt
+                                          FROM tbl_invoice 
+                                          WHERE party_id='$partyId' 
+                                            AND status='active'");
 
-    // Update in tbl_party
+        $totalInvAmt = !empty($invRow) ? floatval($invRow[0]->total_invoice_amt) : 0.00;
+        $totalPaidAmt = !empty($invRow) ? floatval($invRow[0]->total_paid_amt) : 0.00;
+
+        // Net balance = (Opening Balance [Debit:+ / Credit:-]) + (Total Invoices) - (Total Paid Amount)
+        $calcBalance = $netBalance + $totalInvAmt - $totalPaidAmt;
+
+        // Determine outstanding amount and type for Sales
+        if ($calcBalance > 0.0001) {
+            $finalOutstanding = $calcBalance;
+            $outType = 'Debit';
+        } elseif ($calcBalance < -0.0001) {
+            $finalOutstanding = abs($calcBalance);
+            $outType = 'Credit';
+        } else {
+            $finalOutstanding = 0.00;
+            $outType = 'Debit';
+        }
+    }
+
+    // Update tbl_party outstanding and outstanding_type
     $safeOutstanding = number_format($finalOutstanding, 2, '.', '');
-    mysqli_query($ai_conn, "UPDATE tbl_party SET outstanding='{$safeOutstanding}' WHERE id='$partyId'");
+    mysqli_query($ai_conn, "UPDATE tbl_party SET outstanding='{$safeOutstanding}', outstanding_type='{$outType}' WHERE id='$partyId'");
 
-    return $finalOutstanding;
+    return [
+        'outstanding' => $finalOutstanding,
+        'outstanding_type' => $outType,
+        'formatted' => '₹' . number_format($finalOutstanding, 2) . ' (' . $outType . ')'
+    ];  
 }
 
 /**
@@ -701,22 +750,191 @@ function generateCompanyQuotationNo($ai_db, $company_id = 0) {
     $fy = $currentYear . '-' . $nextYear;
     
     $prefix = 'OQ';
-    if ($company_id > 0) {
-        $compRow = $ai_db->aiGetQueryObj("SELECT company_name FROM tbl_company WHERE id='$company_id' LIMIT 1");
-        if (!empty($compRow) && !empty($compRow[0]->company_name)) {
-            $prefix = getCompanyQuotationPrefix($compRow[0]->company_name);
-        }
-    }
     
-    $whereComp = ($company_id > 0) ? "WHERE company_id='$company_id'" : "";
-    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation $whereComp ORDER BY id DESC LIMIT 1");
+    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation ORDER BY id DESC LIMIT 1");
     $nextNum = 1;
     if (!empty($maxRow)) {
         $qNo = $maxRow[0]->quotation_no;
         if (preg_match('~/(\d+)/~', $qNo, $matches)) {
             $nextNum = intval($matches[1]) + 1;
         } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation $whereComp")) + 1;
+            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation")) + 1;
+        }
+    }
+    
+    return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+}
+
+/**
+ * Auto Generate Invoice No (Always prefixed with INV, e.g. INV/001/26-27)
+ */
+function generateCompanyInvoiceNo($ai_db, $company_id = 0) {
+    $currentYear = date('y');
+    $nextYear = date('y', strtotime('+1 year'));
+    $fy = $currentYear . '-' . $nextYear;
+    
+    $prefix = 'INV';
+    
+    $maxRow = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice ORDER BY id DESC LIMIT 1");
+    $nextNum = 1;
+    if (!empty($maxRow)) {
+        $invNo = $maxRow[0]->invoice_no;
+        if (preg_match('~/(\d+)/~', $invNo, $matches)) {
+            $nextNum = intval($matches[1]) + 1;
+        } else {
+            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_invoice")) + 1;
+        }
+    }
+    
+    return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+}
+
+/**
+ * Check if a product has sufficient stock for requested quantity.
+ * Returns array with ['available' => bool, 'stock' => float, 'track' => bool, 'product_name' => string]
+ */
+function checkProductStockAvailability($productId, $requestedQty) {
+    global $ai_conn;
+    $productId = intval($productId);
+    $requestedQty = floatval($requestedQty);
+
+    $q = mysqli_query($ai_conn, "SELECT product_name, stock, track_stock FROM tbl_product WHERE id='$productId' LIMIT 1");
+    if ($q && $row = mysqli_fetch_assoc($q)) {
+        $track = (isset($row['track_stock']) && (int)$row['track_stock'] === 0) ? false : true;
+        $curStock = floatval($row['stock'] ?? 0);
+        $prodName = $row['product_name'] ?? 'Product';
+
+        if (!$track) {
+            return ['available' => true, 'stock' => $curStock, 'track' => false, 'product_name' => $prodName];
+        }
+
+        return [
+            'available' => ($curStock >= $requestedQty),
+            'stock' => $curStock,
+            'track' => true,
+            'product_name' => $prodName
+        ];
+    }
+    return ['available' => true, 'stock' => 0, 'track' => false, 'product_name' => ''];
+}
+
+/**
+ * Deduct stock for a product when invoice item is added or sold.
+ */
+function deductProductStock($productId, $qty) {
+    global $ai_conn;
+    $productId = intval($productId);
+    $qty = floatval($qty);
+    if ($productId <= 0 || $qty <= 0) return false;
+
+    // Check if tracking is enabled for this product
+    $q = mysqli_query($ai_conn, "SELECT track_stock, stock FROM tbl_product WHERE id='$productId' LIMIT 1");
+    if ($q && $row = mysqli_fetch_assoc($q)) {
+        if (isset($row['track_stock']) && (int)$row['track_stock'] === 0) {
+            return true; // Tracking disabled for this item
+        }
+        $safeQty = number_format($qty, 2, '.', '');
+        return mysqli_query($ai_conn, "UPDATE tbl_product SET stock = stock - {$safeQty} WHERE id='$productId'");
+    }
+    return false;
+}
+
+/**
+ * Restore product stock when invoice is edited, cancelled or deleted.
+ */
+function restoreInvoiceProductStock($invoiceId) {
+    global $ai_conn, $ai_db;
+    $invoiceId = intval($invoiceId);
+    if ($invoiceId <= 0) return false;
+
+    $items = $ai_db->aiGetQueryObj("SELECT product_id, qty FROM tbl_invoice_items WHERE invoice_id='$invoiceId'");
+    if (!empty($items)) {
+        foreach ($items as $item) {
+            $pId = intval($item->product_id ?? 0);
+            $qty = floatval($item->qty ?? 0);
+            if ($pId > 0 && $qty > 0) {
+                // Check if product tracks stock
+                $q = mysqli_query($ai_conn, "SELECT track_stock FROM tbl_product WHERE id='$pId' LIMIT 1");
+                if ($q && $pRow = mysqli_fetch_assoc($q)) {
+                    if (isset($pRow['track_stock']) && (int)$pRow['track_stock'] === 0) {
+                        continue;
+                    }
+                    $safeQty = number_format($qty, 2, '.', '');
+                    mysqli_query($ai_conn, "UPDATE tbl_product SET stock = stock + {$safeQty} WHERE id='$pId'");
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * Add stock for a product when purchased.
+ */
+function addProductStock($productId, $qty) {
+    global $ai_conn;
+    $productId = intval($productId);
+    $qty = floatval($qty);
+    if ($productId <= 0 || $qty <= 0) return false;
+
+    // Check if tracking is enabled for this product
+    $q = mysqli_query($ai_conn, "SELECT track_stock, stock FROM tbl_product WHERE id='$productId' LIMIT 1");
+    if ($q && $row = mysqli_fetch_assoc($q)) {
+        if (isset($row['track_stock']) && (int)$row['track_stock'] === 0) {
+            return true; // Tracking disabled
+        }
+        $safeQty = number_format($qty, 2, '.', '');
+        return mysqli_query($ai_conn, "UPDATE tbl_product SET stock = stock + {$safeQty} WHERE id='$productId'");
+    }
+    return false;
+}
+
+/**
+ * Revert stock addition when purchase bill is edited, deactivated, or deleted.
+ */
+function restorePurchaseProductStock($purchaseId) {
+    global $ai_conn, $ai_db;
+    $purchaseId = intval($purchaseId);
+    if ($purchaseId <= 0) return false;
+
+    $items = $ai_db->aiGetQueryObj("SELECT product_id, qty FROM tbl_purchase_items WHERE purchase_id='$purchaseId'");
+    if (!empty($items)) {
+        foreach ($items as $item) {
+            $pId = intval($item->product_id ?? 0);
+            $qty = floatval($item->qty ?? 0);
+            if ($pId > 0 && $qty > 0) {
+                $q = mysqli_query($ai_conn, "SELECT track_stock FROM tbl_product WHERE id='$pId' LIMIT 1");
+                if ($q && $pRow = mysqli_fetch_assoc($q)) {
+                    if (isset($pRow['track_stock']) && (int)$pRow['track_stock'] === 0) {
+                        continue;
+                    }
+                    $safeQty = number_format($qty, 2, '.', '');
+                    mysqli_query($ai_conn, "UPDATE tbl_product SET stock = stock - {$safeQty} WHERE id='$pId'");
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * Auto Generate Purchase Bill No (Prefixed with PUR, e.g. PUR/001/26-27)
+ */
+function generateCompanyPurchaseNo($ai_db, $company_id = 0) {
+    $currentYear = date('y');
+    $nextYear = date('y', strtotime('+1 year'));
+    $fy = $currentYear . '-' . $nextYear;
+    
+    $prefix = 'PUR';
+    
+    $maxRow = $ai_db->aiGetQueryObj("SELECT purchase_no FROM tbl_purchase ORDER BY id DESC LIMIT 1");
+    $nextNum = 1;
+    if (!empty($maxRow)) {
+        $pNo = $maxRow[0]->purchase_no;
+        if (preg_match('~/(\d+)/~', $pNo, $matches)) {
+            $nextNum = intval($matches[1]) + 1;
+        } else {
+            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_purchase")) + 1;
         }
     }
     

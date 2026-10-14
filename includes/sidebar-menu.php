@@ -35,12 +35,50 @@ $sidebarMenu = [
         'key' => 'manage_product'
     ],
     [
+        'type' => 'group',
+        'label' => 'Sales',
+        'icon' => 'ti ti-shopping-cart',
+        'children' => [
+            [
+                'type' => 'item',
+                'label' => 'Quotation',
+                'icon' => 'ti ti-file-description',
+                'url' => 'manage-quotation-list.php',
+                'alt_urls' => ['manage-quotation-form.php'],
+                'key' => 'manage_quotation'
+            ],
+            [
+                'type' => 'item',
+                'label' => 'Invoice',
+                'icon' => 'ti ti-file-invoice',
+                'url' => 'manage-invoice-list.php',
+                'alt_urls' => ['manage-invoice-form.php'],
+                'key' => 'manage_invoice'
+            ],
+        ]
+    ],
+    [
+        'type' => 'group',
+        'label' => 'Purchase',
+        'icon' => 'ti ti-truck-delivery',
+        'children' => [
+            [
+                'type' => 'item',
+                'label' => 'Purchase Bill',
+                'icon' => 'ti ti-file-dollar',
+                'url' => 'manage-purchase-list.php',
+                'alt_urls' => ['manage-purchase-form.php'],
+                'key' => 'manage_purchase'
+            ],
+        ]
+    ],
+    [
         'type' => 'item',
-        'label' => 'Manage Quotation',
-        'icon' => 'ti ti-file-invoice',
-        'url' => 'manage-quotation-list.php',
-        'alt_urls' => ['manage-quotation-form.php'],
-        'key' => 'manage_quotation'
+        'label' => 'Manage Ledger',
+        'icon' => 'ti ti-report-money',
+        'url' => 'manage-ledger.php',
+        'alt_urls' => ['ledger-print.php'],
+        'key' => 'manage_ledger'
     ],
     [
         'type' => 'group',

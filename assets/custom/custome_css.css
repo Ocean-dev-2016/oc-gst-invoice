@@ -427,6 +427,7 @@
         opacity: 0;
         transform: translateY(6px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -438,12 +439,14 @@
         flex-direction: column;
         min-height: auto;
     }
+
     .whi-list {
         width: 100%;
         border-right: 0;
         border-bottom: 1px solid var(--whi-border);
     }
 }
+
 .whi-list-row {
     display: flex;
     align-items: stretch;
@@ -483,12 +486,12 @@
     transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.whi-check input:checked + span {
+.whi-check input:checked+span {
     background: var(--whi-accent);
     border-color: var(--whi-accent);
 }
 
-.whi-check input:checked + span::after {
+.whi-check input:checked+span::after {
     content: "";
     position: absolute;
     left: 4px;
@@ -1091,8 +1094,8 @@
         min-width: 100%;
     }
 
-    .card-datatable .dataTables_wrapper .row:first-child > [class^="col-"],
-    .card-datatable .dataTables_wrapper .row:first-child > [class*=" col-"] {
+    .card-datatable .dataTables_wrapper .row:first-child>[class^="col-"],
+    .card-datatable .dataTables_wrapper .row:first-child>[class*=" col-"] {
         width: 100%;
         max-width: 100%;
         flex: 0 0 100%;
@@ -1120,4 +1123,31 @@
         width: max-content !important;
         min-width: 100%;
     }
+}
+
+/* ===== Sidebar Active Menu Item - Orange Only ===== */
+.bg-menu-theme.menu-vertical .menu-item.active>.menu-link:not(.menu-toggle) {
+    background: linear-gradient(135deg, #e77820 0%, #e77820 100%) !important;
+    box-shadow: 0px 2px 6px 0px rgba(231, 120, 32, 0.48) !important;
+    color: #fff !important;
+}
+
+[dir=rtl] .bg-menu-theme.menu-vertical .menu-item.active>.menu-link:not(.menu-toggle) {
+    background: linear-gradient(135deg, #e77820 0%, #e77820 100%) !important;
+}
+
+.bg-menu-theme.menu-horizontal .menu-inner>.menu-item.active>.menu-link.menu-toggle {
+    background: linear-gradient(135deg, #e77820 0%, #e77820 100%) !important;
+    box-shadow: 0px 2px 6px 0px rgba(231, 120, 32, 0.48) !important;
+    color: #fff !important;
+}
+
+[dir=rtl] .bg-menu-theme.menu-horizontal .menu-inner>.menu-item.active>.menu-link.menu-toggle {
+    background: linear-gradient(135deg, #e77820 0%, #e77820 100%) !important;
+    box-shadow: 0px 2px 6px 0px rgba(231, 120, 32, 0.48) !important;
+    color: #fff !important;
+}
+
+.layout-wrapper:not(.layout-horizontal) .bg-menu-theme .menu-inner>.menu-item.active:before {
+    background-color: #e77820 !important;
 }

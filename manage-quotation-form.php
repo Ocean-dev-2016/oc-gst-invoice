@@ -7,70 +7,6 @@ $redirection_url = 'manage-quotation-list.php';
 
 error_reporting(E_ALL);
 
-// Ensure tables exist
-$ai_db->aiQuery("CREATE TABLE IF NOT EXISTS `tbl_quotation` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `company_id` int(11) DEFAULT 0,
-  `party_id` int(11) DEFAULT 0,
-  `party_name` varchar(255) DEFAULT '',
-  `gst_no` varchar(50) DEFAULT '',
-  `quotation_no` varchar(50) DEFAULT '',
-  `rca` varchar(10) DEFAULT 'No',
-  `address` text DEFAULT NULL,
-  `state_id` int(11) DEFAULT 0,
-  `state_name` varchar(100) DEFAULT '',
-  `city_id` int(11) DEFAULT 0,
-  `city_name` varchar(100) DEFAULT '',
-  `quotation_date` date DEFAULT NULL,
-  `due_date` date DEFAULT NULL,
-  `gst_type` varchar(20) DEFAULT 'with_gst',
-  `total_amount` decimal(12,2) DEFAULT 0.00,
-  `cgst_amount` decimal(12,2) DEFAULT 0.00,
-  `sgst_amount` decimal(12,2) DEFAULT 0.00,
-  `igst_amount` decimal(12,2) DEFAULT 0.00,
-  `tax_amount` decimal(12,2) DEFAULT 0.00,
-  `grand_total` decimal(12,2) DEFAULT 0.00,
-  `payment_status` enum('Pending','Paid') NOT NULL DEFAULT 'Pending',
-  `status` varchar(20) DEFAULT 'active',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
-
-// Check if columns exist
-$colCheckForm = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation LIKE 'payment_status'");
-if ($colCheckForm && mysqli_num_rows($colCheckForm) === 0) {
-    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation ADD COLUMN `payment_status` ENUM('Pending','Paid') NOT NULL DEFAULT 'Pending' AFTER `grand_total`");
-}
-$colCheckDue = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation LIKE 'due_date'");
-if ($colCheckDue && mysqli_num_rows($colCheckDue) === 0) {
-    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation ADD COLUMN `due_date` DATE NULL DEFAULT NULL AFTER `quotation_date`");
-}
-
-$ai_db->aiQuery("CREATE TABLE IF NOT EXISTS `tbl_quotation_items` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `quotation_id` int(11) NOT NULL,
-  `product_id` int(11) DEFAULT 0,
-  `description` text DEFAULT NULL,
-  `hsn_code` varchar(50) DEFAULT '',
-  `rate` decimal(12,2) DEFAULT 0.00,
-  `gst_percent` decimal(5,2) DEFAULT 0.00,
-  `discount_type` enum('percentage','fixed') NOT NULL DEFAULT 'percentage',
-  `discount_value` decimal(10,2) NOT NULL DEFAULT 0.00,
-  `discount_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `qty` decimal(10,2) DEFAULT 1.00,
-  `net_amount` decimal(12,2) DEFAULT 0.00,
-  `tax_amount` decimal(12,2) DEFAULT 0.00,
-  `total_amount` decimal(12,2) DEFAULT 0.00,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
-
-$colCheckDisc = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation_items LIKE 'discount_type'");
-if ($colCheckDisc && mysqli_num_rows($colCheckDisc) === 0) {
-    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation_items ADD COLUMN `discount_type` ENUM('percentage','fixed') NOT NULL DEFAULT 'percentage' AFTER `gst_percent`");
-    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation_items ADD COLUMN `discount_value` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `discount_type`");
-    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation_items ADD COLUMN `discount_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER `discount_value`");
-}
-
 $mode = $_REQUEST['mode'] ?? 'add';
 $id = isset($_REQUEST['id']) ? intval($_REQUEST['id']) : 0;
 
@@ -78,7 +14,7 @@ $err_msg = '';
 $quotationData = null;
 $quotationItems = [];
 
-// Auto Generate Quotation No company wise if mode=add
+// Auto Generate Quotation No (Always prefixed with OQ)
 function generateQuotationNo($ai_db, $company_id = 0) {
     if (function_exists('generateCompanyQuotationNo')) {
         return generateCompanyQuotationNo($ai_db, $company_id);
@@ -88,27 +24,15 @@ function generateQuotationNo($ai_db, $company_id = 0) {
     $fy = $currentYear . '-' . $nextYear;
     
     $prefix = 'OQ';
-    if ($company_id > 0) {
-        $compRow = $ai_db->aiGetQueryObj("SELECT company_name FROM tbl_company WHERE id='$company_id' LIMIT 1");
-        if (!empty($compRow) && !empty($compRow[0]->company_name)) {
-            $words = preg_split('/\s+/', trim(preg_replace('/[^a-zA-Z0-9\s]/', '', $compRow[0]->company_name)), -1, PREG_SPLIT_NO_EMPTY);
-            if (count($words) >= 2) {
-                $prefix = strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
-            } else {
-                $prefix = strtoupper(substr($words[0], 0, min(2, strlen($words[0]))));
-            }
-        }
-    }
     
-    $whereComp = ($company_id > 0) ? "WHERE company_id='$company_id'" : "";
-    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation $whereComp ORDER BY id DESC LIMIT 1");
+    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation ORDER BY id DESC LIMIT 1");
     $nextNum = 1;
     if (!empty($maxRow)) {
         $qNo = $maxRow[0]->quotation_no;
         if (preg_match('~/(\d+)/~', $qNo, $matches)) {
             $nextNum = intval($matches[1]) + 1;
         } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation $whereComp")) + 1;
+            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation")) + 1;
         }
     }
     
@@ -120,10 +44,20 @@ $session_company_id = intval($_SESSION['company_id'] ?? 0);
 $current_company_id = ($userType === 'company') ? $session_company_id : intval($_POST['company_id'] ?? 0);
 
 // Fetch master data for dropdowns
-$companies = $ai_db->aiGetQueryObj("SELECT id, company_name FROM tbl_company WHERE status='active' ORDER BY company_name ASC");
+$companies = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_applicable FROM tbl_company WHERE status='active' ORDER BY company_name ASC");
+
+function isQuotationCompanyGstApplicable($companyId)
+{
+    global $ai_db;
+    if (empty($companyId)) {
+        return false;
+    }
+    $comp = $ai_db->aiGetQueryObj("SELECT gst_applicable FROM tbl_company WHERE id='" . intval($companyId) . "' LIMIT 1");
+    return (!empty($comp) && (int)$comp[0]->gst_applicable === 1);
+}
 
 // Fetch parties and products based on logged-in company or selected company
-$partyWhere = ($current_company_id > 0) ? "WHERE status='active' AND company_id='$current_company_id'" : "WHERE status='active'";
+$partyWhere = ($current_company_id > 0) ? "WHERE status='active' AND party_status='Sales' AND company_id='$current_company_id'" : "WHERE status='active' AND party_status='Sales'";
 $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party $partyWhere ORDER BY party_name ASC");
 
 $productWhere = ($current_company_id > 0) ? "WHERE status='active' AND company_id='$current_company_id'" : "WHERE status='active'";
@@ -154,14 +88,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $quotation_date = !empty($_POST['quotation_date']) ? date('Y-m-d', strtotime($_POST['quotation_date'])) : date('Y-m-d');
     $due_date = !empty($_POST['due_date']) ? date('Y-m-d', strtotime($_POST['due_date'])) : null;
     $due_date_sql = $due_date ? "'$due_date'" : "NULL";
-    $gst_type = addslashes(trim($_POST['gst_type'] ?? 'with_gst')); // with_gst OR without_gst
+    $company_has_gst = isQuotationCompanyGstApplicable($company_id);
+    $gst_type = $company_has_gst ? addslashes(trim($_POST['gst_type'] ?? 'with_gst')) : 'without_gst';
+    if (!$company_has_gst) {
+        $gst_no = '';
+    }
     
     $total_amount = floatval($_POST['total_amount'] ?? 0);
-    $cgst_amount = floatval($_POST['cgst_amount'] ?? 0);
-    $sgst_amount = floatval($_POST['sgst_amount'] ?? 0);
-    $igst_amount = floatval($_POST['igst_amount'] ?? 0);
-    $tax_amount = floatval($_POST['tax_amount'] ?? 0);
-    $grand_total = floatval($_POST['grand_total'] ?? 0);
+    $cgst_amount = $company_has_gst ? floatval($_POST['cgst_amount'] ?? 0) : 0.00;
+    $sgst_amount = $company_has_gst ? floatval($_POST['sgst_amount'] ?? 0) : 0.00;
+    $igst_amount = $company_has_gst ? floatval($_POST['igst_amount'] ?? 0) : 0.00;
+    $tax_amount = $company_has_gst ? floatval($_POST['tax_amount'] ?? 0) : 0.00;
+    $grand_total = $company_has_gst ? floatval($_POST['grand_total'] ?? 0) : $total_amount;
     $payment_status = (isset($_POST['payment_status']) && $_POST['payment_status'] === 'Paid') ? 'Paid' : 'Pending';
     $status = $_POST['status'] ?? 'active';
 
@@ -178,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
         $err_msg = "Please enter Quotation Number!";
     } elseif (!empty($due_date) && !empty($quotation_date) && $due_date < $quotation_date) {
         $err_msg = "Due Date cannot be earlier than Quotation Date!";
-    } elseif (!empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+    } elseif ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
         $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
         if ($mode === 'add') {
@@ -252,9 +190,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
             $ai_core->aiGoPage($redirection_url . '?msg=1');
             exit;
         } elseif ($mode === 'edit' && $id > 0) {
-            // Check previous party_id in case party was changed
-            $prevQ = $ai_db->aiGetQueryObj("SELECT party_id FROM tbl_quotation WHERE id='$id' LIMIT 1");
+            // Check if quotation is already converted to Invoice
+            $prevQ = $ai_db->aiGetQueryObj("SELECT party_id, converted_invoice_id, payment_status FROM tbl_quotation WHERE id='$id' LIMIT 1");
+            if (!empty($prevQ) && !empty($prevQ[0]->converted_invoice_id) && intval($prevQ[0]->converted_invoice_id) > 0) {
+                $ai_core->aiGoPage($redirection_url . '?msg=converted_locked');
+                exit;
+            }
             $prevPartyId = !empty($prevQ) ? intval($prevQ[0]->party_id) : 0;
+            $payment_status = isset($_POST['payment_status']) ? ((trim($_POST['payment_status']) === 'Paid') ? 'Paid' : 'Pending') : (!empty($prevQ) ? $prevQ[0]->payment_status : 'Pending');
 
             $update_qry = "UPDATE tbl_quotation SET
                 company_id='$company_id',
@@ -337,6 +280,11 @@ if ($mode === 'edit' && $id > 0) {
     $qRes = $ai_db->aiGetQueryObj("SELECT * FROM tbl_quotation WHERE id='$id' LIMIT 1");
     if ($qRes) {
         $quotationData = $qRes[0];
+        // If quotation is already converted to Invoice, disallow editing
+        if (!empty($quotationData->converted_invoice_id) && intval($quotationData->converted_invoice_id) > 0) {
+            $ai_core->aiGoPage($redirection_url . '?msg=converted_locked');
+            exit;
+        }
         $quotationItems = $ai_db->aiGetQueryObj("SELECT * FROM tbl_quotation_items WHERE quotation_id='$id'");
         if (!empty($quotationItems)) {
             foreach ($quotationItems as &$qItem) {
@@ -355,9 +303,10 @@ if ($mode === 'edit' && $id > 0) {
 }
 
 $selected_company_id = $_POST['company_id'] ?? $quotationData->company_id ?? ($_SESSION['company_id'] ?? 0);
+$show_quotation_gst = isQuotationCompanyGstApplicable($selected_company_id);
 if ($selected_company_id > 0) {
-    $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND company_id='$selected_company_id' ORDER BY party_name ASC");
-    $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price FROM tbl_product WHERE status='active' AND company_id='$selected_company_id' ORDER BY product_name ASC");
+    $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND party_status='Sales' AND company_id='$selected_company_id' ORDER BY party_name ASC");
+    $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price, gst_rate FROM tbl_product WHERE status='active' AND company_id='$selected_company_id' ORDER BY product_name ASC");
     if ($mode === 'add' && empty($_POST['quotation_no'])) {
         $default_quotation_no = generateQuotationNo($ai_db, $selected_company_id);
     }
@@ -478,9 +427,9 @@ if ($selected_state_id > 0) {
                                         <div class="col-md-6">
                                             <label class="form-label fw-bold text-uppercase">SELECT COMPANY <span class="text-danger">*</span></label>
                                             <select name="company_id" id="company_id" class="form-select select2" required>
-                                                <option value="">-- Select Company --</option>
+                                                <option value="" data-gst-applicable="0">-- Select Company --</option>
                                                 <?php foreach ($companies as $comp) { ?>
-                                                    <option value="<?= $comp->id ?>" <?= ($selected_company_id == $comp->id) ? 'selected' : '' ?>>
+                                                    <option value="<?= $comp->id ?>" data-gst-applicable="<?= (int)($comp->gst_applicable ?? 0) ?>" <?= ($selected_company_id == $comp->id) ? 'selected' : '' ?>>
                                                         <?= htmlspecialchars($comp->company_name) ?>
                                                     </option>
                                                 <?php } ?>
@@ -488,7 +437,7 @@ if ($selected_state_id > 0) {
                                         </div>
                                     </div>
                                 <?php } else { ?>
-                                    <input type="hidden" name="company_id" value="<?= htmlspecialchars($selected_company_id) ?>">
+                                    <input type="hidden" name="company_id" id="company_id" value="<?= htmlspecialchars($selected_company_id) ?>">
                                 <?php } ?>
 
                                 <!-- ROW 1: PARTY NAME | GST NO | QUOTATION NO | RCA -->
@@ -512,7 +461,7 @@ if ($selected_state_id > 0) {
                                         <input type="hidden" name="party_name" id="party_name" value="<?= htmlspecialchars($quotationData->party_name ?? '') ?>">
                                     </div>
 
-                                    <div class="col-md-3">
+                                    <div class="col-md-3" id="quotation_gst_no_wrapper" style="<?= $show_quotation_gst ? '' : 'display: none;' ?>">
                                         <label class="form-label fw-bold text-uppercase small text-muted">GST NO.</label>
                                         <input type="text" name="gst_no" id="gst_no" class="form-control bg-light" placeholder="Party GST no." value="<?= htmlspecialchars($quotationData->gst_no ?? '') ?>" readonly>
                                     </div>
@@ -531,9 +480,9 @@ if ($selected_state_id > 0) {
                                     </div>
                                 </div>
 
-                                <!-- ROW 2: ADDRESS | STATE | CITY | DATE | GST TYPE -->
+                                <!-- ROW 2: ADDRESS (4) | STATE (2) | CITY (2) | DATE (2) | DUE DATE (2) -->
                                 <div class="row g-3 mb-3">
-                                    <div class="col-md-3">
+                                    <div class="col-md-4">
                                         <label class="form-label fw-bold text-uppercase small text-muted">ADDRESS</label>
                                         <textarea name="address" id="address" class="form-control" rows="1" placeholder="Enter address"><?= htmlspecialchars($quotationData->address ?? '') ?></textarea>
                                     </div>
@@ -573,14 +522,7 @@ if ($selected_state_id > 0) {
                                         <input type="date" name="due_date" id="due_date" class="form-control" min="<?= htmlspecialchars($quotationData->quotation_date ?? date('Y-m-d')) ?>" value="<?= htmlspecialchars(!empty($quotationData->due_date) ? $quotationData->due_date : date('Y-m-d')) ?>">
                                     </div>
 
-                                    <!-- REQUESTED GST TYPE DROPDOWN -->
-                                    <div class="col-md-3">
-                                        <label class="form-label fw-bold text-uppercase small text-muted">GST TYPE <span class="text-danger">*</span></label>
-                                        <select name="gst_type" id="gst_type" class="form-select fw-bold">
-                                            <option value="with_gst" <?= (($quotationData->gst_type ?? 'with_gst') === 'with_gst') ? 'selected' : '' ?>>With GST</option>
-                                            <option value="without_gst" <?= (($quotationData->gst_type ?? '') === 'without_gst') ? 'selected' : '' ?>>Without GST</option>
-                                        </select>
-                                    </div>
+                                    <input type="hidden" name="gst_type" id="gst_type" value="<?= $show_quotation_gst ? 'with_gst' : 'without_gst' ?>">
                                 </div>
                             </div>
 
@@ -592,7 +534,7 @@ if ($selected_state_id > 0) {
 
                                 <!-- PRODUCT INPUT ROW -->
                                 <div class="row g-2 align-items-end mb-4 bg-light p-3 rounded">
-                                    <div class="col-md-3">
+                                    <div class="col-md-5">
                                         <label class="form-label fw-bold text-uppercase small text-muted">DESCRIPTION</label>
                                         <select id="product_select" class="form-select select2">
                                             <option value="">-- Select Product --</option>
@@ -600,7 +542,8 @@ if ($selected_state_id > 0) {
                                                 <option value="<?= $p->id ?>"
                                                     data-title="<?= htmlspecialchars($p->product_name) ?>"
                                                     data-hsn="<?= htmlspecialchars($p->hsn_code) ?>"
-                                                    data-rate="<?= $p->sales_price ?>">
+                                                    data-rate="<?= $p->sales_price ?>"
+                                                    data-gst="<?= isset($p->gst_rate) ? floatval($p->gst_rate) : 18 ?>">
                                                     <?= htmlspecialchars($p->product_name) ?> (₹<?= number_format($p->sales_price, 2) ?>)
                                                 </option>
                                             <?php } ?>
@@ -612,38 +555,29 @@ if ($selected_state_id > 0) {
                                         <input type="text" id="input_hsn" class="form-control" placeholder="HSN Code">
                                     </div>
 
-                                    <div class="col-md-1">
+                                    <div class="col-md-2">
                                         <label class="form-label fw-bold text-uppercase small text-muted">RATE</label>
                                         <input type="number" step="0.01" id="input_rate" class="form-control" placeholder="Rate">
                                     </div>
 
-                                    <div class="col-md-2">
-                                        <label class="form-label fw-bold text-uppercase small text-muted">DISCOUNT TYPE</label>
-                                        <select id="input_discount_type" class="form-select">
-                                            <option value="percentage">Percentage (%)</option>
-                                            <option value="fixed">Fixed Amount (₹)</option>
-                                        </select>
+                                    <div class="col-md-2" id="quotation_gst_select_wrapper" style="<?= $show_quotation_gst ? '' : 'display: none;' ?>">
+                                        <label class="form-label fw-bold text-uppercase small text-muted">GST RATE</label>
+                                        <input type="text" id="input_gst_pct_display" class="form-control" placeholder="GST %" value="" readonly>
+                                        <input type="hidden" id="input_gst_pct" value="0">
                                     </div>
 
-                                    <div class="col-md-2">
-                                        <label class="form-label fw-bold text-uppercase small text-muted">DISCOUNT VALUE</label>
-                                        <input type="number" step="0.01" min="0" id="input_discount_val" class="form-control" placeholder="0.00" value="0">
+                                    <div class="col-md-1" id="quotation_add_btn_wrapper" style="<?= $show_quotation_gst ? '' : 'display: none;' ?>">
+                                        <label class="form-label fw-bold text-uppercase small text-muted d-block">&nbsp;</label>
+                                        <button type="button" class="btn btn-success w-100 fw-bold btnAddItem" title="Add Product to list">
+                                            <i class="ti ti-plus fw-bold fs-5"></i>
+                                        </button>
                                     </div>
 
-                                    <div class="col-md-2">
-                                        <label class="form-label fw-bold text-uppercase small text-muted">SELECT GST</label>
-                                        <div class="input-group">
-                                            <select id="input_gst_pct" class="form-select">
-                                                <option value="18" selected>18%</option>
-                                                <option value="12">12%</option>
-                                                <option value="5">5%</option>
-                                                <option value="28">28%</option>
-                                                <option value="0">0%</option>
-                                            </select>
-                                            <button type="button" id="btnAddItem" class="btn btn-success px-3" title="Add Product to list">
-                                                <i class="ti ti-plus fw-bold fs-5"></i>
-                                            </button>
-                                        </div>
+                                    <div class="col-md-3" id="quotation_nogst_btn_wrapper" style="<?= $show_quotation_gst ? 'display: none;' : '' ?>">
+                                        <label class="form-label fw-bold text-uppercase small text-muted d-block">&nbsp;</label>
+                                        <button type="button" class="btn btn-success w-100 fw-bold btnAddItem" title="Add Product to list">
+                                            <i class="ti ti-plus fw-bold me-1"></i> Add Item
+                                        </button>
                                     </div>
                                 </div>
 
@@ -679,22 +613,25 @@ if ($selected_state_id > 0) {
                                                 <input type="text" name="total_amount" id="total_amount" class="form-control summary-input" value="0.00" readonly>
                                             </div>
 
-                                            <!-- CGST Row -->
-                                            <div class="input-group mb-2" id="row_cgst">
-                                                <span class="summary-label">CGST</span>
-                                                <input type="text" name="cgst_amount" id="cgst_amount" class="form-control summary-input" value="0.00" readonly>
-                                            </div>
+                                            <!-- GST Tax Breakdown -->
+                                            <div id="summary_gst_breakdown" style="<?= $show_quotation_gst ? '' : 'display: none;' ?>">
+                                                <!-- CGST Row -->
+                                                <div class="input-group mb-2" id="row_cgst">
+                                                    <span class="summary-label">CGST</span>
+                                                    <input type="text" name="cgst_amount" id="cgst_amount" class="form-control summary-input" value="0.00" readonly>
+                                                </div>
 
-                                            <!-- SGST Row -->
-                                            <div class="input-group mb-2" id="row_sgst">
-                                                <span class="summary-label">SGST</span>
-                                                <input type="text" name="sgst_amount" id="sgst_amount" class="form-control summary-input" value="0.00" readonly>
-                                            </div>
+                                                <!-- SGST Row -->
+                                                <div class="input-group mb-2" id="row_sgst">
+                                                    <span class="summary-label">SGST</span>
+                                                    <input type="text" name="sgst_amount" id="sgst_amount" class="form-control summary-input" value="0.00" readonly>
+                                                </div>
 
-                                            <!-- IGST Row -->
-                                            <div class="input-group mb-2" id="row_igst" style="display:none;">
-                                                <span class="summary-label">IGST</span>
-                                                <input type="text" name="igst_amount" id="igst_amount" class="form-control summary-input" value="0.00" readonly>
+                                                <!-- IGST Row -->
+                                                <div class="input-group mb-2" id="row_igst" style="display:none;">
+                                                    <span class="summary-label">IGST</span>
+                                                    <input type="text" name="igst_amount" id="igst_amount" class="form-control summary-input" value="0.00" readonly>
+                                                </div>
                                             </div>
 
                                             <input type="hidden" name="tax_amount" id="tax_amount" value="0.00">
@@ -705,28 +642,11 @@ if ($selected_state_id > 0) {
                                                 <input type="text" name="grand_total" id="grand_total" class="form-control summary-input fs-5 fw-bold text-dark" value="0.00" readonly>
                                             </div>
 
-                                            <!-- Payment Status -->
-                                            <div class="input-group mb-3">
-                                                <span class="summary-label fw-bold" style="background:#f1f5f9;">Payment Status</span>
-                                                <select name="payment_status" id="payment_status" class="form-select summary-input fw-semibold">
-                                                    <option value="Pending" <?= (($quotationData->payment_status ?? 'Pending') === 'Pending') ? 'selected' : '' ?>>⏳ Pending</option>
-                                                    <option value="Paid" <?= (($quotationData->payment_status ?? '') === 'Paid') ? 'selected' : '' ?>>✓ Paid</option>
-                                                </select>
-                                            </div>
-
                                             <!-- ACTION BUTTONS -->
                                             <div class="pt-4 d-flex align-items-center flex-wrap gap-2">
                                                 <button type="submit" name="btn_submit" class="btn btn-primary waves-effect waves-light" id="btnSubmit">
                                                     <?= ($mode == 'edit') ? 'Update' : 'Submit' ?>
                                                 </button>
-                                                <?php if ($mode === 'edit' && $id > 0) { ?>
-                                                    <a href="quotation-print.php?id=<?= $id ?>&download=1" target="_blank" class="btn btn-success waves-effect waves-light">
-                                                        <i class="ti ti-download me-1"></i> Download PDF
-                                                    </a>
-                                                    <a href="quotation-print.php?id=<?= $id ?>" target="_blank" class="btn btn-info waves-effect waves-light">
-                                                        <i class="ti ti-printer me-1"></i> Print / PDF
-                                                    </a>
-                                                <?php } ?>
                                                 <a href="<?= $redirection_url ?>" class="btn btn-label-secondary waves-effect">Cancel</a>
                                             </div>
                                         </div>
@@ -813,11 +733,59 @@ if ($selected_state_id > 0) {
             }
         }
 
+        var isCompanyGstActive = <?= $show_quotation_gst ? 'true' : 'false' ?>;
+
+        function updateQuotationGstVisibility(hasGst) {
+            if (typeof hasGst !== 'undefined') {
+                isCompanyGstActive = (hasGst == 1 || hasGst === true);
+            } else {
+                var $compSelect = $('select[name="company_id"]');
+                if ($compSelect.length > 0) {
+                    var selectedOpt = $compSelect.find('option:selected');
+                    isCompanyGstActive = (selectedOpt.data('gst-applicable') == 1);
+                } else {
+                    isCompanyGstActive = <?= $show_quotation_gst ? 'true' : 'false' ?>;
+                }
+            }
+
+            if (isCompanyGstActive) {
+                $('#quotation_gst_no_wrapper').slideDown(200);
+                $('#quotation_gst_select_wrapper').show();
+                $('#quotation_add_btn_wrapper').show();
+                $('#quotation_nogst_btn_wrapper').hide();
+                $('#gst_type').val('with_gst');
+                $('#th_item_gst').show();
+                $('#itemsTable').find('.col-item-gst').show();
+                $('#summary_gst_breakdown').show();
+            } else {
+                $('#quotation_gst_no_wrapper').slideUp(200);
+                $('#quotation_gst_select_wrapper').hide();
+                $('#quotation_add_btn_wrapper').hide();
+                $('#quotation_nogst_btn_wrapper').show();
+                $('#gst_no').val('');
+                $('#gst_type').val('without_gst');
+                $('#th_item_gst').hide();
+                $('#itemsTable').find('.col-item-gst').hide();
+                $('#summary_gst_breakdown').hide();
+
+                // If any items have gst_percent, reset to 0
+                $.each(itemsList, function(i, item) {
+                    item.gst_percent = 0;
+                });
+            }
+
+            calculateTotals();
+        }
+
         // When Company Changed (for Admin): dynamically reload parties, products, and quotation number
         $('#company_id').change(function() {
             var compId = $(this).val();
             var partySelect = $('#party_select');
             var prodSelect = $('#product_select');
+            var selectedOpt = $(this).find('option:selected');
+            var compGstApplicable = selectedOpt.data('gst-applicable');
+
+            updateQuotationGstVisibility(compGstApplicable);
 
             partySelect.html('<option value="">Loading parties...</option>');
             prodSelect.html('<option value="">Loading products...</option>');
@@ -833,6 +801,10 @@ if ($selected_state_id > 0) {
                     data: { action: "get_parties_and_quotation_no", company_id: compId },
                     dataType: "json",
                     success: function(res) {
+                        if (typeof res.gst_applicable !== 'undefined') {
+                            updateQuotationGstVisibility(res.gst_applicable);
+                        }
+
                         // 1. Populate Parties
                         var partyHtml = '<option value="">-- Select Party --</option>';
                         if (res.status === 'success') {
@@ -852,10 +824,12 @@ if ($selected_state_id > 0) {
                             if (res.products && res.products.length > 0) {
                                 $.each(res.products, function(i, p) {
                                     var price = parseFloat(p.sales_price) || 0;
+                                    var gstRate = (typeof p.gst_rate !== 'undefined' && p.gst_rate !== null) ? parseFloat(p.gst_rate) : 18;
                                     prodHtml += '<option value="' + p.id + '" ' +
                                             'data-title="' + escapeHtml(p.product_name) + '" ' +
                                             'data-hsn="' + escapeHtml(p.hsn_code || '') + '" ' +
-                                            'data-rate="' + price + '">' +
+                                            'data-rate="' + price + '" ' +
+                                            'data-gst="' + gstRate + '">' +
                                             escapeHtml(p.product_name) + ' (₹' + price.toFixed(2) + ')</option>';
                                 });
                             }
@@ -910,7 +884,7 @@ if ($selected_state_id > 0) {
             if (partyId) {
                 $('#party_id').val(partyId);
                 $('#party_name').val(selected.data('name') || '');
-                $('#gst_no').val(selected.data('gst') || '');
+                $('#gst_no').val(isCompanyGstActive ? (selected.data('gst') || '') : '');
                 $('#address').val(selected.data('address') || '');
                 var stId = selected.data('state');
                 if (stId) {
@@ -949,30 +923,39 @@ if ($selected_state_id > 0) {
             calculateTotals();
         });
 
-        // When Product Selected from Dropdown
+        // When Product Selected from Dropdown -> auto-fill HSN, Rate and Product's GST %
         $('#product_select').change(function() {
             var selected = $(this).find('option:selected');
             if (selected.val()) {
                 $('#input_hsn').val(selected.data('hsn') || '');
                 $('#input_rate').val(selected.data('rate') || 0);
+
+                var prodGst = selected.data('gst');
+                if (typeof prodGst !== 'undefined' && prodGst !== '') {
+                    var gstVal = parseFloat(prodGst) || 0;
+                    $('#input_gst_pct').val(gstVal);
+                    $('#input_gst_pct_display').val(gstVal + '%');
+                } else {
+                    $('#input_gst_pct').val('0');
+                    $('#input_gst_pct_display').val('0%');
+                }
             } else {
                 $('#input_hsn').val('');
                 $('#input_rate').val('');
+                $('#input_gst_pct').val('0');
+                $('#input_gst_pct_display').val('');
             }
         });
 
         // Add Product Item Button Click
-        $('#btnAddItem').click(function(e) {
+        $(document).on('click', '.btnAddItem', function(e) {
             e.preventDefault();
             var selected = $('#product_select').find('option:selected');
             var prodId = parseInt(selected.val()) || 0;
             var desc = selected.data('title') || (selected.val() ? selected.text().trim() : '');
             var hsn = $('#input_hsn').val().trim();
             var rate = parseFloat($('#input_rate').val()) || 0;
-            var gstPct = parseFloat($('#input_gst_pct').val()) || 0;
-            var discType = $('#input_discount_type').val() || 'percentage';
-            var discVal = parseFloat($('#input_discount_val').val()) || 0;
-            if (discVal < 0) discVal = 0;
+            var gstPct = isCompanyGstActive ? (parseFloat($('#input_gst_pct').val()) || 0) : 0;
 
             if (!prodId || desc === '') {
                 alert('Please select a Product!');
@@ -1000,8 +983,8 @@ if ($selected_state_id > 0) {
                 hsn_code: hsn,
                 rate: rate,
                 gst_percent: gstPct,
-                discount_type: discType,
-                discount_value: discVal,
+                discount_type: 'percentage',
+                discount_value: 0,
                 qty: 1
             });
 
@@ -1009,7 +992,6 @@ if ($selected_state_id > 0) {
             $('#product_select').val('').trigger('change');
             $('#input_hsn').val('');
             $('#input_rate').val('');
-            $('#input_discount_val').val('0');
 
             renderTable();
             updateProductDropdown();
@@ -1058,7 +1040,7 @@ if ($selected_state_id > 0) {
             var gstVal = $('#gst_no').val().trim().toUpperCase();
             var gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
-            if (gstVal !== '' && !gstRegex.test(gstVal)) {
+            if (isCompanyGstActive && gstVal !== '' && !gstRegex.test(gstVal)) {
                 e.preventDefault();
                 alert('Please enter a valid 15-character GST Number (e.g. 24AAAAA0000A1Z5)!');
                 $('#gst_no').focus();
@@ -1152,7 +1134,7 @@ if ($selected_state_id > 0) {
             var totalAmt = 0;
             var totalTax = 0;
 
-            var gstType = $('#gst_type').val(); // 'with_gst' OR 'without_gst'
+            var gstType = isCompanyGstActive ? $('#gst_type').val() : 'without_gst'; // force without_gst if company has no GST
             var selectedStateText = $('#state_id option:selected').text().trim().toLowerCase();
             var isGujarat = (selectedStateText.indexOf('gujarat') !== -1);
 
@@ -1173,8 +1155,10 @@ if ($selected_state_id > 0) {
                 totalAmt += net;
 
                 var tax = 0;
-                if (gstType === 'with_gst') {
-                    tax = net * (item.gst_percent / 100);
+                if (isCompanyGstActive && gstType === 'with_gst') {
+                    tax = net * ((parseFloat(item.gst_percent) || 0) / 100);
+                } else {
+                    item.gst_percent = 0;
                 }
                 totalTax += tax;
 
@@ -1192,7 +1176,8 @@ if ($selected_state_id > 0) {
             var sgst = 0;
             var igst = 0;
 
-            if (gstType === 'with_gst') {
+            if (isCompanyGstActive && gstType === 'with_gst') {
+                $('#summary_gst_breakdown').show();
                 if (isGujarat) {
                     cgst = totalTax / 2;
                     sgst = totalTax / 2;
@@ -1207,19 +1192,24 @@ if ($selected_state_id > 0) {
                     $('#row_igst').show();
                 }
             } else {
-                // Without GST -> Everything 0
+                // Without GST or Company GST Inactive -> Everything 0 and hidden
                 cgst = 0;
                 sgst = 0;
                 igst = 0;
-                $('#row_cgst, #row_sgst').show();
-                $('#row_igst').hide();
+                $('#row_cgst, #row_sgst, #row_igst').hide();
+                if (!isCompanyGstActive) {
+                    $('#summary_gst_breakdown').hide();
+                } else {
+                    $('#summary_gst_breakdown').show();
+                    $('#row_cgst, #row_sgst').show();
+                }
             }
 
             $('#cgst_amount').val(cgst.toFixed(2));
             $('#sgst_amount').val(sgst.toFixed(2));
             $('#igst_amount').val(igst.toFixed(2));
 
-            var grandTotal = totalAmt + (gstType === 'with_gst' ? totalTax : 0);
+            var grandTotal = totalAmt + (isCompanyGstActive && gstType === 'with_gst' ? totalTax : 0);
             $('#grand_total').val(grandTotal.toFixed(2));
         }
 

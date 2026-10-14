@@ -332,8 +332,18 @@ if (!tableExists('tbl_api_tokens')) {
     echo '<div class="log-item log-info">ℹ `tbl_api_tokens` table exists.</div>';
 }
 
-// 3. tbl_company -> Indexes check
+// 3. tbl_company -> Columns & Indexes check
 if (tableExists('tbl_company')) {
+    if (!columnExists('tbl_company', 'gst_applicable')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_company` ADD COLUMN `gst_applicable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `company_name`",
+            "Added `gst_applicable` column to `tbl_company` table successfully.",
+            "Failed to add `gst_applicable` column to `tbl_company`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_company`.`gst_applicable` column already exists.</div>';
+    }
+
     // Add index on username/email/mobile if not exists for fast login & unique checks
     $indexCheck = mysqli_query($conn, "SHOW INDEX FROM `tbl_company` WHERE Key_name = 'idx_login_credentials'");
     if ($indexCheck && mysqli_num_rows($indexCheck) === 0) {
@@ -344,8 +354,18 @@ if (tableExists('tbl_company')) {
     }
 }
 
-// 4. tbl_product -> Index check for company-wise fast lookup (product_name, hsn_code)
+// 4. tbl_product -> Columns & Indexes check
 if (tableExists('tbl_product')) {
+    if (!columnExists('tbl_product', 'gst_rate')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_product` ADD COLUMN `gst_rate` DECIMAL(5,2) NOT NULL DEFAULT 18.00 AFTER `hsn_code`",
+            "Added `gst_rate` column to `tbl_product` table successfully.",
+            "Failed to add `gst_rate` column to `tbl_product`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_product`.`gst_rate` column already exists.</div>';
+    }
+
     $idxProduct = mysqli_query($conn, "SHOW INDEX FROM `tbl_product` WHERE Key_name = 'idx_comp_hsn_product'");
     if ($idxProduct && mysqli_num_rows($idxProduct) === 0) {
         @mysqli_query($conn, "ALTER TABLE `tbl_product` ADD INDEX `idx_comp_hsn_product` (`company_id`, `hsn_code`, `product_name`)");
@@ -353,7 +373,264 @@ if (tableExists('tbl_product')) {
     } else {
         echo '<div class="log-item log-info">ℹ `tbl_product` company & HSN code index already exists.</div>';
     }
+
+    if (!columnExists('tbl_product', 'stock')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_product` ADD COLUMN `stock` DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER `sales_price`",
+            "Added `stock` column to `tbl_product` table successfully.",
+            "Failed to add `stock` column to `tbl_product`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_product`.`stock` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_product', 'min_stock_alert')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_product` ADD COLUMN `min_stock_alert` DECIMAL(12,2) NOT NULL DEFAULT 5.00 AFTER `stock`",
+            "Added `min_stock_alert` column to `tbl_product` table successfully.",
+            "Failed to add `min_stock_alert` column to `tbl_product`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_product`.`min_stock_alert` column already exists.</div>';
+    }
+
+    if (!columnExists('tbl_product', 'track_stock')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_product` ADD COLUMN `track_stock` TINYINT(1) NOT NULL DEFAULT 1 AFTER `min_stock_alert`",
+            "Added `track_stock` column to `tbl_product` table successfully.",
+            "Failed to add `track_stock` column to `tbl_product`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_product`.`track_stock` column already exists.</div>';
+    }
 }
+
+// 5. tbl_invoice & tbl_invoice_items
+if (!tableExists('tbl_invoice')) {
+    $createInvoiceSql = "CREATE TABLE IF NOT EXISTS `tbl_invoice` (
+        `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        `quotation_id` int(11) DEFAULT 0,
+        `company_id` int(11) DEFAULT 0,
+        `party_id` int(11) DEFAULT 0,
+        `party_name` varchar(255) DEFAULT '',
+        `gst_no` varchar(50) DEFAULT '',
+        `invoice_no` varchar(50) DEFAULT '',
+        `rca` varchar(10) DEFAULT 'No',
+        `address` text DEFAULT NULL,
+        `state_id` int(11) DEFAULT 0,
+        `state_name` varchar(100) DEFAULT '',
+        `city_id` int(11) DEFAULT 0,
+        `city_name` varchar(100) DEFAULT '',
+        `invoice_date` date DEFAULT NULL,
+        `due_date` date DEFAULT NULL,
+        `gst_type` varchar(20) DEFAULT 'with_gst',
+        `total_amount` decimal(12,2) DEFAULT 0.00,
+        `cgst_amount` decimal(12,2) DEFAULT 0.00,
+        `sgst_amount` decimal(12,2) DEFAULT 0.00,
+        `igst_amount` decimal(12,2) DEFAULT 0.00,
+        `tax_amount` decimal(12,2) DEFAULT 0.00,
+        `grand_total` decimal(12,2) DEFAULT 0.00,
+        `payment_status` enum('Pending','Paid') NOT NULL DEFAULT 'Pending',
+        `status` varchar(20) DEFAULT 'active',
+        `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY `idx_company_party` (`company_id`, `party_id`),
+        KEY `idx_invoice_no` (`invoice_no`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    runMigrationQuery(
+        $createInvoiceSql,
+        "Created `tbl_invoice` table successfully.",
+        "Failed to create `tbl_invoice` table"
+    );
+} else {
+    echo '<div class="log-item log-info">ℹ `tbl_invoice` table exists.</div>';
+}
+
+if (!tableExists('tbl_invoice_items')) {
+    $createInvoiceItemsSql = "CREATE TABLE IF NOT EXISTS `tbl_invoice_items` (
+        `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        `invoice_id` int(11) NOT NULL,
+        `product_id` int(11) DEFAULT 0,
+        `description` text DEFAULT NULL,
+        `hsn_code` varchar(50) DEFAULT '',
+        `rate` decimal(12,2) DEFAULT 0.00,
+        `gst_percent` decimal(5,2) DEFAULT 0.00,
+        `discount_type` enum('percentage','fixed') NOT NULL DEFAULT 'percentage',
+        `discount_value` decimal(10,2) NOT NULL DEFAULT 0.00,
+        `discount_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `qty` decimal(10,2) DEFAULT 1.00,
+        `net_amount` decimal(12,2) DEFAULT 0.00,
+        `tax_amount` decimal(12,2) DEFAULT 0.00,
+        `total_amount` decimal(12,2) DEFAULT 0.00,
+        KEY `idx_invoice_id` (`invoice_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    runMigrationQuery(
+        $createInvoiceItemsSql,
+        "Created `tbl_invoice_items` table successfully.",
+        "Failed to create `tbl_invoice_items` table"
+    );
+} else {
+    echo '<div class="log-item log-info">ℹ `tbl_invoice_items` table exists.</div>';
+}
+
+if (tableExists('tbl_invoice')) {
+    if (!columnExists('tbl_invoice', 'paid_amount')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_invoice` ADD COLUMN `paid_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER `grand_total`",
+            "Added `paid_amount` column to `tbl_invoice` successfully.",
+            "Failed to add `paid_amount` column to `tbl_invoice`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_invoice`.`paid_amount` column already exists.</div>';
+    }
+
+    // Ensure payment_status has 'Partially Paid'
+    @mysqli_query($conn, "ALTER TABLE `tbl_invoice` MODIFY COLUMN `payment_status` ENUM('Pending','Partially Paid','Paid') NOT NULL DEFAULT 'Pending'");
+}
+
+if (!tableExists('tbl_invoice_payments')) {
+    $createPaymentsSql = "CREATE TABLE IF NOT EXISTS `tbl_invoice_payments` (
+        `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        `invoice_id` int(11) NOT NULL,
+        `party_id` int(11) NOT NULL DEFAULT 0,
+        `company_id` int(11) NOT NULL DEFAULT 0,
+        `amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `payment_date` date NOT NULL,
+        `payment_mode` varchar(50) DEFAULT 'Cash',
+        `reference_no` varchar(100) DEFAULT '',
+        `notes` text DEFAULT NULL,
+        `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY `idx_inv_payment` (`invoice_id`),
+        KEY `idx_party_payment` (`party_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    runMigrationQuery(
+        $createPaymentsSql,
+        "Created `tbl_invoice_payments` table successfully.",
+        "Failed to create `tbl_invoice_payments` table"
+    );
+} else {
+    echo '<div class="log-item log-info">ℹ `tbl_invoice_payments` table exists.</div>';
+}
+
+if (tableExists('tbl_party')) {
+    if (!columnExists('tbl_party', 'outstanding_type')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_party` ADD COLUMN `outstanding_type` ENUM('Debit','Credit') NOT NULL DEFAULT 'Debit' AFTER `outstanding`",
+            "Added `outstanding_type` column to `tbl_party` successfully.",
+            "Failed to add `outstanding_type` column to `tbl_party`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_party`.`outstanding_type` column already exists.</div>';
+    }
+}
+
+// 6. tbl_quotation -> converted_invoice_id column check
+if (tableExists('tbl_quotation')) {
+    if (!columnExists('tbl_quotation', 'converted_invoice_id')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_quotation` ADD COLUMN `converted_invoice_id` INT(11) NOT NULL DEFAULT 0 AFTER `payment_status`",
+            "Added `converted_invoice_id` column to `tbl_quotation` table successfully.",
+            "Failed to add `converted_invoice_id` to `tbl_quotation`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_quotation`.`converted_invoice_id` column already exists.</div>';
+    }
+}
+
+// 7. Purchase Module Tables (`tbl_purchase`, `tbl_purchase_items`, `tbl_purchase_payments`)
+if (!tableExists('tbl_purchase')) {
+    $createPurchaseSql = "CREATE TABLE `tbl_purchase` (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `company_id` int(11) DEFAULT 0,
+        `party_id` int(11) DEFAULT 0,
+        `party_name` varchar(255) DEFAULT '',
+        `gst_no` varchar(50) DEFAULT '',
+        `purchase_no` varchar(50) DEFAULT '',
+        `rca` varchar(10) DEFAULT 'No',
+        `address` text DEFAULT NULL,
+        `state_id` int(11) DEFAULT 0,
+        `state_name` varchar(100) DEFAULT '',
+        `city_id` int(11) DEFAULT 0,
+        `city_name` varchar(100) DEFAULT '',
+        `purchase_date` date DEFAULT NULL,
+        `due_date` date DEFAULT NULL,
+        `gst_type` varchar(20) DEFAULT 'with_gst',
+        `total_amount` decimal(12,2) DEFAULT 0.00,
+        `cgst_amount` decimal(12,2) DEFAULT 0.00,
+        `sgst_amount` decimal(12,2) DEFAULT 0.00,
+        `igst_amount` decimal(12,2) DEFAULT 0.00,
+        `tax_amount` decimal(12,2) DEFAULT 0.00,
+        `grand_total` decimal(12,2) DEFAULT 0.00,
+        `paid_amount` decimal(12,2) DEFAULT 0.00,
+        `payment_status` enum('Pending','Paid') NOT NULL DEFAULT 'Pending',
+        `status` varchar(20) DEFAULT 'active',
+        `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `idx_comp` (`company_id`),
+        KEY `idx_party` (`party_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    runMigrationQuery(
+        $createPurchaseSql,
+        "Created `tbl_purchase` table successfully.",
+        "Failed to create `tbl_purchase` table"
+    );
+} else {
+    echo '<div class="log-item log-info">ℹ `tbl_purchase` table already exists.</div>';
+}
+
+if (!tableExists('tbl_purchase_items')) {
+    $createPurchaseItemsSql = "CREATE TABLE `tbl_purchase_items` (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `purchase_id` int(11) NOT NULL,
+        `product_id` int(11) DEFAULT 0,
+        `description` text DEFAULT NULL,
+        `hsn_code` varchar(50) DEFAULT '',
+        `rate` decimal(12,2) DEFAULT 0.00,
+        `gst_percent` decimal(5,2) DEFAULT 0.00,
+        `discount_type` enum('percentage','fixed') NOT NULL DEFAULT 'percentage',
+        `discount_value` decimal(10,2) NOT NULL DEFAULT 0.00,
+        `discount_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `qty` decimal(10,2) DEFAULT 1.00,
+        `net_amount` decimal(12,2) DEFAULT 0.00,
+        `tax_amount` decimal(12,2) DEFAULT 0.00,
+        `total_amount` decimal(12,2) DEFAULT 0.00,
+        `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `idx_purchase_id` (`purchase_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    runMigrationQuery(
+        $createPurchaseItemsSql,
+        "Created `tbl_purchase_items` table successfully.",
+        "Failed to create `tbl_purchase_items` table"
+    );
+} else {
+    echo '<div class="log-item log-info">ℹ `tbl_purchase_items` table already exists.</div>';
+}
+
+if (!tableExists('tbl_purchase_payments')) {
+    $createPurchasePaymentsSql = "CREATE TABLE `tbl_purchase_payments` (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `purchase_id` int(11) NOT NULL,
+        `company_id` int(11) NOT NULL DEFAULT 0,
+        `party_id` int(11) NOT NULL DEFAULT 0,
+        `payment_date` date NOT NULL,
+        `amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `payment_mode` varchar(50) NOT NULL DEFAULT 'Cash',
+        `reference_no` varchar(100) DEFAULT '',
+        `notes` text DEFAULT NULL,
+        `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `idx_purchase_payment` (`purchase_id`),
+        KEY `idx_party_payment` (`party_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+    runMigrationQuery(
+        $createPurchasePaymentsSql,
+        "Created `tbl_purchase_payments` table successfully.",
+        "Failed to create `tbl_purchase_payments` table"
+    );
+} else {
+    echo '<div class="log-item log-info">ℹ `tbl_purchase_payments` table already exists.</div>';
+}
+
 
 // 5. Ensure upload directories exist
 $uploadDirs = [
@@ -369,6 +646,17 @@ foreach ($uploadDirs as $dir) {
         }
     }
 }
+
+// 6. Recalculate all parties outstanding balances
+$allParties = $ai_db->aiGetQueryObj("SELECT id FROM tbl_party");
+$recalcCount = 0;
+if (!empty($allParties) && function_exists('recalculatePartyOutstanding')) {
+    foreach ($allParties as $p) {
+        recalculatePartyOutstanding($p->id);
+        $recalcCount++;
+    }
+}
+echo '<div class="log-item log-success">✓ Recalculated outstanding balances for ' . $recalcCount . ' parties.</div>';
 
 echo '<p class="mt-4" style="color: #15803d; font-weight: 600; font-size: 15px;">✓ Database synchronization completed successfully.</p>';
 ?>

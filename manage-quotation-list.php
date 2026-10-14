@@ -8,11 +8,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_payment_status') {
     }
     header('Content-Type: application/json; charset=utf-8');
 
-    // Ensure table & column exist
-    $colCheck = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation LIKE 'payment_status'");
-    if ($colCheck && mysqli_num_rows($colCheck) === 0) {
-        @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation ADD COLUMN `payment_status` ENUM('Pending','Paid') NOT NULL DEFAULT 'Pending' AFTER `grand_total`");
-    }
 
     $quotId = intval($_POST['id'] ?? 0);
     $newPayStatus = ($_POST['payment_status'] === 'Paid') ? 'Paid' : 'Pending';
@@ -66,59 +61,6 @@ $page_nm = "Quotation";
 $pageUrl = "manage-quotation-list.php";
 $table = "tbl_quotation";
 
-// Ensure tables exist
-$ai_db->aiQuery("CREATE TABLE IF NOT EXISTS `tbl_quotation` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `company_id` int(11) DEFAULT 0,
-  `party_id` int(11) DEFAULT 0,
-  `party_name` varchar(255) DEFAULT '',
-  `gst_no` varchar(50) DEFAULT '',
-  `quotation_no` varchar(50) DEFAULT '',
-  `rca` varchar(10) DEFAULT 'No',
-  `address` text DEFAULT NULL,
-  `state_id` int(11) DEFAULT 0,
-  `state_name` varchar(100) DEFAULT '',
-  `city_id` int(11) DEFAULT 0,
-  `city_name` varchar(100) DEFAULT '',
-  `quotation_date` date DEFAULT NULL,
-  `due_date` date DEFAULT NULL,
-  `gst_type` varchar(20) DEFAULT 'with_gst',
-  `total_amount` decimal(12,2) DEFAULT 0.00,
-  `cgst_amount` decimal(12,2) DEFAULT 0.00,
-  `sgst_amount` decimal(12,2) DEFAULT 0.00,
-  `igst_amount` decimal(12,2) DEFAULT 0.00,
-  `tax_amount` decimal(12,2) DEFAULT 0.00,
-  `grand_total` decimal(12,2) DEFAULT 0.00,
-  `payment_status` enum('Pending','Paid') NOT NULL DEFAULT 'Pending',
-  `status` varchar(20) DEFAULT 'active',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
-
-// Check if payment_status column exists, if not add it
-$colCheck = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation LIKE 'payment_status'");
-if ($colCheck && mysqli_num_rows($colCheck) === 0) {
-    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation ADD COLUMN `payment_status` ENUM('Pending','Paid') NOT NULL DEFAULT 'Pending' AFTER `grand_total`");
-}
-$colCheckDueList = mysqli_query($ai_conn, "SHOW COLUMNS FROM tbl_quotation LIKE 'due_date'");
-if ($colCheckDueList && mysqli_num_rows($colCheckDueList) === 0) {
-    @mysqli_query($ai_conn, "ALTER TABLE tbl_quotation ADD COLUMN `due_date` DATE NULL DEFAULT NULL AFTER `quotation_date`");
-}
-
-$ai_db->aiQuery("CREATE TABLE IF NOT EXISTS `tbl_quotation_items` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `quotation_id` int(11) NOT NULL,
-  `product_id` int(11) DEFAULT 0,
-  `description` text DEFAULT NULL,
-  `hsn_code` varchar(50) DEFAULT '',
-  `rate` decimal(12,2) DEFAULT 0.00,
-  `gst_percent` decimal(5,2) DEFAULT 0.00,
-  `qty` decimal(10,2) DEFAULT 1.00,
-  `net_amount` decimal(12,2) DEFAULT 0.00,
-  `tax_amount` decimal(12,2) DEFAULT 0.00,
-  `total_amount` decimal(12,2) DEFAULT 0.00,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
 // Handle status toggle for Quotation (active/deactive) and recalculate Party Outstanding
 if (isset($_GET['toggle']) && isset($_GET['id'])) {
@@ -248,228 +190,134 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                 ⚠ <strong>Action not allowed:</strong> Quotation status cannot be changed because its payment is already <strong>Paid</strong>.
                                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                             </div>
+                        <?php } elseif (isset($_GET['msg']) && $_GET['msg'] == 'converted_locked') { ?>
+                            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                                ⚠ <strong>Action not allowed:</strong> This quotation cannot be edited because its <strong>Tax Invoice</strong> has already been generated.
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
                         <?php } ?>
 
-                        <!-- 3 SUMMARY METRIC CARDS (TOTAL, PAID, UNPAID / OVERDUE) -->
-                        <div class="row g-3 mb-4">
-                            <!-- CARD 1: TOTAL -->
-                            <div class="col-12 col-md-4">
-                                <a href="manage-quotation-list.php?payment_status=all" class="text-decoration-none">
-                                    <div class="card h-100 border-0 shadow-sm text-white" 
-                                         style="background: linear-gradient(135deg, #1e70e8 0%, #3b82f6 100%); border-radius: 16px; transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: pointer; <?= ($filter_payment === 'all') ? 'outline: 3px solid #1d4ed8; transform: translateY(-2px);' : '' ?>"
-                                         onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 20px rgba(30,112,232,0.3)';" 
-                                         onmouseout="this.style.transform='<?= ($filter_payment === 'all') ? 'translateY(-2px)' : 'none' ?>'; this.style.boxShadow='none';">
-                                        <div class="card-body p-4">
-                                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                                <span class="text-uppercase fw-bold text-white-50" style="letter-spacing: 1px; font-size: 13px;">TOTAL</span>
-                                                <div class="avatar p-2 rounded-circle" style="background: rgba(255, 255, 255, 0.2); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
-                                                    <i class="ti ti-file-invoice fs-4 text-white"></i>
-                                                </div>
-                                            </div>
-                                            <h1 class="mb-1 text-white fw-bold display-6" style="font-size: 38px; line-height: 1.1;"><?= $statTotalCount ?></h1>
-                                            <div class="text-white-50 fw-semibold" style="font-size: 14px;">
-                                                ₹<?= number_format($statTotalAmt, 2) ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </a>
-                            </div>
-
-                            <!-- CARD 2: PAID -->
-                            <div class="col-12 col-md-4">
-                                <a href="manage-quotation-list.php?payment_status=Paid" class="text-decoration-none">
-                                    <div class="card h-100 border-0 shadow-sm text-white" 
-                                         style="background: linear-gradient(135deg, #22c55e 0%, #10b981 100%); border-radius: 16px; transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: pointer; <?= ($filter_payment === 'Paid') ? 'outline: 3px solid #15803d; transform: translateY(-2px);' : '' ?>"
-                                         onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 20px rgba(34,197,94,0.3)';" 
-                                         onmouseout="this.style.transform='<?= ($filter_payment === 'Paid') ? 'translateY(-2px)' : 'none' ?>'; this.style.boxShadow='none';">
-                                        <div class="card-body p-4">
-                                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                                <span class="text-uppercase fw-bold text-white-50" style="letter-spacing: 1px; font-size: 13px;">PAID</span>
-                                                <div class="avatar p-2 rounded-circle" style="background: rgba(255, 255, 255, 0.2); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
-                                                    <i class="ti ti-circle-check fs-4 text-white"></i>
-                                                </div>
-                                            </div>
-                                            <h1 class="mb-1 text-white fw-bold display-6" style="font-size: 38px; line-height: 1.1;"><?= $statPaidCount ?></h1>
-                                            <div class="text-white-50 fw-semibold" style="font-size: 14px;">
-                                                ₹<?= number_format($statPaidAmt, 2) ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </a>
-                            </div>
-
-                            <!-- CARD 3: UNPAID / OVERDUE -->
-                            <div class="col-12 col-md-4">
-                                <a href="manage-quotation-list.php?payment_status=Pending" class="text-decoration-none">
-                                    <div class="card h-100 border-0 shadow-sm text-white" 
-                                         style="background: linear-gradient(135deg, #ef4444 0%, #f87171 100%); border-radius: 16px; transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: pointer; <?= ($filter_payment === 'Pending' || $filter_payment === 'Overdue') ? 'outline: 3px solid #b91c1c; transform: translateY(-2px);' : '' ?>"
-                                         onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 20px rgba(239,68,68,0.3)';" 
-                                         onmouseout="this.style.transform='<?= ($filter_payment === 'Pending' || $filter_payment === 'Overdue') ? 'translateY(-2px)' : 'none' ?>'; this.style.boxShadow='none';">
-                                        <div class="card-body p-4">
-                                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                                <span class="text-uppercase fw-bold text-white-50" style="letter-spacing: 1px; font-size: 13px;">UNPAID</span>
-                                                <div class="avatar p-2 rounded-circle" style="background: rgba(255, 255, 255, 0.2); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
-                                                    <i class="ti ti-rotate-clockwise fs-4 text-white"></i>
-                                                </div>
-                                            </div>
-                                            <h1 class="mb-1 text-white fw-bold display-6" style="font-size: 38px; line-height: 1.1;"><?= $statUnpaidCount ?></h1>
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <div class="text-white-50 fw-semibold" style="font-size: 14px;">
-                                                    ₹<?= number_format($statUnpaidAmt, 2) ?>
-                                                </div>
-                                                <?php if ($statOverdueCount > 0) { ?>
-                                                    <span class="badge bg-white text-danger fw-bold px-2 py-1 shadow-sm" style="font-size: 11px;">
-                                                        <?= $statOverdueCount ?> Overdue
-                                                    </span>
-                                                <?php } ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </a>
-                            </div>
-                        </div>
 
                         <div class="card">
                             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                                 <h5 class="mb-0"><?= $page_nm ?> List</h5>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="d-flex align-items-center">
-                                        <label for="filterPaymentStatus" class="me-2 fw-semibold text-muted small text-nowrap">Filter Status:</label>
-                                        <select id="filterPaymentStatus" class="form-select form-select-sm" style="min-width: 140px;" onchange="window.location.href='manage-quotation-list.php?payment_status=' + this.value;">
+                                        <label for="filterPaymentStatus" class="me-2 text-muted fw-medium text-nowrap" style="font-size: 0.9rem;">Filter Status:</label>
+                                        <select id="filterPaymentStatus" class="form-select form-select-sm" style="width: auto; min-width: 155px; border-color: #dbdade; color: #5d596c; font-size: 0.875rem; height: 47px; border-radius: 10px;" onchange="window.location.href='manage-quotation-list.php?payment_status=' + this.value;">
                                             <option value="all" <?= ($filter_payment === 'all') ? 'selected' : '' ?>>All Quotations</option>
-                                            <option value="Pending" <?= ($filter_payment === 'Pending') ? 'selected' : '' ?>>⏳ Pending</option>
-                                            <option value="Overdue" <?= ($filter_payment === 'Overdue') ? 'selected' : '' ?>>⚠ Overdue</option>
-                                            <option value="Paid" <?= ($filter_payment === 'Paid') ? 'selected' : '' ?>>✓ Paid</option>
+                                            <option value="Pending" <?= ($filter_payment === 'Pending') ? 'selected' : '' ?>>Pending</option>
+                                            <option value="Overdue" <?= ($filter_payment === 'Overdue') ? 'selected' : '' ?>>Overdue</option>
+                                            <option value="Paid" <?= ($filter_payment === 'Paid') ? 'selected' : '' ?>>Paid</option>
                                         </select>
                                     </div>
-                                    <a href="manage-quotation-form.php?mode=add" class="btn btn-primary btn-sm">
-                                        <i class="ti ti-plus me-1"></i> Add New Quotation
+                                    <a href="manage-quotation-form.php?mode=add" class="btn btn-primary btn-lg">
+                                        <i class="ti ti-plus me-1"></i> Add New
                                     </a>
                                 </div>
                             </div>
 
-                            <div class="card-datatable table-responsive">
+                            <div class="card-datatable">
                                 <table class="datatables-ajax table table-bordered align-middle mb-0 text-center" style="font-size:15px;">
                                     <thead class="table-light">
                                         <tr>
-                                            <th>#</th>
-                                            <th>Quotation No.</th>
-                                            <th>Date</th>
+                                            <th style="width:40px;">PDF</th>
                                             <th>Party Name</th>
-                                            <th>GST No. / State</th>
-                                            <th>GST Type</th>
-                                            <th>Grand Total</th>
-                                            <th style="width: 25% !important">Payment Status</th>
+                                            <th>Quotation No</th>
+                                            <th>Date</th>
                                             <th>Status</th>
-                                            <th>Action</th>
+                                            <th>Grand Total</th>
+                                            <th style="width:100px;">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php if ($quotations) {
-                                            $i = 1;
                                             foreach ($quotations as $q) { 
                                                 $payStatus = !empty($q->payment_status) ? $q->payment_status : 'Pending';
-                                                $badgeStyle = ($payStatus === 'Paid') ? 'background-color:#dcfce7; color:#15803d; border-color:#86efac;' : 'background-color:#fef3c7; color:#b45309; border-color:#fcd34d;';
-                                                $isDeactive = (strtolower(trim($q->status ?? '')) === 'deactive');
-                                                $isPaid = ($payStatus === 'Paid');
+                                                $isConverted = (!empty($q->converted_invoice_id) && intval($q->converted_invoice_id) > 0);
+                                                $displayStatus = $isConverted ? 'Created' : $payStatus;
+                                                $qDateStr = !empty($q->quotation_date) ? date('d-m-Y', strtotime($q->quotation_date)) : '-';
                                             ?>
                                                 <tr>
-                                                    <td><?= $i++ ?></td>
-
-                                                    <!-- Quotation No -->
-                                                    <td class="text-start">
-                                                        <span class="badge bg-label-dark font-monospace fs-6"><?= htmlspecialchars($q->quotation_no) ?></span>
+                                                    <!-- 1. PDF Download Icon -->
+                                                    <td>
+                                                        <a href="quotation-print.php?id=<?= $q->id ?>&download=1" target="_blank" class="text-secondary" title="Download PDF" style="font-size: 20px; color: #78716c !important;">
+                                                            <i class="ti ti-download"></i>
+                                                        </a>
                                                     </td>
 
-                                                    <!-- Date -->
-                                                    <td>
-                                                        <div><i class="ti ti-calendar me-1"></i><?= !empty($q->quotation_date) ? date('d/m/Y', strtotime($q->quotation_date)) : '-' ?></div>
-                                                        <?php if (!empty($q->due_date)) { 
-                                                            $isOverdue = ($payStatus === 'Pending' && $q->due_date < date('Y-m-d'));
-                                                        ?>
-                                                            <div class="mt-1" title="Due Date">
-                                                                <?php if ($isOverdue) { ?>
-                                                                    <span class="badge bg-label-danger px-2 py-1 fw-bold" style="font-size: 11px;">
-                                                                        <i class="ti ti-alert-triangle me-1"></i>Overdue: <?= date('d/m/Y', strtotime($q->due_date)) ?>
-                                                                    </span>
-                                                                <?php } else { ?>
-                                                                    <span class="badge bg-label-warning px-2 py-0" style="font-size: 11px;">
-                                                                        Due: <?= date('d/m/Y', strtotime($q->due_date)) ?>
-                                                                    </span>
-                                                                <?php } ?>
-                                                            </div>
+                                                    <!-- 2. Party Name -->
+                                                    <td class="text-start">
+                                                        <strong><?= htmlspecialchars($q->party_name) ?></strong>
+                                                        <?php if (!empty($q->company_name) && ($_SESSION['user_type'] ?? '') !== 'company') { ?>
+                                                            <div class="text-muted small"><?= htmlspecialchars($q->company_name) ?></div>
                                                         <?php } ?>
                                                     </td>
 
-                                                    <!-- Party Name -->
-                                                    <td class="text-start">
-                                                        <div class="d-flex align-items-center gap-2">
-                                                            <div>
-                                                                <div class="fw-bold text-dark"><?= htmlspecialchars($q->party_name) ?></div>
-                                                                <?php if (!empty($q->company_name)) { ?>
-                                                                    <div class="text-muted" style="font-size: 11px;"><?= htmlspecialchars($q->company_name) ?></div>
-                                                                <?php } ?>
-                                                            </div>
+                                                    <!-- 3. Quotation Number -->
+                                                    <td>
+                                                        <span class="badge bg-label-primary font-monospace"><?= htmlspecialchars($q->quotation_no) ?></span>
+                                                    </td>
+
+                                                    <!-- 4. Date -->
+                                                    <td>
+                                                        <?= $qDateStr ?>
+                                                    </td>
+
+                                                    <!-- 5. Status + GENERATE INVOICE button -->
+                                                    <td>
+                                                        <div class="d-inline-flex align-items-center justify-content-center gap-2">
+                                                            <span class="badge bg-label-secondary"><?= htmlspecialchars($displayStatus) ?></span>
+                                                            <?php if (!$isConverted) { ?>
+                                                                <button type="button" 
+                                                                        class="btn btn-success btn-sm btn-convert-invoice fw-bold px-2 py-1" 
+                                                                        style="background-color: #00a859 !important; border-color: #00a859 !important; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 4px;"
+                                                                        data-id="<?= $q->id ?>" 
+                                                                        data-no="<?= htmlspecialchars($q->quotation_no) ?>" 
+                                                                        title="Generate Tax Invoice">
+                                                                    GENERATE INVOICE
+                                                                </button>
+                                                            <?php } else { ?>
+                                                                <a href="manage-invoice-form.php?mode=edit&id=<?= $q->converted_invoice_id ?>" 
+                                                                   class="badge bg-label-info px-2 py-1 fw-bold text-decoration-none"
+                                                                   title="View Converted Invoice">
+                                                                    <i class="ti ti-check me-1"></i> INV #<?= $q->converted_invoice_id ?>
+                                                                </a>
+                                                            <?php } ?>
                                                         </div>
                                                     </td>
 
-                                                    <!-- GST No / State -->
-                                                    <td class="text-start">
-                                                        <?php if (!empty($q->gst_no)) { ?>
-                                                            <div><i class="ti ti-receipt-tax me-1"></i><?= htmlspecialchars($q->gst_no) ?></div>
-                                                        <?php } ?>
-                                                        <div class="small text-muted"><i class="ti ti-map-pin me-1"></i><?= htmlspecialchars($q->state_name ?? '-') ?></div>
-                                                    </td>
-
-                                                    <!-- GST Type -->
-                                                    <td>
-                                                        <?php if ($q->gst_type === 'without_gst') { ?>
-                                                            <span class="badge bg-label-warning px-3 py-2">Without GST</span>
-                                                        <?php } else { ?>
-                                                            <span class="badge bg-label-info px-3 py-2">With GST</span>
-                                                        <?php } ?>
-                                                    </td>
-
-                                                    <!-- Grand Total -->
-                                                    <td class="fw-bold text-success">
+                                                    <!-- 6. Grand Total -->
+                                                    <td class="text-end fw-bold text-success">
                                                         ₹<?= number_format($q->grand_total, 2) ?>
                                                     </td>
 
-                                                    <!-- Payment Status Dropdown -->
+                                                    <!-- 7. Action -->
                                                     <td>
-                                                        <select class="form-select form-select-sm payment-status-dropdown fw-semibold" 
-                                                                data-id="<?= $q->id ?>" 
-                                                                <?= $isDeactive ? 'disabled title="Cannot change payment status while quotation is deactive"' : '' ?>
-                                                                style="font-size: 13px; font-weight: 600; border-radius: 6px; cursor: <?= $isDeactive ? 'not-allowed' : 'pointer' ?>; <?= $badgeStyle ?> <?= $isDeactive ? 'opacity:0.6;' : '' ?>">
-                                                            <option value="Pending" <?= ($payStatus === 'Pending') ? 'selected' : '' ?>>⏳ Pending</option>
-                                                            <option value="Paid" <?= ($payStatus === 'Paid') ? 'selected' : '' ?>>✓ Paid</option>
-                                                        </select>
-                                                        <?php if ($isDeactive) { ?>
-                                                            <div class="text-muted" style="font-size:10px;">Activate quotation first</div>
-                                                        <?php } ?>
-                                                    </td>
-
-                                                    <!-- Status -->
-                                                    <td>
-                                                        <?php if ($isPaid) { ?>
-                                                            <span class="badge bg-label-success px-3 py-2 fs-6 opacity-75" title="Quotation is paid and locked" style="cursor:not-allowed;">Active <i class="ti ti-lock ms-1"></i></span>
-                                                        <?php } else { ?>
-                                                            <?= ai_render_status_toggle($pageUrl, $q->id, $q->status) ?>
-                                                        <?php } ?>
-                                                    </td>
-
-                                                    <!-- Action -->
-                                                    <td>
-                                                        <div class="d-inline-flex gap-1">
-                                                            <a href="quotation-print.php?id=<?= $q->id ?>" target="_blank" class="btn btn-sm btn-icon btn-label-info" title="Print / PDF View">
-                                                                <i class="ti ti-printer"></i>
-                                                            </a>
-                                                            <a href="manage-quotation-form.php?mode=edit&id=<?= $q->id ?>" class="btn btn-sm btn-icon btn-label-primary" title="Edit">
-                                                                <i class="ti ti-pencil"></i>
-                                                            </a>
-                                                            <a href="javascript:void(0);" onclick="if(confirm('Are you sure you want to delete this quotation?')){ window.location.href='manage-quotation-list.php?action=delete&id=<?= $q->id ?>'; }" class="btn btn-sm btn-icon btn-label-danger" title="Delete">
-                                                                <i class="ti ti-trash"></i>
-                                                            </a>
+                                                        <div class="dropdown">
+                                                            <button type="button" class="btn p-0 dropdown-toggle hide-arrow" data-bs-toggle="dropdown">
+                                                                <i class="ti ti-dots-vertical fs-4"></i>
+                                                            </button>
+                                                            <div class="dropdown-menu dropdown-menu-end">
+                                                                <a class="dropdown-item" href="quotation-print.php?id=<?= $q->id ?>" target="_blank">
+                                                                    <i class="ti ti-printer me-1"></i> Print / View
+                                                                </a>
+                                                                <a class="dropdown-item" href="quotation-print.php?id=<?= $q->id ?>&download=1" target="_blank">
+                                                                    <i class="ti ti-download me-1"></i> Download PDF
+                                                                </a>
+                                                                <?php if ($isConverted) { ?>
+                                                                    <a class="dropdown-item text-muted disabled" href="javascript:void(0);" title="Cannot edit: Invoice already generated">
+                                                                        <i class="ti ti-pencil me-1"></i> Edit <span class="badge bg-label-secondary ms-1">Locked</span>
+                                                                    </a>
+                                                                <?php } else { ?>
+                                                                    <a class="dropdown-item" href="manage-quotation-form.php?mode=edit&id=<?= $q->id ?>">
+                                                                        <i class="ti ti-pencil me-1"></i> Edit
+                                                                    </a>
+                                                                <?php } ?>
+                                                                <a class="dropdown-item text-danger" href="manage-quotation-list.php?action=delete&id=<?= $q->id ?>" onclick="return confirm('Are you sure you want to delete this quotation?');">
+                                                                    <i class="ti ti-trash me-1"></i> Delete
+                                                                </a>
+                                                            </div>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -503,7 +351,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                 responsive: false,
                 autoWidth: false,
                 columnDefs: [{
-                    targets: [7, 8, 9],
+                    targets: [0, 4, 6],
                     orderable: false
                 }]
             });
@@ -590,6 +438,82 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                         } else {
                             alert(errMsg);
                         }
+                    }
+                });
+            });
+
+            // Convert Quotation to Invoice handler
+            $(document).on('click', '.btn-convert-invoice', function() {
+                var $btn = $(this);
+                var qId = $btn.data('id');
+                var qNo = $btn.data('no');
+
+                if (!confirm('Are you sure you want to convert Quotation ' + qNo + ' into a Tax Invoice?')) {
+                    return false;
+                }
+
+                $btn.prop('disabled', true).html('<i class="ti ti-loader ti-spin me-1"></i> Converting...');
+
+                $.ajax({
+                    url: 'ajax.php',
+                    type: 'POST',
+                    dataType: 'json',
+                    data: {
+                        action: 'convert_quotation_to_invoice',
+                        quotation_id: qId
+                    },
+                    success: function(res) {
+                        if (res.status === 'success') {
+                            if (typeof Swal !== 'undefined') {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Converted Successfully!',
+                                    text: 'Invoice ' + res.invoice_no + ' has been created.',
+                                    confirmButtonText: 'View Invoice',
+                                    showCancelButton: true,
+                                    cancelButtonText: 'Stay Here'
+                                }).then(function(result) {
+                                    if (result.isConfirmed) {
+                                        window.location.href = 'manage-invoice-form.php?mode=edit&id=' + res.invoice_id;
+                                    } else {
+                                        location.reload();
+                                    }
+                                });
+                            } else {
+                                alert(res.message);
+                                window.location.href = 'manage-invoice-form.php?mode=edit&id=' + res.invoice_id;
+                            }
+                        } else if (res.status === 'already_converted') {
+                            alert(res.message);
+                            window.location.href = 'manage-invoice-form.php?mode=edit&id=' + res.invoice_id;
+                        } else if (res.status === 'insufficient_stock') {
+                            $btn.prop('disabled', false).html('<i class="ti ti-transform me-1"></i> Convert to Invoice');
+                            if (typeof Swal !== 'undefined') {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Insufficient Stock!',
+                                    html: '<pre style="text-align:left; white-space:pre-wrap; font-family:inherit; font-size:14px; margin-top:10px;">' + res.message + '</pre>',
+                                    confirmButtonText: 'OK'
+                                });
+                            } else {
+                                alert(res.message);
+                            }
+                        } else {
+                            $btn.prop('disabled', false).html('<i class="ti ti-transform me-1"></i> Convert to Invoice');
+                            if (typeof Swal !== 'undefined') {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Error',
+                                    text: res.message || 'Error converting to invoice.'
+                                });
+                            } else {
+                                alert(res.message || 'Error converting to invoice.');
+                            }
+                        }
+                    },
+                    error: function() {
+                        $btn.prop('disabled', false).html('<i class="ti ti-transform me-1"></i> Convert to Invoice');
+                        alert('Server error occurred during conversion.');
                     }
                 });
             });

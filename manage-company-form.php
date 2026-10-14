@@ -39,7 +39,8 @@ $states = $ai_db->aiGetQueryObj("SELECT id, state_name, state_code FROM tbl_stat
 // ===================== ADD =====================
 if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit']))) {
     $company_name = addslashes(trim($_POST['company_name'] ?? ''));
-    $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
+    $gst_applicable = isset($_POST['gst_applicable']) ? intval($_POST['gst_applicable']) : 0;
+    $gst_no = ($gst_applicable === 1) ? addslashes(trim($_POST['gst_no'] ?? '')) : '';
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
     $address = addslashes(trim($_POST['address'] ?? ''));
@@ -56,6 +57,8 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
 
     if (empty($company_name)) {
         $err_msg = "Company Name is required!";
+    } elseif ($gst_applicable === 1 && empty($gst_no)) {
+        $err_msg = "GST Number is required when GST is Applicable!";
     } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {
         $err_msg = "Mobile Number must be exactly 10 digits!";
     } elseif (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -91,6 +94,7 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
 
             $add_qry = "INSERT INTO $table SET 
                 company_name='" . $company_name . "',
+                gst_applicable='" . $gst_applicable . "',
                 gst_no='" . $gst_no . "',
                 state_id='" . $state_id . "',
                 city_id='" . $city_id . "',
@@ -112,7 +116,8 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
 // ===================== EDIT =====================
 if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST')) {
     $company_name = addslashes(trim($_POST['company_name'] ?? ''));
-    $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
+    $gst_applicable = isset($_POST['gst_applicable']) ? intval($_POST['gst_applicable']) : 0;
+    $gst_no = ($gst_applicable === 1) ? addslashes(trim($_POST['gst_no'] ?? '')) : '';
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
     $address = addslashes(trim($_POST['address'] ?? ''));
@@ -129,6 +134,8 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
 
     if (empty($company_name)) {
         $err_msg = "Company Name is required!";
+    } elseif ($gst_applicable === 1 && empty($gst_no)) {
+        $err_msg = "GST Number is required when GST is Applicable!";
     } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {
         $err_msg = "Mobile Number must be exactly 10 digits!";
     } elseif (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -164,6 +171,7 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
 
             $edit_qry = "UPDATE $table SET 
                 company_name='" . $company_name . "',
+                gst_applicable='" . $gst_applicable . "',
                 gst_no='" . $gst_no . "',
                 state_id='" . $state_id . "',
                 city_id='" . $city_id . "',
@@ -290,10 +298,24 @@ if ($selected_state_id > 0) {
                                                 </select>
                                             </div>
 
-                                            <!-- GST No (Optional) -->
+                                            <?php 
+                                            $curr_gst_applicable = isset($_POST['gst_applicable']) 
+                                                ? intval($_POST['gst_applicable']) 
+                                                : intval($categoryData->gst_applicable ?? 0);
+                                            ?>
+                                            <!-- GST Applicable -->
                                             <div class="col-md-4">
-                                                <label class="form-label">GST No <small class="text-muted">(Optional)</small></label>
-                                                <input type="text" name="gst_no" class="form-control" placeholder="e.g. 24AAAAA0000A1Z5" value="<?= htmlspecialchars($_POST['gst_no'] ?? $categoryData->gst_no ?? '') ?>">
+                                                <label class="form-label">GST Applicable <span class="text-danger">*</span></label>
+                                                <select name="gst_applicable" id="gst_applicable" class="form-select select2" required>
+                                                    <option value="0" <?= ($curr_gst_applicable === 0) ? 'selected' : '' ?>>No</option>
+                                                    <option value="1" <?= ($curr_gst_applicable === 1) ? 'selected' : '' ?>>Yes</option>
+                                                </select>
+                                            </div>
+
+                                            <!-- GST No (Shown only when GST Applicable is Yes) -->
+                                            <div class="col-md-4" id="gst_no_wrapper" style="<?= ($curr_gst_applicable === 1) ? '' : 'display: none;' ?>">
+                                                <label class="form-label">GST No <span class="text-danger">*</span></label>
+                                                <input type="text" name="gst_no" id="gst_no" class="form-control text-uppercase" placeholder="e.g. 24AAAAA0000A1Z5" value="<?= htmlspecialchars($_POST['gst_no'] ?? $categoryData->gst_no ?? '') ?>" maxlength="15">
                                             </div>
 
                                             <!-- State (Select2) -->
@@ -489,11 +511,31 @@ if ($selected_state_id > 0) {
                 }
             });
 
+            // Toggle GST No field based on GST Applicable (Yes / No)
+            function syncGstField() {
+                var gstApp = $('#gst_applicable').val();
+                if (gstApp === '1' || gstApp === 1) {
+                    $('#gst_no_wrapper').slideDown(200);
+                    $('#gst_no').prop('required', true);
+                } else {
+                    $('#gst_no_wrapper').slideUp(200);
+                    $('#gst_no').prop('required', false).val('');
+                }
+            }
+
+            $('#gst_applicable').on('change', function() {
+                syncGstField();
+            });
+
+            // Run once on initial page load
+            syncGstField();
+
             // Client AJAX validation for duplicate company name / gst / username / mobile / email
             $('#mainForm').on('submit', function(e) {
                 var form = this;
                 var companyName = $('input[name="company_name"]').val().trim();
-                var gstNo = $('input[name="gst_no"]').val().trim();
+                var gstApplicable = $('#gst_applicable').val();
+                var gstNo = (gstApplicable === '1' || gstApplicable === 1) ? $('input[name="gst_no"]').val().trim() : '';
                 var mobileNo = $('input[name="mobile_no"]').val().trim();
                 var email = $('input[name="email"]').val().trim();
                 var username = $('input[name="username"]').val().trim();
@@ -521,6 +563,13 @@ if ($selected_state_id > 0) {
                 if (companyName === '') {
                     e.preventDefault();
                     showToastError('Company Name is required!');
+                    return false;
+                }
+
+                if ((gstApplicable === '1' || gstApplicable === 1) && gstNo === '') {
+                    e.preventDefault();
+                    showToastError('GST Number is required when GST is Applicable!');
+                    $('#gst_no').focus();
                     return false;
                 }
 

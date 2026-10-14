@@ -12,7 +12,7 @@ if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id
     $company_where = " WHERE p.company_id = '" . intval($_SESSION['company_id']) . "'";
 }
 
-$qry = "SELECT p.*, c.company_name 
+$qry = "SELECT p.*, c.company_name, c.gst_applicable 
         FROM tbl_product p 
         LEFT JOIN tbl_company c ON p.company_id = c.id 
         $company_where
@@ -46,8 +46,10 @@ $team = $ai_db->aiGetQueryObj($qry);
                                             <th>Product Name</th>
                                             <th>SKU</th>
                                             <th>HSN Code</th>
+                                            <th>GST %</th>
                                             <th>Purchase Price</th>
                                             <th>Sales Price</th>
+                                            <th>Current Stock</th>
                                             <th>Company Name</th>
                                             <th>Status</th>
                                             <th style="width:100px;">Action</th>
@@ -56,7 +58,11 @@ $team = $ai_db->aiGetQueryObj($qry);
                                     <tbody>
                                         <?php if ($team) {
                                             $i = 1;
-                                            foreach ($team as $cat) { ?>
+                                            foreach ($team as $cat) { 
+                                                $curStock = floatval($cat->stock ?? 0);
+                                                $minAlert = floatval($cat->min_stock_alert ?? 5);
+                                                $isTracking = (int)($cat->track_stock ?? 1) === 1;
+                                            ?>
                                                 <tr>
                                                     <td><?= $i++ ?></td>
 
@@ -83,6 +89,15 @@ $team = $ai_db->aiGetQueryObj($qry);
                                                         <?php } ?>
                                                     </td>
 
+                                                    <!-- GST % -->
+                                                    <td>
+                                                        <?php if (!empty($cat->gst_applicable)) { ?>
+                                                            <span class="badge bg-label-warning font-monospace"><?= htmlspecialchars((string)intval($cat->gst_rate ?? 18)) ?>%</span>
+                                                        <?php } else { ?>
+                                                            <span class="text-muted">N/A</span>
+                                                        <?php } ?>
+                                                    </td>
+
                                                     <!-- Purchase Price -->
                                                     <td class="text-end">
                                                         ₹<?= number_format((float)$cat->purchase_price, 2) ?>
@@ -91,6 +106,19 @@ $team = $ai_db->aiGetQueryObj($qry);
                                                     <!-- Sales Price -->
                                                     <td class="text-end fw-bold text-success">
                                                         ₹<?= number_format((float)$cat->sales_price, 2) ?>
+                                                    </td>
+
+                                                    <!-- Stock -->
+                                                    <td>
+                                                        <?php if (!$isTracking) { ?>
+                                                            <span class="badge bg-label-secondary">Not Tracked</span>
+                                                        <?php } elseif ($curStock <= 0) { ?>
+                                                            <span class="badge bg-label-danger fw-bold">Out of Stock (<?= number_format($curStock, 2) ?>)</span>
+                                                        <?php } elseif ($curStock <= $minAlert) { ?>
+                                                            <span class="badge bg-label-warning fw-bold">Low Stock: <?= number_format($curStock, 2) ?></span>
+                                                        <?php } else { ?>
+                                                            <span class="badge bg-label-success fw-bold"><?= number_format($curStock, 2) ?> in stock</span>
+                                                        <?php } ?>
                                                     </td>
 
                                                     <!-- Company Name -->
@@ -147,7 +175,7 @@ $team = $ai_db->aiGetQueryObj($qry);
             responsive: false,
             autoWidth: false,
             columnDefs: [{
-                targets: [7, 8],
+                targets: [9, 10],
                 orderable: false
             }]
         });

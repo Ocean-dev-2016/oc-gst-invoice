@@ -61,10 +61,14 @@ $team = $ai_db->aiGetQueryObj($qry);
 
                                                     <!-- GST No -->
                                                     <td>
-                                                        <?php if (!empty($cat->gst_no)) { ?>
-                                                            <span class="badge bg-label-primary font-monospace"><?= htmlspecialchars($cat->gst_no) ?></span>
+                                                        <?php if (!empty($cat->gst_applicable)) { ?>
+                                                            <?php if (!empty($cat->gst_no)) { ?>
+                                                                <span class="badge bg-label-primary font-monospace"><?= htmlspecialchars($cat->gst_no) ?></span>
+                                                            <?php } else { ?>
+                                                                <span class="badge bg-label-success">Yes</span>
+                                                            <?php } ?>
                                                         <?php } else { ?>
-                                                            <span class="text-muted">-</span>
+                                                            <span class="badge bg-label-secondary">No</span>
                                                         <?php } ?>
                                                     </td>
 
