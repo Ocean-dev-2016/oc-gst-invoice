@@ -14,31 +14,6 @@ $err_msg = '';
 $quotationData = null;
 $quotationItems = [];
 
-// Auto Generate Quotation No (Always prefixed with OQ)
-function generateQuotationNo($ai_db, $company_id = 0) {
-    if (function_exists('generateCompanyQuotationNo')) {
-        return generateCompanyQuotationNo($ai_db, $company_id);
-    }
-    $currentYear = date('y');
-    $nextYear = date('y', strtotime('+1 year'));
-    $fy = $currentYear . '-' . $nextYear;
-    
-    $prefix = 'OQ';
-    
-    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation ORDER BY id DESC LIMIT 1");
-    $nextNum = 1;
-    if (!empty($maxRow)) {
-        $qNo = $maxRow[0]->quotation_no;
-        if (preg_match('~/(\d+)/~', $qNo, $matches)) {
-            $nextNum = intval($matches[1]) + 1;
-        } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation")) + 1;
-        }
-    }
-    
-    return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
-}
-
 $userType = $_SESSION['user_type'] ?? '';
 $session_company_id = intval($_SESSION['company_id'] ?? 0);
 $current_company_id = ($userType === 'company') ? $session_company_id : intval($_POST['company_id'] ?? 0);
@@ -119,7 +94,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     } elseif ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
         $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
-        if ($mode === 'add') {
+        // Validate each item product exists and is active
+        $invalidProductError = '';
+        if (empty($_POST['item_description']) || !is_array($_POST['item_description'])) {
+            $invalidProductError = "Please add at least one product item!";
+        } else {
+            foreach ($_POST['item_description'] as $idx => $desc) {
+                $desc = trim($desc ?? '');
+                if (empty($desc)) continue;
+                $prod_id = intval($_POST['item_product_id'][$idx] ?? 0);
+                if ($prod_id <= 0) {
+                    $invalidProductError = "Please select a valid product for item: " . htmlspecialchars($desc);
+                    break;
+                }
+                $checkProd = $ai_db->aiGetQueryObj("SELECT product_name, status FROM tbl_product WHERE id='$prod_id' AND company_id='$company_id' LIMIT 1");
+                if (empty($checkProd)) {
+                    $invalidProductError = "Product '" . htmlspecialchars($desc) . "' (ID: $prod_id) does not exist in your products!";
+                    break;
+                }
+                if (strtolower($checkProd[0]->status ?? '') !== 'active') {
+                    $invalidProductError = "Product '" . htmlspecialchars($checkProd[0]->product_name) . "' is currently deactivated. Only active products can be added to quotation!";
+                    break;
+                }
+            }
+        }
+
+        if (!empty($invalidProductError)) {
+            $err_msg = $invalidProductError;
+        } elseif ($mode === 'add') {
             $insert_qry = "INSERT INTO tbl_quotation SET
                 company_id='$company_id',
                 party_id='$party_id',
@@ -129,9 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 rca='$rca',
                 address='$address',
                 state_id='$state_id',
-                state_name='$state_name',
                 city_id='$city_id',
-                city_name='$city_name',
                 quotation_date='$quotation_date',
                 due_date=$due_date_sql,
                 gst_type='$gst_type',
@@ -208,9 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 rca='$rca',
                 address='$address',
                 state_id='$state_id',
-                state_name='$state_name',
                 city_id='$city_id',
-                city_name='$city_name',
                 quotation_date='$quotation_date',
                 due_date=$due_date_sql,
                 gst_type='$gst_type',
@@ -509,7 +507,6 @@ if ($selected_state_id > 0) {
                                                 </option>
                                             <?php } ?>
                                         </select>
-                                        <input type="hidden" name="city_name" id="city_name_input" value="<?= htmlspecialchars($quotationData->city_name ?? '') ?>">
                                     </div>
 
                                     <div class="col-md-2">

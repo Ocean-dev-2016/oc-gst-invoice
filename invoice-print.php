@@ -12,8 +12,15 @@ if ($id <= 0) {
     die("Invalid Invoice ID!");
 }
 
-// Fetch Quotation
-$invoiceRow = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice WHERE id='$id' LIMIT 1");
+// Fetch Invoice with state and city
+$invoiceRow = $ai_db->aiGetQueryObj("
+    SELECT q.*, s.state_name, ct.city_name 
+    FROM tbl_invoice q 
+    LEFT JOIN tbl_state s ON q.state_id = s.id 
+    LEFT JOIN tbl_city ct ON q.city_id = ct.id 
+    WHERE q.id='$id' 
+    LIMIT 1
+");
 if (empty($invoiceRow)) {
     die("Invoice not found!");
 }

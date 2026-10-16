@@ -266,9 +266,10 @@ if ($filter_payment === 'Pending') {
 }
 
 // Fetch all purchase bills
-$query = "SELECT q.*, c.company_name 
+$query = "SELECT q.*, c.company_name, s.state_name 
           FROM tbl_purchase q
           LEFT JOIN tbl_company c ON c.id = q.company_id
+          LEFT JOIN tbl_state s ON s.id = q.state_id
           WHERE 1=1 {$company_where} {$pay_where}
           ORDER BY q.id DESC";
 $purchases = $ai_db->aiGetQueryObj($query);

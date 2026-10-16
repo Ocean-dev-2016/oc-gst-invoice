@@ -107,7 +107,7 @@ $todayDate = date('Y-m-d');
                                         </div>
                                         <h3 class="mb-1 fw-bold text-dark">₹<?= number_format($totalSales, 0) ?></h3>
                                         <div class="d-flex align-items-center text-muted small">
-                                            <span class="badge bg-label-success me-2 px-2 py-0.5 fw-semibold"><i class="ti ti-arrow-up-right me-0.5"></i> Active</span>
+                                            <span class="badge bg-label-success me-2 px-2 py-0.5 fw-semibold"> Active</span>
                                             <span>All Invoices</span>
                                         </div>
                                     </div>
@@ -123,7 +123,7 @@ $todayDate = date('Y-m-d');
                                         </div>
                                         <h3 class="mb-1 fw-bold text-dark">₹<?= number_format($totalPurchase, 0) ?></h3>
                                         <div class="d-flex align-items-center text-muted small">
-                                            <span class="badge bg-label-info me-2 px-2 py-0.5 fw-semibold"><i class="ti ti-truck-delivery me-0.5"></i> Active</span>
+                                            <span class="badge bg-label-info me-2 px-2 py-0.5 fw-semibold"> Active</span>
                                             <span>All Bills</span>
                                         </div>
                                     </div>

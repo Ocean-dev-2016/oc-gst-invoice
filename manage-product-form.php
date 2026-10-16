@@ -41,7 +41,7 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
     $sales_price = floatval($_POST['sales_price'] ?? 0);
     $stock = floatval($_POST['stock'] ?? 0);
     $min_stock_alert = floatval($_POST['min_stock_alert'] ?? 5);
-    $track_stock = isset($_POST['track_stock']) ? intval($_POST['track_stock']) : 1;
+    $track_stock = 1;
     $status = $_POST['status'] ?? 'active';
 
     if (empty($product_name)) {
@@ -73,7 +73,7 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
                 sales_price='" . $sales_price . "',
                 stock='" . $stock . "',
                 min_stock_alert='" . $min_stock_alert . "',
-                track_stock='" . $track_stock . "',
+                track_stock='1',
                 status='" . $status . "'";
 
             $ai_db->aiQuery($add_qry);
@@ -94,7 +94,7 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
     $sales_price = floatval($_POST['sales_price'] ?? 0);
     $stock = floatval($_POST['stock'] ?? 0);
     $min_stock_alert = floatval($_POST['min_stock_alert'] ?? 5);
-    $track_stock = isset($_POST['track_stock']) ? intval($_POST['track_stock']) : 1;
+    $track_stock = 1;
     $status = $_POST['status'] ?? 'active';
 
     if (empty($product_name)) {
@@ -126,7 +126,7 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
                 sales_price='" . $sales_price . "',
                 stock='" . $stock . "',
                 min_stock_alert='" . $min_stock_alert . "',
-                track_stock='" . $track_stock . "',
+                track_stock='1',
                 status='" . $status . "'
                 WHERE id='" . intval($id) . "'";
 
@@ -257,14 +257,6 @@ $show_product_gst = !empty($selected_company_gst) && (int)$selected_company_gst[
                                                 <div class="form-text text-muted">Stock falls below this number will show a warning alert.</div>
                                             </div>
 
-                                            <div class="col-md-12">
-                                                <div class="form-check form-switch mt-2">
-                                                    <input class="form-check-input" type="checkbox" name="track_stock" id="track_stock" value="1" <?= ((int)($_POST['track_stock'] ?? $categoryData->track_stock ?? 1) === 1) ? 'checked' : '' ?>>
-                                                    <label class="form-check-label fw-semibold" for="track_stock">
-                                                        Enable Stock Tracking & Auto-Deduction on Invoices
-                                                    </label>
-                                                </div>
-                                            </div>
 
                                             <!-- Status -->
                                             <div class="col-md-12">

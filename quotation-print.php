@@ -12,8 +12,15 @@ if ($id <= 0) {
     die("Invalid Quotation ID!");
 }
 
-// Fetch Quotation
-$quotationRow = $ai_db->aiGetQueryObj("SELECT * FROM tbl_quotation WHERE id='$id' LIMIT 1");
+// Fetch Quotation with state and city
+$quotationRow = $ai_db->aiGetQueryObj("
+    SELECT q.*, s.state_name, ct.city_name 
+    FROM tbl_quotation q 
+    LEFT JOIN tbl_state s ON q.state_id = s.id 
+    LEFT JOIN tbl_city ct ON q.city_id = ct.id 
+    WHERE q.id='$id' 
+    LIMIT 1
+");
 if (empty($quotationRow)) {
     die("Quotation not found!");
 }

@@ -43,6 +43,7 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
     $gst_no = ($gst_applicable === 1) ? addslashes(trim($_POST['gst_no'] ?? '')) : '';
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
+    $pincode = addslashes(trim($_POST['pincode'] ?? ''));
     $address = addslashes(trim($_POST['address'] ?? ''));
     $owner_name = addslashes(trim($_POST['owner_name'] ?? ''));
     $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
@@ -59,6 +60,8 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
         $err_msg = "Company Name is required!";
     } elseif ($gst_applicable === 1 && empty($gst_no)) {
         $err_msg = "GST Number is required when GST is Applicable!";
+    } elseif (!empty($pincode) && !preg_match('/^[0-9]{6}$/', $pincode)) {
+        $err_msg = "Pincode must be exactly 6 digits!";
     } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {
         $err_msg = "Mobile Number must be exactly 10 digits!";
     } elseif (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -67,25 +70,25 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
         $err_msg = $pass_err;
     } else {
         // Check duplicate
-        $dup_conds = ["LOWER(company_name)='" . strtolower($company_name) . "'"];
+        $dup_conds = [];
         if (!empty($gst_no)) $dup_conds[] = "LOWER(gst_no)='" . strtolower($gst_no) . "'";
         if (!empty($mobile_no)) $dup_conds[] = "mobile_no='" . $mobile_no . "'";
         if (!empty($email)) $dup_conds[] = "LOWER(email)='" . strtolower($email) . "'";
         if (!empty($username)) $dup_conds[] = "LOWER(username)='" . strtolower($username) . "'";
 
-        $check_dup = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_no, mobile_no, email, username FROM $table WHERE (" . implode(" OR ", $dup_conds) . ") LIMIT 1");
-        
-        if (!empty($check_dup)) {
-            if (strtolower($check_dup[0]->company_name) === strtolower($company_name)) {
-                $err_msg = "Company Name '$company_name' already exists!";
-            } elseif (!empty($gst_no) && strtolower($check_dup[0]->gst_no) === strtolower($gst_no)) {
-                $err_msg = "GST Number '$gst_no' already exists!";
-            } elseif (!empty($mobile_no) && $check_dup[0]->mobile_no === $mobile_no) {
-                $err_msg = "Mobile Number '$mobile_no' already exists!";
-            } elseif (!empty($email) && strtolower($check_dup[0]->email) === strtolower($email)) {
-                $err_msg = "Email Address '$email' already exists!";
-            } elseif (!empty($username) && strtolower($check_dup[0]->username) === strtolower($username)) {
-                $err_msg = "Username '$username' already exists!";
+        if (!empty($dup_conds)) {
+            $check_dup = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_no, mobile_no, email, username FROM $table WHERE (" . implode(" OR ", $dup_conds) . ") LIMIT 1");
+            
+            if (!empty($check_dup)) {
+                if (!empty($gst_no) && strtolower($check_dup[0]->gst_no) === strtolower($gst_no)) {
+                    $err_msg = "GST Number '$gst_no' already exists!";
+                } elseif (!empty($mobile_no) && $check_dup[0]->mobile_no === $mobile_no) {
+                    $err_msg = "Mobile Number '$mobile_no' already exists!";
+                } elseif (!empty($email) && strtolower($check_dup[0]->email) === strtolower($email)) {
+                    $err_msg = "Email Address '$email' already exists!";
+                } elseif (!empty($username) && strtolower($check_dup[0]->username) === strtolower($username)) {
+                    $err_msg = "Username '$username' already exists!";
+                }
             }
         }
 
@@ -98,6 +101,7 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
                 gst_no='" . $gst_no . "',
                 state_id='" . $state_id . "',
                 city_id='" . $city_id . "',
+                pincode='" . $pincode . "',
                 address='" . $address . "',
                 owner_name='" . $owner_name . "',
                 mobile_no='" . $mobile_no . "',
@@ -120,6 +124,7 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
     $gst_no = ($gst_applicable === 1) ? addslashes(trim($_POST['gst_no'] ?? '')) : '';
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
+    $pincode = addslashes(trim($_POST['pincode'] ?? ''));
     $address = addslashes(trim($_POST['address'] ?? ''));
     $owner_name = addslashes(trim($_POST['owner_name'] ?? ''));
     $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
@@ -136,6 +141,8 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
         $err_msg = "Company Name is required!";
     } elseif ($gst_applicable === 1 && empty($gst_no)) {
         $err_msg = "GST Number is required when GST is Applicable!";
+    } elseif (!empty($pincode) && !preg_match('/^[0-9]{6}$/', $pincode)) {
+        $err_msg = "Pincode must be exactly 6 digits!";
     } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {
         $err_msg = "Mobile Number must be exactly 10 digits!";
     } elseif (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -144,25 +151,25 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
         $err_msg = $pass_err;
     } else {
         // Check duplicate excluding current ID
-        $dup_conds = ["LOWER(company_name)='" . strtolower($company_name) . "'"];
+        $dup_conds = [];
         if (!empty($gst_no)) $dup_conds[] = "LOWER(gst_no)='" . strtolower($gst_no) . "'";
         if (!empty($mobile_no)) $dup_conds[] = "mobile_no='" . $mobile_no . "'";
         if (!empty($email)) $dup_conds[] = "LOWER(email)='" . strtolower($email) . "'";
         if (!empty($username)) $dup_conds[] = "LOWER(username)='" . strtolower($username) . "'";
 
-        $check_dup = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_no, mobile_no, email, username FROM $table WHERE (" . implode(" OR ", $dup_conds) . ") AND id!='" . intval($id) . "' LIMIT 1");
-        
-        if (!empty($check_dup)) {
-            if (strtolower($check_dup[0]->company_name) === strtolower($company_name)) {
-                $err_msg = "Company Name '$company_name' already exists!";
-            } elseif (!empty($gst_no) && strtolower($check_dup[0]->gst_no) === strtolower($gst_no)) {
-                $err_msg = "GST Number '$gst_no' already exists!";
-            } elseif (!empty($mobile_no) && $check_dup[0]->mobile_no === $mobile_no) {
-                $err_msg = "Mobile Number '$mobile_no' already exists!";
-            } elseif (!empty($email) && strtolower($check_dup[0]->email) === strtolower($email)) {
-                $err_msg = "Email Address '$email' already exists!";
-            } elseif (!empty($username) && strtolower($check_dup[0]->username) === strtolower($username)) {
-                $err_msg = "Username '$username' already exists!";
+        if (!empty($dup_conds)) {
+            $check_dup = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_no, mobile_no, email, username FROM $table WHERE (" . implode(" OR ", $dup_conds) . ") AND id!='" . intval($id) . "' LIMIT 1");
+            
+            if (!empty($check_dup)) {
+                if (!empty($gst_no) && strtolower($check_dup[0]->gst_no) === strtolower($gst_no)) {
+                    $err_msg = "GST Number '$gst_no' already exists!";
+                } elseif (!empty($mobile_no) && $check_dup[0]->mobile_no === $mobile_no) {
+                    $err_msg = "Mobile Number '$mobile_no' already exists!";
+                } elseif (!empty($email) && strtolower($check_dup[0]->email) === strtolower($email)) {
+                    $err_msg = "Email Address '$email' already exists!";
+                } elseif (!empty($username) && strtolower($check_dup[0]->username) === strtolower($username)) {
+                    $err_msg = "Username '$username' already exists!";
+                }
             }
         }
 
@@ -175,6 +182,7 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
                 gst_no='" . $gst_no . "',
                 state_id='" . $state_id . "',
                 city_id='" . $city_id . "',
+                pincode='" . $pincode . "',
                 address='" . $address . "',
                 owner_name='" . $owner_name . "',
                 mobile_no='" . $mobile_no . "',
@@ -326,7 +334,7 @@ if ($selected_state_id > 0) {
                                                     <?php if (!empty($states)) {
                                                         foreach ($states as $st) { ?>
                                                             <option value="<?= $st->id ?>" <?= ($selected_state_id == $st->id) ? 'selected' : '' ?>>
-                                                                <?= htmlspecialchars($st->state_name) ?> (Code: <?= htmlspecialchars($st->state_code) ?>)
+                                                                <?= htmlspecialchars($st->state_name) ?>
                                                             </option>
                                                         <?php }
                                                     } ?>
@@ -347,6 +355,12 @@ if ($selected_state_id > 0) {
                                                         <?php }
                                                     } ?>
                                                 </select>
+                                            </div>
+
+                                            <!-- Pincode -->
+                                            <div class="col-md-4">
+                                                <label class="form-label">Pincode</label>
+                                                <input type="text" name="pincode" id="pincode" class="form-control" placeholder="e.g. 360004" value="<?= htmlspecialchars($_POST['pincode'] ?? $categoryData->pincode ?? '') ?>" maxlength="6">
                                             </div>
 
                                             <!-- Address -->
@@ -537,6 +551,7 @@ if ($selected_state_id > 0) {
                 var gstApplicable = $('#gst_applicable').val();
                 var gstNo = (gstApplicable === '1' || gstApplicable === 1) ? $('input[name="gst_no"]').val().trim() : '';
                 var mobileNo = $('input[name="mobile_no"]').val().trim();
+                var pincode = $('input[name="pincode"]').val().trim();
                 var email = $('input[name="email"]').val().trim();
                 var username = $('input[name="username"]').val().trim();
                 var password = $('#password').val();
@@ -570,6 +585,13 @@ if ($selected_state_id > 0) {
                     e.preventDefault();
                     showToastError('GST Number is required when GST is Applicable!');
                     $('#gst_no').focus();
+                    return false;
+                }
+
+                if (pincode !== '' && !/^[0-9]{6}$/.test(pincode)) {
+                    e.preventDefault();
+                    showToastError('Pincode must be exactly 6 digits!');
+                    $('#pincode').focus();
                     return false;
                 }
 

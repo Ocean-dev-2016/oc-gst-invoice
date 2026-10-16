@@ -248,14 +248,6 @@ if (isset($_POST['action']) && $_POST['action'] == 'check_company_duplicate') {
 
     $id_cond = ($id > 0) ? " AND id != '$id'" : "";
 
-    if (!empty($company_name)) {
-        $check = $ai_db->aiGetQueryObj("SELECT id FROM tbl_company WHERE LOWER(company_name) = '" . strtolower($company_name) . "' $id_cond LIMIT 1");
-        if (!empty($check)) {
-            echo json_encode(['status' => 'duplicate', 'field' => 'company_name', 'message' => 'Company Name already exists!']);
-            exit;
-        }
-    }
-
     if (!empty($gst_no)) {
         $check = $ai_db->aiGetQueryObj("SELECT id FROM tbl_company WHERE LOWER(gst_no) = '" . strtolower($gst_no) . "' $id_cond LIMIT 1");
         if (!empty($check)) {
@@ -351,28 +343,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_quotation_no
         }
     }
 
-    if (function_exists('generateCompanyQuotationNo')) {
-        $quotation_no = generateCompanyQuotationNo($ai_db, $company_id);
-    } else {
-        $currentYear = date('y');
-        $nextYear = date('y', strtotime('+1 year'));
-        $fy = $currentYear . '-' . $nextYear;
-
-        $prefix = 'OQ';
-
-        $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation ORDER BY id DESC LIMIT 1");
-        $nextNum = 1;
-        if (!empty($maxRow)) {
-            $qNo = $maxRow[0]->quotation_no;
-            if (preg_match('~/(\d+)/~', $qNo, $matches)) {
-                $nextNum = intval($matches[1]) + 1;
-            } else {
-                $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation")) + 1;
-            }
-        }
-
-        $quotation_no = $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
-    }
+    $quotation_no = generateQuotationNo($ai_db, $company_id);
 
     echo json_encode([
         'status'         => 'success',
@@ -404,26 +375,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'get_parties_and_invoice_no')
         }
     }
 
-    if (function_exists('generateCompanyInvoiceNo')) {
-        $invoice_no = generateCompanyInvoiceNo($ai_db, $company_id);
-    } else {
-        $currentYear = date('y');
-        $nextYear = date('y', strtotime('+1 year'));
-        $fy = $currentYear . '-' . $nextYear;
-        $prefix = 'INV';
-
-        $maxRow = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice ORDER BY id DESC LIMIT 1");
-        $nextNum = 1;
-        if (!empty($maxRow)) {
-            $iNo = $maxRow[0]->invoice_no;
-            if (preg_match('~/(\d+)/~', $iNo, $matches)) {
-                $nextNum = intval($matches[1]) + 1;
-            } else {
-                $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_invoice")) + 1;
-            }
-        }
-        $invoice_no = $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
-    }
+    $invoice_no = generateInvoiceNo($ai_db, $company_id);
 
     echo json_encode([
         'status'         => 'success',
@@ -558,7 +510,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'convert_quotation_to_invoice
     // Insert Invoice
     $insInvSql = "INSERT INTO tbl_invoice (
         quotation_id, company_id, party_id, party_name, gst_no, invoice_no, rca, address,
-        state_id, state_name, city_id, city_name, invoice_date, due_date, gst_type,
+        state_id, city_id, invoice_date, due_date, gst_type,
         total_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, grand_total,
         payment_status, status, created_at
     ) VALUES (
@@ -571,9 +523,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'convert_quotation_to_invoice
         '" . addslashes($quot->rca) . "',
         '" . addslashes($quot->address) . "',
         '{$quot->state_id}',
-        '" . addslashes($quot->state_name) . "',
         '{$quot->city_id}',
-        '" . addslashes($quot->city_name) . "',
         '{$today}',
         '{$dueDate}',
         '{$quot->gst_type}',
