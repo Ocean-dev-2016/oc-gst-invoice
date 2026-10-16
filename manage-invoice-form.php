@@ -23,29 +23,33 @@ $err_msg = '';
 $invoiceData = null;
 $invoiceItems = [];
 
-// Auto Generate Quotation No (Always prefixed with OQ)
-function generateInvoiceNo($ai_db, $company_id = 0) {
-    if (function_exists('generateCompanyInvoiceNo')) {
-        return generateCompanyInvoiceNo($ai_db, $company_id);
-    }
-    $currentYear = date('y');
-    $nextYear = date('y', strtotime('+1 year'));
-    $fy = $currentYear . '-' . $nextYear;
-    
-    $prefix = 'INV';
-    
-    $maxRow = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice ORDER BY id DESC LIMIT 1");
-    $nextNum = 1;
-    if (!empty($maxRow)) {
-        $qNo = $maxRow[0]->invoice_no;
-        if (preg_match('~/(\d+)/~', $qNo, $matches)) {
-            $nextNum = intval($matches[1]) + 1;
-        } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_invoice")) + 1;
+if (!function_exists('generateInvoiceNo')) {
+    function generateInvoiceNo($ai_db, $company_id = 0) {
+        if (function_exists('generateCompanyInvoiceNo')) {
+            return generateCompanyInvoiceNo($ai_db, $company_id);
         }
+        $currentYear = date('y');
+        $nextYear = date('y', strtotime('+1 year'));
+        $fy = $currentYear . '-' . $nextYear;
+        
+        $prefix = 'INV';
+        $company_id = intval($company_id);
+        $whereCompany = ($company_id > 0) ? " WHERE company_id='{$company_id}'" : "";
+        
+        $maxRow = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice{$whereCompany} ORDER BY id DESC LIMIT 1");
+        $nextNum = 1;
+        if (!empty($maxRow)) {
+            $qNo = $maxRow[0]->invoice_no;
+            if (preg_match('~/(\d+)/~', $qNo, $matches)) {
+                $nextNum = intval($matches[1]) + 1;
+            } else {
+                $countRow = $ai_db->aiGetQueryObj("SELECT COUNT(id) AS total_cnt FROM tbl_invoice{$whereCompany}");
+                $nextNum = (!empty($countRow) ? intval($countRow[0]->total_cnt) : 0) + 1;
+            }
+        }
+        
+        return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
     }
-    
-    return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
 }
 
 $userType = $_SESSION['user_type'] ?? '';
@@ -189,9 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 rca='$rca',
                 address='$address',
                 state_id='$state_id',
-                state_name='$state_name',
                 city_id='$city_id',
-                city_name='$city_name',
                 invoice_date='$invoice_date',
                 due_date=$due_date_sql,
                 gst_type='$gst_type',
@@ -269,9 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 rca='$rca',
                 address='$address',
                 state_id='$state_id',
-                state_name='$state_name',
                 city_id='$city_id',
-                city_name='$city_name',
                 invoice_date='$invoice_date',
                 due_date=$due_date_sql,
                 gst_type='$gst_type',
@@ -469,7 +469,7 @@ if ($selected_state_id > 0) {
                     <div class="container-xxl flex-grow-1 container-p-y">
 
                         <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h4 class="fw-bold m-0"><?= ($mode === 'edit') ? 'Edit' : 'Add' ?> Quotation</h4>
+                            <h4 class="fw-bold m-0"><?= ($mode === 'edit') ? 'Edit' : 'Add' ?> Invoice</h4>
                             <div class="d-flex gap-2">
                                 <?php if ($mode === 'edit' && $id > 0) { ?>
                                     <a href="invoice-print.php?id=<?= $id ?>&download=1" target="_blank" class="btn btn-success">
@@ -588,7 +588,6 @@ if ($selected_state_id > 0) {
                                                 </option>
                                             <?php } ?>
                                         </select>
-                                        <input type="hidden" name="city_name" id="city_name_input" value="<?= htmlspecialchars($invoiceData->city_name ?? '') ?>">
                                     </div>
 
                                     <div class="col-md-2">

@@ -138,9 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 rca='$rca',
                 address='$address',
                 state_id='$state_id',
-                state_name='$state_name',
                 city_id='$city_id',
-                city_name='$city_name',
                 purchase_date='$purchase_date',
                 due_date=$due_date_sql,
                 gst_type='$gst_type',
@@ -218,9 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 rca='$rca',
                 address='$address',
                 state_id='$state_id',
-                state_name='$state_name',
                 city_id='$city_id',
-                city_name='$city_name',
                 purchase_date='$purchase_date',
                 due_date=$due_date_sql,
                 gst_type='$gst_type',
@@ -511,7 +507,6 @@ if ($selected_state_id > 0) {
                                                 </option>
                                             <?php } ?>
                                         </select>
-                                        <input type="hidden" name="city_name" id="city_name_input" value="<?= htmlspecialchars($purchaseData->city_name ?? '') ?>">
                                     </div>
 
                                     <div class="col-md-2">

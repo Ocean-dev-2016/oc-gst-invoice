@@ -750,15 +750,18 @@ function generateCompanyQuotationNo($ai_db, $company_id = 0) {
     $fy = $currentYear . '-' . $nextYear;
     
     $prefix = 'OQ';
+    $company_id = intval($company_id);
     
-    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation ORDER BY id DESC LIMIT 1");
+    $whereCompany = ($company_id > 0) ? " WHERE company_id='{$company_id}'" : "";
+    $maxRow = $ai_db->aiGetQueryObj("SELECT quotation_no FROM tbl_quotation{$whereCompany} ORDER BY id DESC LIMIT 1");
     $nextNum = 1;
     if (!empty($maxRow)) {
         $qNo = $maxRow[0]->quotation_no;
         if (preg_match('~/(\d+)/~', $qNo, $matches)) {
             $nextNum = intval($matches[1]) + 1;
         } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation")) + 1;
+            $countRow = $ai_db->aiGetQueryObj("SELECT COUNT(id) AS total_cnt FROM tbl_quotation{$whereCompany}");
+            $nextNum = (!empty($countRow) ? intval($countRow[0]->total_cnt) : 0) + 1;
         }
     }
     
@@ -766,7 +769,16 @@ function generateCompanyQuotationNo($ai_db, $company_id = 0) {
 }
 
 /**
- * Auto Generate Invoice No (Always prefixed with INV, e.g. INV/001/26-27)
+ * Common Alias: generateQuotationNo
+ */
+if (!function_exists('generateQuotationNo')) {
+    function generateQuotationNo($ai_db, $company_id = 0) {
+        return generateCompanyQuotationNo($ai_db, $company_id);
+    }
+}
+
+/**
+ * Auto Generate Invoice No company wise (Always prefixed with INV, e.g. INV/001/26-27)
  */
 function generateCompanyInvoiceNo($ai_db, $company_id = 0) {
     $currentYear = date('y');
@@ -774,19 +786,31 @@ function generateCompanyInvoiceNo($ai_db, $company_id = 0) {
     $fy = $currentYear . '-' . $nextYear;
     
     $prefix = 'INV';
+    $company_id = intval($company_id);
     
-    $maxRow = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice ORDER BY id DESC LIMIT 1");
+    $whereCompany = ($company_id > 0) ? " WHERE company_id='{$company_id}'" : "";
+    $maxRow = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice{$whereCompany} ORDER BY id DESC LIMIT 1");
     $nextNum = 1;
     if (!empty($maxRow)) {
         $invNo = $maxRow[0]->invoice_no;
         if (preg_match('~/(\d+)/~', $invNo, $matches)) {
             $nextNum = intval($matches[1]) + 1;
         } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_invoice")) + 1;
+            $countRow = $ai_db->aiGetQueryObj("SELECT COUNT(id) AS total_cnt FROM tbl_invoice{$whereCompany}");
+            $nextNum = (!empty($countRow) ? intval($countRow[0]->total_cnt) : 0) + 1;
         }
     }
     
     return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+}
+
+/**
+ * Common Alias: generateInvoiceNo
+ */
+if (!function_exists('generateInvoiceNo')) {
+    function generateInvoiceNo($ai_db, $company_id = 0) {
+        return generateCompanyInvoiceNo($ai_db, $company_id);
+    }
 }
 
 /**

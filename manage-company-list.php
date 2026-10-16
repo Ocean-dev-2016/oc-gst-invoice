@@ -84,8 +84,11 @@ $team = $ai_db->aiGetQueryObj($qry);
 
                                                     <!-- State & City -->
                                                     <td class="text-start">
-                                                        <?php if (!empty($cat->state_name) || !empty($cat->city_name)) { ?>
+                                                        <?php if (!empty($cat->state_name) || !empty($cat->city_name) || !empty($cat->pincode)) { ?>
                                                             <div><?= htmlspecialchars($cat->city_name ?? '') ?><?= (!empty($cat->city_name) && !empty($cat->state_name)) ? ', ' : '' ?><?= htmlspecialchars($cat->state_name ?? '') ?></div>
+                                                            <?php if (!empty($cat->pincode)) { ?>
+                                                                <small class="text-muted"><i class="ti ti-map-pin me-1"></i><?= htmlspecialchars($cat->pincode) ?></small>
+                                                            <?php } ?>
                                                         <?php } else { ?>
                                                             <span class="text-muted">-</span>
                                                         <?php } ?>

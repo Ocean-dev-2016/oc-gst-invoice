@@ -12,8 +12,15 @@ if ($id <= 0) {
     die("Invalid Purchase Bill ID!");
 }
 
-// Fetch Purchase Bill
-$purchaseRow = $ai_db->aiGetQueryObj("SELECT * FROM tbl_purchase WHERE id='$id' LIMIT 1");
+// Fetch Purchase Bill with state and city
+$purchaseRow = $ai_db->aiGetQueryObj("
+    SELECT q.*, s.state_name, ct.city_name 
+    FROM tbl_purchase q 
+    LEFT JOIN tbl_state s ON q.state_id = s.id 
+    LEFT JOIN tbl_city ct ON q.city_id = ct.id 
+    WHERE q.id='$id' 
+    LIMIT 1
+");
 if (empty($purchaseRow)) {
     die("Purchase Bill not found!");
 }

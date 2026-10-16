@@ -94,7 +94,7 @@ function runMigrationQuery($sql, $successMsg, $failMsg) {
 // જે પણ નવા ટેબલ કે ફિલ્ડ ઉમેરાય તે ક્રમશઃ અહીં નીચે એડ કરવા
 // =========================================================================
 
-// 1. tbl_company -> api_token column
+// 1. tbl_company -> api_token and pincode column
 if (tableExists('tbl_company')) {
     if (!columnExists('tbl_company', 'api_token')) {
         runMigrationQuery(
@@ -105,8 +105,34 @@ if (tableExists('tbl_company')) {
     } else {
         echo '<div class="log-item log-info">ℹ `tbl_company`.`api_token` column already exists.</div>';
     }
-} else {
-    echo '<div class="log-item log-warn">⚠ Table `tbl_company` does not exist!</div>';
+
+    if (!columnExists('tbl_company', 'pincode')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_company` ADD COLUMN `pincode` VARCHAR(20) NULL DEFAULT '' AFTER `address`",
+            "Added `pincode` column to `tbl_company` table successfully.",
+            "Failed to add `pincode` column to `tbl_company`"
+        );
+    } else {
+        echo '<div class="log-item log-info">ℹ `tbl_company`.`pincode` column already exists.</div>';
+    }
+}
+
+// 1.1 tbl_admin -> Drop gst_applicable and gst_no if exist (GST belongs to tbl_company only)
+if (tableExists('tbl_admin')) {
+    if (columnExists('tbl_admin', 'gst_no')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_admin` DROP COLUMN `gst_no`",
+            "Dropped obsolete `gst_no` column from `tbl_admin` successfully.",
+            "Failed to drop `gst_no` column from `tbl_admin`"
+        );
+    }
+    if (columnExists('tbl_admin', 'gst_applicable')) {
+        runMigrationQuery(
+            "ALTER TABLE `tbl_admin` DROP COLUMN `gst_applicable`",
+            "Dropped obsolete `gst_applicable` column from `tbl_admin` successfully.",
+            "Failed to drop `gst_applicable` column from `tbl_admin`"
+        );
+    }
 }
 
 // 2. tbl_party -> Missing columns check (email, pincode, pan_no, party_status)
@@ -401,7 +427,9 @@ if (tableExists('tbl_product')) {
             "Failed to add `track_stock` column to `tbl_product`"
         );
     } else {
-        echo '<div class="log-item log-info">ℹ `tbl_product`.`track_stock` column already exists.</div>';
+        @mysqli_query($ai_conn, "ALTER TABLE `tbl_product` MODIFY COLUMN `track_stock` TINYINT(1) NOT NULL DEFAULT 1");
+        @mysqli_query($ai_conn, "UPDATE `tbl_product` SET `track_stock` = 1 WHERE `track_stock` != 1 OR `track_stock` IS NULL");
+        echo '<div class="log-item log-info">ℹ `tbl_product`.`track_stock` column already exists (Default 1 enforced).</div>';
     }
 }
 
@@ -418,9 +446,7 @@ if (!tableExists('tbl_invoice')) {
         `rca` varchar(10) DEFAULT 'No',
         `address` text DEFAULT NULL,
         `state_id` int(11) DEFAULT 0,
-        `state_name` varchar(100) DEFAULT '',
         `city_id` int(11) DEFAULT 0,
-        `city_name` varchar(100) DEFAULT '',
         `invoice_date` date DEFAULT NULL,
         `due_date` date DEFAULT NULL,
         `gst_type` varchar(20) DEFAULT 'with_gst',
@@ -548,9 +574,7 @@ if (!tableExists('tbl_purchase')) {
         `rca` varchar(10) DEFAULT 'No',
         `address` text DEFAULT NULL,
         `state_id` int(11) DEFAULT 0,
-        `state_name` varchar(100) DEFAULT '',
         `city_id` int(11) DEFAULT 0,
-        `city_name` varchar(100) DEFAULT '',
         `purchase_date` date DEFAULT NULL,
         `due_date` date DEFAULT NULL,
         `gst_type` varchar(20) DEFAULT 'with_gst',
@@ -631,6 +655,25 @@ if (!tableExists('tbl_purchase_payments')) {
     echo '<div class="log-item log-info">ℹ `tbl_purchase_payments` table already exists.</div>';
 }
 
+// 4.9 Drop obsolete state_name and city_name columns from tbl_quotation, tbl_invoice, and tbl_purchase
+foreach (['tbl_quotation', 'tbl_invoice', 'tbl_purchase'] as $cleanTable) {
+    if (tableExists($cleanTable)) {
+        if (columnExists($cleanTable, 'state_name')) {
+            runMigrationQuery(
+                "ALTER TABLE `{$cleanTable}` DROP COLUMN `state_name`",
+                "Dropped obsolete `state_name` column from `{$cleanTable}` successfully.",
+                "Failed to drop `state_name` from `{$cleanTable}`"
+            );
+        }
+        if (columnExists($cleanTable, 'city_name')) {
+            runMigrationQuery(
+                "ALTER TABLE `{$cleanTable}` DROP COLUMN `city_name`",
+                "Dropped obsolete `city_name` column from `{$cleanTable}` successfully.",
+                "Failed to drop `city_name` from `{$cleanTable}`"
+            );
+        }
+    }
+}
 
 // 5. Ensure upload directories exist
 $uploadDirs = [

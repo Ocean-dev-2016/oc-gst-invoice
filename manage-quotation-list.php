@@ -93,18 +93,26 @@ if (isset($_GET['toggle']) && isset($_GET['id'])) {
 if (isset($_GET['action']) && $_GET['action'] === 'delete') {
     $del_id = intval($_GET['id'] ?? 0);
     if ($del_id > 0) {
-        $qRow = $ai_db->aiGetQueryObj("SELECT party_id FROM tbl_quotation WHERE id='$del_id' LIMIT 1");
-        $partyId = !empty($qRow) ? intval($qRow[0]->party_id) : 0;
+        $qRow = $ai_db->aiGetQueryObj("SELECT party_id, quotation_no, converted_invoice_id FROM tbl_quotation WHERE id='$del_id' LIMIT 1");
+        if (!empty($qRow)) {
+            // If already converted to invoice, block deletion
+            if (!empty($qRow[0]->converted_invoice_id) && intval($qRow[0]->converted_invoice_id) > 0) {
+                $ai_core->aiGoPage($pageUrl . '?msg=del_converted_locked');
+                exit;
+            }
 
-        $ai_db->aiQuery("DELETE FROM tbl_quotation WHERE id='$del_id'");
-        $ai_db->aiQuery("DELETE FROM tbl_quotation_items WHERE quotation_id='$del_id'");
+            $partyId = intval($qRow[0]->party_id ?? 0);
 
-        if ($partyId > 0 && function_exists('recalculatePartyOutstanding')) {
-            recalculatePartyOutstanding($partyId);
+            $ai_db->aiQuery("DELETE FROM tbl_quotation WHERE id='$del_id'");
+            $ai_db->aiQuery("DELETE FROM tbl_quotation_items WHERE quotation_id='$del_id'");
+
+            if ($partyId > 0 && function_exists('recalculatePartyOutstanding')) {
+                recalculatePartyOutstanding($partyId);
+            }
+
+            $ai_core->aiGoPage($pageUrl . '?msg=3');
+            exit;
         }
-
-        $ai_core->aiGoPage($pageUrl . '?msg=3');
-        exit;
     }
 }
 
@@ -193,6 +201,11 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                         <?php } elseif (isset($_GET['msg']) && $_GET['msg'] == 'converted_locked') { ?>
                             <div class="alert alert-warning alert-dismissible fade show" role="alert">
                                 ⚠ <strong>Action not allowed:</strong> This quotation cannot be edited because its <strong>Tax Invoice</strong> has already been generated.
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        <?php } elseif (isset($_GET['msg']) && $_GET['msg'] == 'del_converted_locked') { ?>
+                            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                                ⚠ <strong>Action not allowed:</strong> This quotation cannot be deleted because its <strong>Tax Invoice</strong> has already been generated.
                                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                             </div>
                         <?php } ?>
@@ -314,9 +327,15 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                                         <i class="ti ti-pencil me-1"></i> Edit
                                                                     </a>
                                                                 <?php } ?>
-                                                                <a class="dropdown-item text-danger" href="manage-quotation-list.php?action=delete&id=<?= $q->id ?>" onclick="return confirm('Are you sure you want to delete this quotation?');">
-                                                                    <i class="ti ti-trash me-1"></i> Delete
-                                                                </a>
+                                                                <?php if ($isConverted) { ?>
+                                                                    <a class="dropdown-item text-muted disabled" href="javascript:void(0);" title="Cannot delete: Invoice already generated">
+                                                                        <i class="ti ti-trash me-1"></i> Delete <span class="badge bg-label-secondary ms-1">Locked</span>
+                                                                    </a>
+                                                                <?php } else { ?>
+                                                                    <a class="dropdown-item text-danger" href="manage-quotation-list.php?action=delete&id=<?= $q->id ?>" onclick="return confirm('Are you sure you want to delete this quotation?');">
+                                                                        <i class="ti ti-trash me-1"></i> Delete
+                                                                    </a>
+                                                                <?php } ?>
                                                             </div>
                                                         </div>
                                                     </td>

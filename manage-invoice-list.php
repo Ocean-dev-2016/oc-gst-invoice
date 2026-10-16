@@ -276,9 +276,10 @@ if ($filter_payment === 'Pending') {
     $pay_where = " AND q.payment_status IN ('Pending','Partially Paid') AND q.due_date IS NOT NULL AND q.due_date < '{$todayDate}'";
 }
 
-$qry = "SELECT q.*, c.company_name 
+$qry = "SELECT q.*, c.company_name, s.state_name 
         FROM tbl_invoice q 
         LEFT JOIN tbl_company c ON q.company_id = c.id 
+        LEFT JOIN tbl_state s ON q.state_id = s.id
         WHERE 1=1
         $company_where
         $pay_where
