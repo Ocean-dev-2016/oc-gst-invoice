@@ -404,6 +404,8 @@ if ($action === 'profile') {
                 apiResponse(409, 'Email address is already in use by another company.');
             } elseif ($row->mobile_no === $mobile_no) {
                 apiResponse(409, 'Mobile number is already in use by another company.');
+            } elseif ($row->gst_no === $gst_no) {
+                apiResponse(409, 'GST number is already in use by another company.');
             } else {
                 apiResponse(409, 'Another company with these details already exists.');
             }
@@ -562,19 +564,7 @@ if ($action === 'customer-list') {
         $searchCond = " AND (p.party_name LIKE '%{$safeSearch}%' OR p.mobile_no LIKE '%{$safeSearch}%' OR p.email LIKE '%{$safeSearch}%' OR p.gst_no LIKE '%{$safeSearch}%')";
     }
 
-    $filter = trim($input['filter'] ?? ($input['sort'] ?? ($input['order_by'] ?? ($_GET['filter'] ?? ($_GET['sort'] ?? ($_GET['order_by'] ?? 'latest'))))));
     $orderBy = "ORDER BY p.id DESC";
-    if ($filter === 'latest') {
-        $orderBy = "ORDER BY p.id DESC";
-    } elseif ($filter === 'by_name') {
-        $orderBy = "ORDER BY p.party_name ASC";
-    } elseif ($filter === 'outstanding_desc' || $filter === 'outstanding_high') {
-        $orderBy = "ORDER BY p.outstanding DESC";
-    } elseif ($filter === 'outstanding_asc' || $filter === 'outstanding_low') {
-        $orderBy = "ORDER BY p.outstanding ASC";
-    } elseif ($filter === 'overdue_desc' || $filter === 'overdue_high') {
-        $orderBy = "ORDER BY overdue_amount DESC";
-    }
 
     $todayDate = date('Y-m-d');
 
@@ -786,6 +776,10 @@ if ($action === 'customer-add') {
 
     if ($pan_no !== '' && !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/', $pan_no)) {
         apiResponse(400, 'PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F).');
+    }
+
+    if ($gst_no !== '' && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        apiResponse(400, 'Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5).');
     }
 
     if ($pincode !== '' && !preg_match('/^[0-9]{6}$/', $pincode)) {
@@ -1068,6 +1062,10 @@ if ($action === 'customer-update') {
         apiResponse(400, 'PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F).');
     }
 
+    if ($gst_no !== '' && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        apiResponse(400, 'Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5).');
+    }
+
     if ($pincode !== '' && !preg_match('/^[0-9]{6}$/', $pincode)) {
         apiResponse(400, 'Pincode must be exactly 6 digits.');
     }
@@ -1244,21 +1242,7 @@ if ($action === 'quotation-list') {
         $searchCond = " AND (q.quotation_no LIKE '%{$safeSearch}%' OR q.party_name LIKE '%{$safeSearch}%' OR q.gst_no LIKE '%{$safeSearch}%')";
     }
 
-    $filter = trim($input['filter'] ?? ($input['sort'] ?? ($input['order_by'] ?? ($_GET['filter'] ?? ($_GET['sort'] ?? ($_GET['order_by'] ?? 'latest'))))));
     $orderBy = "ORDER BY q.id DESC";
-    if ($filter === 'latest') {
-        $orderBy = "ORDER BY q.id DESC";
-    } elseif ($filter === 'oldest') {
-        $orderBy = "ORDER BY q.id ASC";
-    } elseif ($filter === 'highest') {
-        $orderBy = "ORDER BY q.grand_total DESC";
-    } elseif ($filter === 'lowest') {
-        $orderBy = "ORDER BY q.grand_total ASC";
-    } elseif ($filter === 'date_desc') {
-        $orderBy = "ORDER BY q.quotation_date DESC, q.id DESC";
-    } elseif ($filter === 'date_asc') {
-        $orderBy = "ORDER BY q.quotation_date ASC, q.id ASC";
-    }
 
     $quotationQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
                             s.state_name, ct.city_name
@@ -2419,27 +2403,7 @@ if ($action === 'product-list') {
         $searchCond = " AND (product_name LIKE '%{$safeSearch}%' OR sku LIKE '%{$safeSearch}%' OR hsn_code LIKE '%{$safeSearch}%')";
     }
 
-    $filter = trim($input['filter'] ?? ($input['sort'] ?? ($_GET['filter'] ?? ($_GET['sort'] ?? 'by_name'))));
-    $orderBy = "ORDER BY p.product_name ASC";
-    if ($filter === 'latest_added' || $filter === 'latest') {
-        $orderBy = "ORDER BY p.id DESC";
-    } elseif ($filter === 'by_price' || $filter === 'price' || $filter === 'price_low') {
-        $orderBy = "ORDER BY p.sales_price ASC";
-    } elseif ($filter === 'price_high') {
-        $orderBy = "ORDER BY p.sales_price DESC";
-    } elseif ($filter === 'by_name' || $filter === 'name' || $filter === 'name_asc') {
-        $orderBy = "ORDER BY p.product_name ASC";
-    } elseif ($filter === 'name_desc') {
-        $orderBy = "ORDER BY p.product_name DESC";
-    } elseif ($filter === 'low_stock' || $filter === 'stock_low') {
-        $orderBy = "ORDER BY p.stock ASC";
-    } elseif ($filter === 'stock_high') {
-        $orderBy = "ORDER BY p.stock DESC";
-    } elseif ($filter === 'oldest') {
-        $orderBy = "ORDER BY p.id ASC";
-    } elseif ($filter === 'sold_high') {
-        $orderBy = "ORDER BY sold_qty DESC";
-    }
+    $orderBy = "ORDER BY p.id DESC";
 
     // Per-product sold quantity and sold revenue aggregated from tbl_invoice_items (active invoices)
     $productsQry = "
@@ -2530,7 +2494,7 @@ if ($action === 'product-list') {
                 'product_name'        => $product->product_name ?? '',
                 'sku'                 => $product->sku ?? '',
                 'hsn_code'            => $product->hsn_code ?? '',
-                'gst_rate'            => (float)($product->gst_rate ?? 18),
+                'gst_rate'            => ((int)($company['gst_applicable'] ?? 0) === 1) ? (float)($product->gst_rate ?? 18) : false,
                 'purchase_price'      => (float)$product->purchase_price,
                 'purchase_formatted'  => '₹' . number_format((float)$product->purchase_price, 2),
                 'sales_price'         => (float)$product->sales_price,
@@ -2890,21 +2854,7 @@ if ($action === 'invoice-list') {
         $searchCond = " AND (q.invoice_no LIKE '%{$safeSearch}%' OR q.party_name LIKE '%{$safeSearch}%' OR q.gst_no LIKE '%{$safeSearch}%')";
     }
 
-    $filter = trim($input['filter'] ?? ($input['sort'] ?? ($input['order_by'] ?? ($_GET['filter'] ?? ($_GET['sort'] ?? ($_GET['order_by'] ?? 'latest'))))));
     $orderBy = "ORDER BY q.id DESC";
-    if ($filter === 'latest') {
-        $orderBy = "ORDER BY q.id DESC";
-    } elseif ($filter === 'oldest') {
-        $orderBy = "ORDER BY q.id ASC";
-    } elseif ($filter === 'highest') {
-        $orderBy = "ORDER BY q.grand_total DESC";
-    } elseif ($filter === 'lowest') {
-        $orderBy = "ORDER BY q.grand_total ASC";
-    } elseif ($filter === 'date_desc') {
-        $orderBy = "ORDER BY q.invoice_date DESC, q.id DESC";
-    } elseif ($filter === 'date_asc') {
-        $orderBy = "ORDER BY q.invoice_date ASC, q.id ASC";
-    }
 
     $invoiceQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
                           s.state_name, ct.city_name
@@ -3927,21 +3877,7 @@ if ($action === 'purchase-list') {
         $searchCond = " AND (q.purchase_no LIKE '%{$safeSearch}%' OR q.party_name LIKE '%{$safeSearch}%' OR q.gst_no LIKE '%{$safeSearch}%')";
     }
 
-    $filter = trim($input['filter'] ?? ($input['sort'] ?? ($input['order_by'] ?? ($_GET['filter'] ?? ($_GET['sort'] ?? ($_GET['order_by'] ?? 'latest'))))));
     $orderBy = "ORDER BY q.id DESC";
-    if ($filter === 'latest') {
-        $orderBy = "ORDER BY q.id DESC";
-    } elseif ($filter === 'oldest') {
-        $orderBy = "ORDER BY q.id ASC";
-    } elseif ($filter === 'highest') {
-        $orderBy = "ORDER BY q.grand_total DESC";
-    } elseif ($filter === 'lowest') {
-        $orderBy = "ORDER BY q.grand_total ASC";
-    } elseif ($filter === 'date_desc') {
-        $orderBy = "ORDER BY q.purchase_date DESC, q.id DESC";
-    } elseif ($filter === 'date_asc') {
-        $orderBy = "ORDER BY q.purchase_date ASC, q.id ASC";
-    }
 
     $purchaseQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
                            s.state_name, ct.city_name
