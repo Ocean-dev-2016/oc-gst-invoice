@@ -355,8 +355,12 @@ if ($action === 'profile') {
             apiResponse(400, 'Business name is required.');
         }
 
-        if ($gst_applicable === 1 && $gst_no === '') {
-            apiResponse(400, 'GST Number is required when GST is Applicable.');
+        if ($gst_applicable === 1) {
+            if ($gst_no === '') {
+                apiResponse(400, 'GST Number is required when GST is Applicable.');
+            } elseif (!preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+                apiResponse(400, 'Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5).');
+            }
         }
 
         if ($pincode !== '' && !preg_match('/^[0-9]{6}$/', $pincode)) {
@@ -400,6 +404,8 @@ if ($action === 'profile') {
                 apiResponse(409, 'Email address is already in use by another company.');
             } elseif ($row->mobile_no === $mobile_no) {
                 apiResponse(409, 'Mobile number is already in use by another company.');
+            } elseif ($row->gst_no === $gst_no) {
+                apiResponse(409, 'GST number is already in use by another company.');
             } else {
                 apiResponse(409, 'Another company with these details already exists.');
             }
@@ -542,6 +548,15 @@ if ($action === 'customer-list') {
         $statusCond = " AND p.status = 'active'";
     }
 
+    // Filter by Party Status / Type: 'Sales' (Customer) or 'Purchase' (Supplier/Vendor)
+    $filterPartyStatus = trim($input['party_status'] ?? ($input['type'] ?? ($_GET['party_status'] ?? ($_GET['type'] ?? ''))));
+    $partyStatusCond = "";
+    if (strcasecmp($filterPartyStatus, 'Sales') === 0) {
+        $partyStatusCond = " AND p.party_status = 'Sales'";
+    } elseif (strcasecmp($filterPartyStatus, 'Purchase') === 0) {
+        $partyStatusCond = " AND p.party_status = 'Purchase'";
+    }
+
     $search = trim($input['search'] ?? ($_GET['search'] ?? ''));
     $searchCond = "";
     if ($search !== '') {
@@ -549,21 +564,7 @@ if ($action === 'customer-list') {
         $searchCond = " AND (p.party_name LIKE '%{$safeSearch}%' OR p.mobile_no LIKE '%{$safeSearch}%' OR p.email LIKE '%{$safeSearch}%' OR p.gst_no LIKE '%{$safeSearch}%')";
     }
 
-    $sort = trim($input['sort'] ?? ($_GET['sort'] ?? 'latest'));
     $orderBy = "ORDER BY p.id DESC";
-    if ($sort === 'oldest') {
-        $orderBy = "ORDER BY p.id ASC";
-    } elseif ($sort === 'name_asc') {
-        $orderBy = "ORDER BY p.party_name ASC";
-    } elseif ($sort === 'name_desc') {
-        $orderBy = "ORDER BY p.party_name DESC";
-    } elseif ($sort === 'outstanding_desc' || $sort === 'outstanding_high') {
-        $orderBy = "ORDER BY p.outstanding DESC";
-    } elseif ($sort === 'outstanding_asc' || $sort === 'outstanding_low') {
-        $orderBy = "ORDER BY p.outstanding ASC";
-    } elseif ($sort === 'overdue_desc' || $sort === 'overdue_high') {
-        $orderBy = "ORDER BY overdue_amount DESC";
-    }
 
     $todayDate = date('Y-m-d');
 
@@ -596,17 +597,24 @@ if ($action === 'customer-list') {
                        AND due_date < '{$todayDate}'
                      GROUP BY party_id
                  ) inv_overdue ON inv_overdue.party_id = p.id
-                 WHERE p.company_id = {$cId} {$statusCond} {$searchCond}
+                 WHERE p.company_id = {$cId} {$statusCond} {$partyStatusCond} {$searchCond}
                  {$orderBy}";
 
     $parties = $ai_db->aiGetQueryObj($partyQry);
+
+    $partyStatusCondSummary = "";
+    if (strcasecmp($filterPartyStatus, 'Sales') === 0) {
+        $partyStatusCondSummary = " AND party_status = 'Sales'";
+    } elseif (strcasecmp($filterPartyStatus, 'Purchase') === 0) {
+        $partyStatusCondSummary = " AND party_status = 'Purchase'";
+    }
 
     $summaryQry = "SELECT 
                         COUNT(id) AS total_customers,
                         COALESCE(SUM(CASE WHEN outstanding > 0 THEN outstanding ELSE 0 END), 0) AS total_receivable,
                         COUNT(CASE WHEN outstanding > 0 THEN 1 END) AS receivable_clients_count
                    FROM tbl_party 
-                   WHERE company_id = {$cId} AND status = 'active'";
+                   WHERE company_id = {$cId} AND status = 'active' {$partyStatusCondSummary}";
     $summaryRes = $ai_db->aiGetQueryObj($summaryQry);
     $sumData = !empty($summaryRes) ? $summaryRes[0] : null;
 
@@ -615,6 +623,7 @@ if ($action === 'customer-list') {
     $receivableClients = (int)($sumData->receivable_clients_count ?? 0);
 
     // Compute company-level total overdue amount and count of parties with overdue invoices
+    $overduePartyJoin = ($partyStatusCondSummary !== "") ? " AND party_id IN (SELECT id FROM tbl_party WHERE company_id = {$cId} {$partyStatusCondSummary})" : "";
     $overdueSummaryQry = "SELECT 
                             COALESCE(SUM(grand_total - paid_amount), 0) AS total_overdue_amt,
                             COUNT(DISTINCT party_id) AS overdue_parties_count
@@ -623,7 +632,8 @@ if ($action === 'customer-list') {
                             AND status = 'active' 
                             AND payment_status != 'Paid' 
                             AND due_date IS NOT NULL 
-                            AND due_date < '{$todayDate}'";
+                            AND due_date < '{$todayDate}'
+                            {$overduePartyJoin}";
     $overdueSummaryRes = $ai_db->aiGetQueryObj($overdueSummaryQry);
     $totalOverdueAmt = (float)($overdueSummaryRes[0]->total_overdue_amt ?? 0);
     $overduePartiesCount = (int)($overdueSummaryRes[0]->overdue_parties_count ?? 0);
@@ -766,6 +776,10 @@ if ($action === 'customer-add') {
 
     if ($pan_no !== '' && !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/', $pan_no)) {
         apiResponse(400, 'PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F).');
+    }
+
+    if ($gst_no !== '' && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        apiResponse(400, 'Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5).');
     }
 
     if ($pincode !== '' && !preg_match('/^[0-9]{6}$/', $pincode)) {
@@ -1048,6 +1062,10 @@ if ($action === 'customer-update') {
         apiResponse(400, 'PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F).');
     }
 
+    if ($gst_no !== '' && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        apiResponse(400, 'Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5).');
+    }
+
     if ($pincode !== '' && !preg_match('/^[0-9]{6}$/', $pincode)) {
         apiResponse(400, 'Pincode must be exactly 6 digits.');
     }
@@ -1224,19 +1242,7 @@ if ($action === 'quotation-list') {
         $searchCond = " AND (q.quotation_no LIKE '%{$safeSearch}%' OR q.party_name LIKE '%{$safeSearch}%' OR q.gst_no LIKE '%{$safeSearch}%')";
     }
 
-    $sort = trim($input['sort'] ?? ($_GET['sort'] ?? 'latest'));
     $orderBy = "ORDER BY q.id DESC";
-    if ($sort === 'oldest') {
-        $orderBy = "ORDER BY q.id ASC";
-    } elseif ($sort === 'amount_high') {
-        $orderBy = "ORDER BY q.grand_total DESC";
-    } elseif ($sort === 'amount_low') {
-        $orderBy = "ORDER BY q.grand_total ASC";
-    } elseif ($sort === 'date_desc') {
-        $orderBy = "ORDER BY q.quotation_date DESC, q.id DESC";
-    } elseif ($sort === 'date_asc') {
-        $orderBy = "ORDER BY q.quotation_date ASC, q.id ASC";
-    }
 
     $quotationQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
                             s.state_name, ct.city_name
@@ -2246,15 +2252,22 @@ if ($action === 'quotation-convert-to-invoice') {
     $invoiceDate = !empty($input['invoice_date']) ? date('Y-m-d', strtotime($input['invoice_date'])) : $today;
     $dueDate = !empty($input['due_date']) ? date('Y-m-d', strtotime($input['due_date'])) : (!empty($quot->due_date) ? $quot->due_date : $invoiceDate);
     $safePartyName = mysqli_real_escape_string($ai_conn, $quot->party_name ?? '');
-    $safeGstNo = mysqli_real_escape_string($ai_conn, $quot->gst_no ?? '');
+    $company_has_gst = (int)($company['gst_applicable'] ?? 0) === 1;
+    $safeGstNo = $company_has_gst ? mysqli_real_escape_string($ai_conn, $quot->gst_no ?? '') : '';
     $safeRca = mysqli_real_escape_string($ai_conn, $quot->rca ?? 'No');
     $safeAddress = mysqli_real_escape_string($ai_conn, $quot->address ?? '');
-    $safeGstType = mysqli_real_escape_string($ai_conn, $quot->gst_type ?? 'with_gst');
     $dueSql = $dueDate ? "'{$dueDate}'" : "NULL";
+
+    $invTotalAmount = floatval($quot->total_amount ?? 0);
+    $invCgst = $company_has_gst ? floatval($quot->cgst_amount ?? 0) : 0.00;
+    $invSgst = $company_has_gst ? floatval($quot->sgst_amount ?? 0) : 0.00;
+    $invIgst = $company_has_gst ? floatval($quot->igst_amount ?? 0) : 0.00;
+    $invTax = $company_has_gst ? floatval($quot->tax_amount ?? 0) : 0.00;
+    $invGrandTotal = $company_has_gst ? floatval($quot->grand_total ?? 0) : $invTotalAmount;
 
     $insInvSql = "INSERT INTO tbl_invoice (
         quotation_id, company_id, party_id, party_name, gst_no, invoice_no, rca, address,
-        state_id, city_id, invoice_date, due_date, gst_type,
+        state_id, city_id, invoice_date, due_date,
         total_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, grand_total,
         payment_status, status, created_at
     ) VALUES (
@@ -2270,13 +2283,12 @@ if ($action === 'quotation-convert-to-invoice') {
         " . intval($quot->city_id ?? 0) . ",
         '{$invoiceDate}',
         {$dueSql},
-        '{$safeGstType}',
-        " . floatval($quot->total_amount ?? 0) . ",
-        " . floatval($quot->cgst_amount ?? 0) . ",
-        " . floatval($quot->sgst_amount ?? 0) . ",
-        " . floatval($quot->igst_amount ?? 0) . ",
-        " . floatval($quot->tax_amount ?? 0) . ",
-        " . floatval($quot->grand_total ?? 0) . ",
+        {$invTotalAmount},
+        {$invCgst},
+        {$invSgst},
+        {$invIgst},
+        {$invTax},
+        {$invGrandTotal},
         '" . mysqli_real_escape_string($ai_conn, $quot->payment_status ?? 'Pending') . "',
         'active',
         NOW()
@@ -2296,14 +2308,14 @@ if ($action === 'quotation-convert-to-invoice') {
         $desc = mysqli_real_escape_string($ai_conn, $item->description ?? '');
         $hsn = mysqli_real_escape_string($ai_conn, $item->hsn_code ?? '');
         $rate = floatval($item->rate ?? 0);
-        $gstP = floatval($item->gst_percent ?? 0);
+        $gstP = $company_has_gst ? floatval($item->gst_percent ?? 0) : 0.00;
         $discType = in_array(strtolower(trim($item->discount_type ?? '')), ['fixed', 'percentage'], true) ? strtolower(trim($item->discount_type)) : 'percentage';
         $discVal = floatval($item->discount_value ?? 0);
         $discAmt = floatval($item->discount_amount ?? 0);
         $qty = floatval($item->qty ?? 1);
         $netAmt = floatval($item->net_amount ?? 0);
-        $taxAmt = floatval($item->tax_amount ?? 0);
-        $totAmt = floatval($item->total_amount ?? 0);
+        $taxAmt = $company_has_gst ? floatval($item->tax_amount ?? 0) : 0.00;
+        $totAmt = $company_has_gst ? floatval($item->total_amount ?? 0) : $netAmt;
 
         // Fallback product_id lookup if missing
         if ($pId <= 0 && !empty($item->description)) {
@@ -2359,8 +2371,8 @@ if ($action === 'quotation-convert-to-invoice') {
         'invoice_date_formatted'=> date('d-m-Y', strtotime($invoiceDate)),
         'due_date'              => $dueDate,
         'due_date_formatted'    => date('d-m-Y', strtotime($dueDate)),
-        'grand_total'           => round(floatval($quot->grand_total ?? 0), 2),
-        'grand_total_formatted' => '₹' . number_format(floatval($quot->grand_total ?? 0), 2),
+        'grand_total'           => round($invGrandTotal, 2),
+        'grand_total_formatted' => '₹' . number_format($invGrandTotal, 2),
         'items_count'           => count($copiedItems),
         'print_url'             => $printUrl,
         'download_url'          => $printUrl . '&download=1'
@@ -2391,23 +2403,7 @@ if ($action === 'product-list') {
         $searchCond = " AND (product_name LIKE '%{$safeSearch}%' OR sku LIKE '%{$safeSearch}%' OR hsn_code LIKE '%{$safeSearch}%')";
     }
 
-    $sort = trim($input['sort'] ?? ($_GET['sort'] ?? 'name_asc'));
-    $orderBy = "ORDER BY p.product_name ASC, p.id DESC";
-    if ($sort === 'latest') {
-        $orderBy = "ORDER BY p.id DESC";
-    } elseif ($sort === 'oldest') {
-        $orderBy = "ORDER BY p.id ASC";
-    } elseif ($sort === 'price_high') {
-        $orderBy = "ORDER BY p.sales_price DESC";
-    } elseif ($sort === 'price_low') {
-        $orderBy = "ORDER BY p.sales_price ASC";
-    } elseif ($sort === 'stock_low') {
-        $orderBy = "ORDER BY p.stock ASC";
-    } elseif ($sort === 'stock_high') {
-        $orderBy = "ORDER BY p.stock DESC";
-    } elseif ($sort === 'sold_high') {
-        $orderBy = "ORDER BY sold_qty DESC";
-    }
+    $orderBy = "ORDER BY p.id DESC";
 
     // Per-product sold quantity and sold revenue aggregated from tbl_invoice_items (active invoices)
     $productsQry = "
@@ -2498,7 +2494,7 @@ if ($action === 'product-list') {
                 'product_name'        => $product->product_name ?? '',
                 'sku'                 => $product->sku ?? '',
                 'hsn_code'            => $product->hsn_code ?? '',
-                'gst_rate'            => (float)($product->gst_rate ?? 18),
+                'gst_rate'            => ((int)($company['gst_applicable'] ?? 0) === 1) ? (float)($product->gst_rate ?? 18) : false,
                 'purchase_price'      => (float)$product->purchase_price,
                 'purchase_formatted'  => '₹' . number_format((float)$product->purchase_price, 2),
                 'sales_price'         => (float)$product->sales_price,
@@ -2858,19 +2854,7 @@ if ($action === 'invoice-list') {
         $searchCond = " AND (q.invoice_no LIKE '%{$safeSearch}%' OR q.party_name LIKE '%{$safeSearch}%' OR q.gst_no LIKE '%{$safeSearch}%')";
     }
 
-    $sort = trim($input['sort'] ?? ($_GET['sort'] ?? 'latest'));
     $orderBy = "ORDER BY q.id DESC";
-    if ($sort === 'oldest') {
-        $orderBy = "ORDER BY q.id ASC";
-    } elseif ($sort === 'amount_high') {
-        $orderBy = "ORDER BY q.grand_total DESC";
-    } elseif ($sort === 'amount_low') {
-        $orderBy = "ORDER BY q.grand_total ASC";
-    } elseif ($sort === 'date_desc') {
-        $orderBy = "ORDER BY q.invoice_date DESC, q.id DESC";
-    } elseif ($sort === 'date_asc') {
-        $orderBy = "ORDER BY q.invoice_date ASC, q.id ASC";
-    }
 
     $invoiceQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
                           s.state_name, ct.city_name
@@ -2885,26 +2869,16 @@ if ($action === 'invoice-list') {
 
     $summaryQry = "SELECT 
                         COUNT(id) AS total_count,
-                        COALESCE(SUM(grand_total), 0) AS total_amt,
                         COUNT(CASE WHEN payment_status = 'Paid' THEN 1 END) AS paid_count,
-                        COALESCE(SUM(paid_amount), 0) AS paid_amt,
-                        COUNT(CASE WHEN payment_status != 'Paid' THEN 1 END) AS unpaid_count,
-                        COALESCE(SUM(CASE WHEN payment_status != 'Paid' THEN (grand_total - paid_amount) ELSE 0 END), 0) AS unpaid_amt,
-                        COUNT(CASE WHEN payment_status != 'Paid' AND due_date IS NOT NULL AND due_date < '{$todayDate}' THEN 1 END) AS overdue_count,
-                        COALESCE(SUM(CASE WHEN payment_status != 'Paid' AND due_date IS NOT NULL AND due_date < '{$todayDate}' THEN (grand_total - paid_amount) ELSE 0 END), 0) AS overdue_amt
+                        COUNT(CASE WHEN payment_status != 'Paid' THEN 1 END) AS unpaid_count
                    FROM tbl_invoice
                    WHERE company_id = {$cId}";
     $sumRes = $ai_db->aiGetQueryObj($summaryQry);
     $m = !empty($sumRes) ? $sumRes[0] : null;
 
     $statTotalCount = (int)($m->total_count ?? 0);
-    $statTotalAmt = (float)($m->total_amt ?? 0);
     $statPaidCount = (int)($m->paid_count ?? 0);
-    $statPaidAmt = (float)($m->paid_amt ?? 0);
     $statUnpaidCount = (int)($m->unpaid_count ?? 0);
-    $statUnpaidAmt = (float)($m->unpaid_amt ?? 0);
-    $statOverdueCount = (int)($m->overdue_count ?? 0);
-    $statOverdueAmt = (float)($m->overdue_amt ?? 0);
 
     $includeItems = !empty($input['include_items']) || !empty($_GET['include_items']);
 
@@ -2987,7 +2961,6 @@ if ($action === 'invoice-list') {
                 'invoice_date_formatted' => !empty($row->invoice_date) ? date('d-m-Y', strtotime($row->invoice_date)) : '',
                 'due_date'               => $row->due_date ?? null,
                 'due_date_formatted'     => !empty($row->due_date) ? date('d-m-Y', strtotime($row->due_date)) : '',
-                'gst_type'               => $row->gst_type ?? 'with_gst',
                 'taxable_amount'         => $totalTaxable,
                 'taxable_formatted'      => '₹' . number_format($totalTaxable, 2),
                 'cgst_amount'            => $cgst,
@@ -3019,24 +2992,13 @@ if ($action === 'invoice-list') {
     }
 
     apiResponse(200, 'Invoice list retrieved successfully.', [
-        'company_id'   => $cId,
-        'company_name' => $company['company_name'] ?? '',
-        'total'        => count($list),
-        'summary'      => [
-            'total_invoices'          => $statTotalCount,
-            'total_amount'            => $statTotalAmt,
-            'total_amount_formatted'  => '₹' . number_format($statTotalAmt, 2),
-            'paid_count'              => $statPaidCount,
-            'paid_amount'             => $statPaidAmt,
-            'paid_amount_formatted'   => '₹' . number_format($statPaidAmt, 2),
-            'unpaid_count'            => $statUnpaidCount,
-            'unpaid_amount'           => $statUnpaidAmt,
-            'unpaid_amount_formatted' => '₹' . number_format($statUnpaidAmt, 2),
-            'overdue_count'           => $statOverdueCount,
-            'overdue_amount'          => $statOverdueAmt,
-            'overdue_amount_formatted'=> '₹' . number_format($statOverdueAmt, 2)
-        ],
-        'invoices'     => $list
+        'company_id'      => $cId,
+        'company_name'    => $company['company_name'] ?? '',
+        'total'           => count($list),
+        'total_invoices'  => $statTotalCount,
+        'paid_invoices'   => $statPaidCount,
+        'unpaid_invoices' => $statUnpaidCount,
+        'invoices'        => $list
     ]);
 }
 
@@ -3061,7 +3023,7 @@ if ($action === 'invoice-add') {
     if ($party_id > 0) {
         $pRow = $ai_db->aiGetQueryObj("SELECT party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE id={$party_id} AND company_id={$company_id} LIMIT 1");
         if (!empty($pRow)) {
-            if (empty($party_name)) $party_name = $pRow[0]->party_name;
+            if (empty($party_name)) $party_name = $pRow[0]->party_name ?? '';
             if ($company_has_gst && empty($gst_no)) $gst_no = $pRow[0]->gst_no ?? '';
             if (empty($address)) $address = $pRow[0]->address ?? '';
             if ($state_id <= 0) $state_id = (int)($pRow[0]->state_id ?? 0);
@@ -3069,7 +3031,7 @@ if ($action === 'invoice-add') {
         }
     }
 
-    if (empty($party_name)) {
+    if (empty($party_id) && empty($party_name)) {
         apiResponse(400, 'Party Name is required.');
     }
 
@@ -3094,9 +3056,10 @@ if ($action === 'invoice-add') {
         apiResponse(400, 'Due date cannot be earlier than Invoice date.');
     }
 
-    $reqPaymentStatus = trim($input['payment_status'] ?? 'Pending');
+    $reqPaymentStatus = isset($input['payment_status']) ? trim((string)$input['payment_status']) : 'Pending';
     $payment_status = ($reqPaymentStatus === 'Paid') ? 'Paid' : 'Pending';
-    $status = in_array(strtolower(trim($input['status'] ?? 'active')), ['active', 'deactive'], true) ? strtolower(trim($input['status'])) : 'active';
+    $rawStatus = isset($input['status']) && $input['status'] !== null ? strtolower(trim((string)$input['status'])) : 'active';
+    $status = in_array($rawStatus, ['active', 'deactive'], true) ? $rawStatus : 'active';
 
     $isGujarat = false;
     if ($state_id > 0) {
@@ -3238,7 +3201,6 @@ if ($action === 'invoice-add') {
     $safeInvNo = mysqli_real_escape_string($ai_conn, $invoice_no);
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
-    $dbGstType = $company_has_gst ? 'with_gst' : 'without_gst';
 
     $insertInvoiceQry = "INSERT INTO tbl_invoice SET
         company_id = {$company_id},
@@ -3252,7 +3214,6 @@ if ($action === 'invoice-add') {
         city_id = {$city_id},
         invoice_date = '{$invoice_date}',
         due_date = {$dueSql},
-        gst_type = '{$dbGstType}',
         total_amount = {$totalTaxable},
         cgst_amount = {$cgst_amount},
         sgst_amount = {$sgst_amount},
@@ -3449,7 +3410,6 @@ if ($action === 'invoice-edit') {
         'invoice_date_formatted' => !empty($q->invoice_date) ? date('d-m-Y', strtotime($q->invoice_date)) : '',
         'due_date'               => $q->due_date ?? null,
         'due_date_formatted'     => !empty($q->due_date) ? date('d-m-Y', strtotime($q->due_date)) : '',
-        'gst_type'               => $q->gst_type ?? 'with_gst',
         'taxable_amount'         => $totalTaxable,
         'taxable_formatted'      => '₹' . number_format($totalTaxable, 2),
         'cgst_amount'            => $cgst,
@@ -3520,7 +3480,7 @@ if ($action === 'invoice-update') {
         }
     }
 
-    if (empty($party_name)) {
+    if (empty($party_id) && empty($party_name)) {
         apiResponse(400, 'Party Name is required.');
     }
 
@@ -3545,9 +3505,10 @@ if ($action === 'invoice-update') {
         apiResponse(400, 'Due date cannot be earlier than Invoice date.');
     }
 
-    $reqPaymentStatus = trim($input['payment_status'] ?? ($currInv->payment_status ?? 'Pending'));
+    $reqPaymentStatus = isset($input['payment_status']) ? trim((string)$input['payment_status']) : ($currInv->payment_status ?? 'Pending');
     $payment_status = in_array($reqPaymentStatus, ['Pending', 'Partially Paid', 'Paid'], true) ? $reqPaymentStatus : 'Pending';
-    $status = in_array(strtolower(trim($input['status'] ?? ($currInv->status ?? 'active'))), ['active', 'deactive'], true) ? strtolower(trim($input['status'])) : 'active';
+    $rawStatus = isset($input['status']) && $input['status'] !== null ? strtolower(trim((string)$input['status'])) : ($currInv->status ?? 'active');
+    $status = in_array($rawStatus, ['active', 'deactive'], true) ? $rawStatus : 'active';
 
     $isGujarat = false;
     if ($state_id > 0) {
@@ -3705,7 +3666,6 @@ if ($action === 'invoice-update') {
     $safeInvNo = mysqli_real_escape_string($ai_conn, $invoice_no);
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
-    $dbGstType = $company_has_gst ? 'with_gst' : 'without_gst';
 
     $updateInvoiceQry = "UPDATE tbl_invoice SET
         party_id = {$party_id},
@@ -3718,7 +3678,6 @@ if ($action === 'invoice-update') {
         city_id = {$city_id},
         invoice_date = '{$invoice_date}',
         due_date = {$dueSql},
-        gst_type = '{$dbGstType}',
         total_amount = {$totalTaxable},
         cgst_amount = {$cgst_amount},
         sgst_amount = {$sgst_amount},
@@ -3864,6 +3823,1470 @@ if ($action === 'invoice-delete') {
         'id'           => $invoiceId,
         'invoice_no'   => $invNo,
         'deleted'      => true
+    ]);
+}
+
+if ($action === 'purchase-generate-no') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $company_id = (int)$company['id'];
+
+    $nextPurchaseNo = generatePurchaseNo($ai_db, $company_id);
+
+    apiResponse(200, 'Next purchase bill number generated successfully.', [
+        'company_id'  => $company_id,
+        'purchase_no' => $nextPurchaseNo
+    ]);
+}
+
+if ($action === 'purchase-list') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $cId = (int)$company['id'];
+
+    $todayDate = date('Y-m-d');
+    $filterPayment = trim($input['payment_status'] ?? ($_GET['payment_status'] ?? ''));
+    $payCond = "";
+    if (in_array($filterPayment, ['Pending', 'Partially Paid', 'Paid'], true)) {
+        $payCond = " AND q.payment_status = '{$filterPayment}'";
+    } elseif ($filterPayment === 'Overdue') {
+        $payCond = " AND q.payment_status IN ('Pending','Partially Paid') AND q.due_date IS NOT NULL AND q.due_date < '{$todayDate}'";
+    }
+
+    $filterStatus = trim($input['status'] ?? ($_GET['status'] ?? ''));
+    $statusCond = "";
+    if ($filterStatus === 'active' || $filterStatus === 'deactive') {
+        $statusCond = " AND q.status = '{$filterStatus}'";
+    }
+
+    $partyId = (int)($input['party_id'] ?? ($_GET['party_id'] ?? 0));
+    $partyCond = ($partyId > 0) ? " AND q.party_id = {$partyId}" : "";
+
+    $search = trim($input['search'] ?? ($_GET['search'] ?? ''));
+    $searchCond = "";
+    if ($search !== '') {
+        $safeSearch = mysqli_real_escape_string($ai_conn, $search);
+        $searchCond = " AND (q.purchase_no LIKE '%{$safeSearch}%' OR q.party_name LIKE '%{$safeSearch}%' OR q.gst_no LIKE '%{$safeSearch}%')";
+    }
+
+    $orderBy = "ORDER BY q.id DESC";
+
+    $purchaseQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
+                           s.state_name, ct.city_name
+                    FROM tbl_purchase q
+                    LEFT JOIN tbl_company c ON q.company_id = c.id
+                    LEFT JOIN tbl_party p ON q.party_id = p.id
+                    LEFT JOIN tbl_state s ON q.state_id = s.id
+                    LEFT JOIN tbl_city ct ON q.city_id = ct.id
+                    WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$searchCond}
+                    {$orderBy}";
+    $purchases = $ai_db->aiGetQueryObj($purchaseQry);
+
+    $summaryQry = "SELECT 
+                        COUNT(id) AS total_count,
+                        COUNT(CASE WHEN payment_status = 'Paid' THEN 1 END) AS paid_count,
+                        COUNT(CASE WHEN payment_status != 'Paid' THEN 1 END) AS unpaid_count
+                   FROM tbl_purchase
+                   WHERE company_id = {$cId}";
+    $sumRes = $ai_db->aiGetQueryObj($summaryQry);
+    $m = !empty($sumRes) ? $sumRes[0] : null;
+
+    $statTotalCount = (int)($m->total_count ?? 0);
+    $statPaidCount = (int)($m->paid_count ?? 0);
+    $statUnpaidCount = (int)($m->unpaid_count ?? 0);
+
+    $includeItems = !empty($input['include_items']) || !empty($_GET['include_items']);
+
+    $list = [];
+    if (!empty($purchases)) {
+        $itemsByPurchase = [];
+        if ($includeItems) {
+            $purIds = array_map(function($item) { return (int)$item->id; }, $purchases);
+            if (!empty($purIds)) {
+                $purIdsStr = implode(',', $purIds);
+                $itemsRows = $ai_db->aiGetQueryObj("
+                    SELECT pi.*, p.sku, p.stock AS current_stock
+                    FROM tbl_purchase_items pi
+                    LEFT JOIN tbl_product p ON pi.product_id = p.id
+                    WHERE pi.purchase_id IN ({$purIdsStr})
+                    ORDER BY pi.id ASC
+                ");
+                if (!empty($itemsRows)) {
+                    foreach ($itemsRows as $iRow) {
+                        $pid = (int)$iRow->purchase_id;
+                        if (!isset($itemsByPurchase[$pid])) {
+                            $itemsByPurchase[$pid] = [];
+                        }
+                        $itemsByPurchase[$pid][] = [
+                            'id'              => (int)$iRow->id,
+                            'product_id'      => (int)$iRow->product_id,
+                            'description'     => $iRow->description ?? '',
+                            'sku'             => $iRow->sku ?? '',
+                            'hsn_code'        => $iRow->hsn_code ?? '',
+                            'rate'            => (float)$iRow->rate,
+                            'rate_formatted'  => '₹' . number_format((float)$iRow->rate, 2),
+                            'gst_percent'     => (float)$iRow->gst_percent,
+                            'discount_type'   => $iRow->discount_type ?? 'percentage',
+                            'discount_value'  => (float)$iRow->discount_value,
+                            'discount_amount' => (float)$iRow->discount_amount,
+                            'qty'             => (float)$iRow->qty,
+                            'net_amount'      => (float)$iRow->net_amount,
+                            'tax_amount'      => (float)$iRow->tax_amount,
+                            'total_amount'    => (float)$iRow->total_amount,
+                            'total_formatted' => '₹' . number_format((float)$iRow->total_amount, 2)
+                        ];
+                    }
+                }
+            }
+        }
+
+        foreach ($purchases as $row) {
+            $pid = (int)$row->id;
+            $grandTotal = (float)$row->grand_total;
+            $paidAmt = (float)($row->paid_amount ?? 0);
+            $pendingAmt = max(0, $grandTotal - $paidAmt);
+            $totalTaxable = (float)$row->total_amount;
+            $taxAmount = (float)$row->tax_amount;
+            $cgst = (float)$row->cgst_amount;
+            $sgst = (float)$row->sgst_amount;
+            $igst = (float)$row->igst_amount;
+            $payStatus = $row->payment_status ?? 'Pending';
+            $isPaid = ($payStatus === 'Paid');
+
+            $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $pid;
+
+            $itemData = [
+                'id'                      => $pid,
+                'purchase_no'             => $row->purchase_no ?? '',
+                'company_id'              => (int)$row->company_id,
+                'company_name'            => $row->company_name ?? ($company['company_name'] ?? ''),
+                'party_id'                => (int)$row->party_id,
+                'party_name'              => $row->party_name ?? '',
+                'party_mobile'            => $row->party_mobile ?? '',
+                'party_email'             => $row->party_email ?? '',
+                'gst_no'                  => $row->gst_no ?? '',
+                'rca'                     => $row->rca ?? 'No',
+                'address'                 => $row->address ?? '',
+                'state_id'                => (int)($row->state_id ?? 0),
+                'state_name'              => $row->state_name ?? '',
+                'city_id'                 => (int)($row->city_id ?? 0),
+                'city_name'               => $row->city_name ?? '',
+                'purchase_date'           => $row->purchase_date ?? '',
+                'purchase_date_formatted' => !empty($row->purchase_date) ? date('d-m-Y', strtotime($row->purchase_date)) : '',
+                'due_date'                => $row->due_date ?? null,
+                'due_date_formatted'      => !empty($row->due_date) ? date('d-m-Y', strtotime($row->due_date)) : '',
+                'taxable_amount'          => $totalTaxable,
+                'taxable_formatted'       => '₹' . number_format($totalTaxable, 2),
+                'cgst_amount'             => $cgst,
+                'sgst_amount'             => $sgst,
+                'igst_amount'             => $igst,
+                'tax_amount'              => $taxAmount,
+                'tax_amount_formatted'    => '₹' . number_format($taxAmount, 2),
+                'grand_total'             => $grandTotal,
+                'grand_total_formatted'   => '₹' . number_format($grandTotal, 2),
+                'paid_amount'             => $paidAmt,
+                'paid_amount_formatted'   => '₹' . number_format($paidAmt, 2),
+                'pending_amount'          => $pendingAmt,
+                'pending_amount_formatted'=> '₹' . number_format($pendingAmt, 2),
+                'payment_status'          => $payStatus,
+                'status'                  => $row->status ?? 'active',
+                'is_overdue'              => ($payStatus !== 'Paid' && !empty($row->due_date) && $row->due_date < $todayDate),
+                'is_locked'               => $isPaid,
+                'print_url'               => $printUrl,
+                'download_url'            => $printUrl . '&download=1',
+                'created_at'              => $row->created_at ?? ''
+            ];
+
+            if ($includeItems) {
+                $itemData['items'] = $itemsByPurchase[$pid] ?? [];
+            }
+
+            $list[] = $itemData;
+        }
+    }
+
+    apiResponse(200, 'Purchase list retrieved successfully.', [
+        'company_id'      => $cId,
+        'company_name'    => $company['company_name'] ?? '',
+        'total'           => count($list),
+        'total_purchases' => $statTotalCount,
+        'paid_purchases'  => $statPaidCount,
+        'unpaid_purchases'=> $statUnpaidCount,
+        'purchases'       => $list
+    ]);
+}
+
+if ($action === 'purchase-add') {
+    if ($method !== 'POST') {
+        apiResponse(405, 'Only POST method is allowed.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $company_id = (int)$company['id'];
+    $company_has_gst = (int)($company['gst_applicable'] ?? 0) === 1;
+
+    $party_id = (int)($input['party_id'] ?? 0);
+    $party_name = trim($input['party_name'] ?? '');
+    $gst_no = $company_has_gst ? trim($input['gst_no'] ?? '') : '';
+    $address = trim($input['address'] ?? '');
+    $state_id = (int)($input['state_id'] ?? 0);
+    $city_id = (int)($input['city_id'] ?? 0);
+    $rca = trim($input['rca'] ?? 'No');
+    if ($party_id > 0) {
+        $pRow = $ai_db->aiGetQueryObj("SELECT party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE id={$party_id} AND company_id={$company_id} LIMIT 1");
+        if (!empty($pRow)) {
+            if (empty($party_name)) $party_name = $pRow[0]->party_name ?? '';
+            if ($company_has_gst && empty($gst_no)) $gst_no = $pRow[0]->gst_no ?? '';
+            if (empty($address)) $address = $pRow[0]->address ?? '';
+            if ($state_id <= 0) $state_id = (int)($pRow[0]->state_id ?? 0);
+            if ($city_id <= 0) $city_id = (int)($pRow[0]->city_id ?? 0);
+        }
+    }
+
+    if (empty($party_id) && empty($party_name)) {
+        apiResponse(400, 'Party Name is required.');
+    }
+
+    if ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        apiResponse(400, 'Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5).');
+    }
+
+    $purchase_no = trim($input['purchase_no'] ?? '');
+    if (empty($purchase_no)) {
+        $purchase_no = generateCompanyPurchaseNo($ai_db, $company_id);
+    } else {
+        $safePurNo = mysqli_real_escape_string($ai_conn, $purchase_no);
+        $checkDup = $ai_db->aiGetQueryObj("SELECT id FROM tbl_purchase WHERE purchase_no='{$safePurNo}' AND company_id={$company_id} LIMIT 1");
+        if (!empty($checkDup)) {
+            apiResponse(400, "Purchase Bill Number '{$purchase_no}' already exists for this company.");
+        }
+    }
+
+    $purchase_date = !empty($input['purchase_date']) ? date('Y-m-d', strtotime($input['purchase_date'])) : date('Y-m-d');
+    $due_date = !empty($input['due_date']) ? date('Y-m-d', strtotime($input['due_date'])) : $purchase_date;
+    if ($due_date < $purchase_date) {
+        apiResponse(400, 'Due date cannot be earlier than Purchase date.');
+    }
+
+    $reqPaymentStatus = isset($input['payment_status']) ? trim((string)$input['payment_status']) : 'Pending';
+    $payment_status = ($reqPaymentStatus === 'Paid') ? 'Paid' : 'Pending';
+    $rawStatus = isset($input['status']) && $input['status'] !== null ? strtolower(trim((string)$input['status'])) : 'active';
+    $status = in_array($rawStatus, ['active', 'deactive'], true) ? $rawStatus : 'active';
+
+    $isGujarat = false;
+    if ($state_id > 0) {
+        $stObj = $ai_db->aiGetQueryObj("SELECT state_name FROM tbl_state WHERE id={$state_id} LIMIT 1");
+        if (!empty($stObj)) {
+            $isGujarat = (stripos($stObj[0]->state_name, 'Gujarat') !== false);
+        }
+    }
+
+    $rawItems = $input['items'] ?? [];
+    if (!is_array($rawItems) || empty($rawItems)) {
+        apiResponse(400, 'Purchase bill must contain at least one item.');
+    }
+
+    $processedItems = [];
+    $totalTaxable = 0.00;
+    $totalTax = 0.00;
+
+    foreach ($rawItems as $idx => $it) {
+        $prodId = (int)($it['product_id'] ?? ($it['id'] ?? 0));
+        $desc = trim($it['description'] ?? ($it['product_name'] ?? ''));
+        $hsn = trim($it['hsn_code'] ?? ($it['hsn'] ?? ''));
+
+        if ($prodId <= 0 && !empty($desc)) {
+            $escDesc = mysqli_real_escape_string($ai_conn, $desc);
+            $pFind = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, purchase_price, gst_rate, status FROM tbl_product WHERE LOWER(TRIM(product_name)) = LOWER(TRIM('{$escDesc}')) AND company_id={$company_id} LIMIT 1");
+            if (!empty($pFind)) {
+                $prodId = (int)$pFind[0]->id;
+            }
+        }
+
+        if ($prodId <= 0) {
+            $nameHint = !empty($desc) ? " for '{$desc}'" : "";
+            apiResponse(400, "Item{$nameHint} (index {$idx}) must have a valid product_id.");
+        }
+
+        $pFind = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, purchase_price, gst_rate, status FROM tbl_product WHERE id={$prodId} AND company_id={$company_id} LIMIT 1");
+        if (empty($pFind)) {
+            $nameText = !empty($desc) ? " '{$desc}'" : "";
+            apiResponse(404, "Product{$nameText} with ID {$prodId} (index {$idx}) does not exist for your company.");
+        }
+        if (strtolower($pFind[0]->status ?? '') !== 'active') {
+            apiResponse(400, "Product '{$pFind[0]->product_name}' (ID {$prodId}) is deactivated. Only active products can be added to a purchase bill.");
+        }
+
+        if (empty($desc)) $desc = $pFind[0]->product_name ?? '';
+        if (empty($hsn))  $hsn  = $pFind[0]->hsn_code ?? '';
+
+        $rate = floatval($it['rate'] ?? ($it['price'] ?? ($pFind[0]->purchase_price ?? 0)));
+        $qty = floatval($it['qty'] ?? ($it['quantity'] ?? 1));
+        if ($qty <= 0) $qty = 1;
+
+        $prodGstRate = floatval($pFind[0]->gst_rate ?? 18);
+        $gstPct = $company_has_gst ? (isset($it['gst_percent']) ? floatval($it['gst_percent']) : (isset($it['gst_pct']) ? floatval($it['gst_pct']) : $prodGstRate)) : 0.00;
+
+        $discType = in_array(strtolower(trim($it['discount_type'] ?? '')), ['fixed', 'percentage'], true) ? strtolower(trim($it['discount_type'])) : 'percentage';
+        $discVal = floatval($it['discount_value'] ?? ($it['discount_val'] ?? 0));
+
+        $baseAmt = $rate * $qty;
+        $discAmt = 0.00;
+        if ($discType === 'percentage') {
+            $discAmt = ($baseAmt * $discVal) / 100.00;
+        } else {
+            $discAmt = min($baseAmt, $discVal);
+        }
+        if ($discAmt > $baseAmt) $discAmt = $baseAmt;
+
+        $netAmt = $baseAmt - $discAmt;
+        $itemTax = $company_has_gst ? (($netAmt * $gstPct) / 100.00) : 0.00;
+        $itemTotal = $netAmt + $itemTax;
+
+        $totalTaxable += $netAmt;
+        $totalTax += $itemTax;
+
+        $processedItems[] = [
+            'product_id'      => $prodId,
+            'description'     => $desc,
+            'hsn_code'        => $hsn,
+            'rate'            => $rate,
+            'gst_percent'     => $gstPct,
+            'discount_type'   => $discType,
+            'discount_value'  => $discVal,
+            'discount_amount' => $discAmt,
+            'qty'             => $qty,
+            'net_amount'      => $netAmt,
+            'tax_amount'      => $itemTax,
+            'total_amount'    => $itemTotal
+        ];
+    }
+
+    $cgst_amount = 0.00;
+    $sgst_amount = 0.00;
+    $igst_amount = 0.00;
+
+    if ($company_has_gst) {
+        if ($isGujarat) {
+            $cgst_amount = $totalTax / 2.00;
+            $sgst_amount = $totalTax / 2.00;
+            $igst_amount = 0.00;
+        } else {
+            $cgst_amount = 0.00;
+            $sgst_amount = 0.00;
+            $igst_amount = $totalTax;
+        }
+    }
+
+    $grand_total = $totalTaxable + $totalTax;
+    $paid_amount = ($payment_status === 'Paid') ? $grand_total : 0.00;
+
+    $safePartyName = mysqli_real_escape_string($ai_conn, $party_name);
+    $safeGstNo = mysqli_real_escape_string($ai_conn, $gst_no);
+    $safePurNo = mysqli_real_escape_string($ai_conn, $purchase_no);
+    $safeAddress = mysqli_real_escape_string($ai_conn, $address);
+    $dueSql = $due_date ? "'{$due_date}'" : "NULL";
+
+    $insertPurchaseQry = "INSERT INTO tbl_purchase SET
+        company_id = {$company_id},
+        party_id = {$party_id},
+        party_name = '{$safePartyName}',
+        gst_no = '{$safeGstNo}',
+        purchase_no = '{$safePurNo}',
+        rca = '{$rca}',
+        address = '{$safeAddress}',
+        state_id = {$state_id},
+        city_id = {$city_id},
+        purchase_date = '{$purchase_date}',
+        due_date = {$dueSql},
+        total_amount = {$totalTaxable},
+        cgst_amount = {$cgst_amount},
+        sgst_amount = {$sgst_amount},
+        igst_amount = {$igst_amount},
+        tax_amount = {$totalTax},
+        grand_total = {$grand_total},
+        paid_amount = {$paid_amount},
+        payment_status = '{$payment_status}',
+        status = '{$status}'";
+
+    $res = mysqli_query($ai_conn, $insertPurchaseQry);
+    if (!$res) {
+        apiResponse(500, 'Failed to create purchase bill: ' . mysqli_error($ai_conn));
+    }
+
+    $newPurchaseId = mysqli_insert_id($ai_conn);
+
+    foreach ($processedItems as $pItem) {
+        $safeDesc = mysqli_real_escape_string($ai_conn, $pItem['description']);
+        $safeHsn = mysqli_real_escape_string($ai_conn, $pItem['hsn_code']);
+        $itemQry = "INSERT INTO tbl_purchase_items SET
+            purchase_id = {$newPurchaseId},
+            product_id = {$pItem['product_id']},
+            description = '{$safeDesc}',
+            hsn_code = '{$safeHsn}',
+            rate = {$pItem['rate']},
+            gst_percent = {$pItem['gst_percent']},
+            discount_type = '{$pItem['discount_type']}',
+            discount_value = {$pItem['discount_value']},
+            discount_amount = {$pItem['discount_amount']},
+            qty = {$pItem['qty']},
+            net_amount = {$pItem['net_amount']},
+            tax_amount = {$pItem['tax_amount']},
+            total_amount = {$pItem['total_amount']}";
+        mysqli_query($ai_conn, $itemQry);
+
+        // Increase product stock upon purchase (+)
+        if ($pItem['product_id'] > 0 && function_exists('addProductStock')) {
+            addProductStock($pItem['product_id'], $pItem['qty']);
+        }
+    }
+
+    if ($party_id > 0 && function_exists('recalculatePartyOutstanding')) {
+        recalculatePartyOutstanding($party_id);
+    }
+    $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $newPurchaseId;
+
+    apiResponse(200, 'Purchase bill created successfully.', [
+        'id'                      => $newPurchaseId,
+        'purchase_no'             => $purchase_no,
+        'company_id'              => $company_id,
+        'party_id'                => $party_id,
+        'party_name'              => $party_name,
+        'gst_no'                  => $gst_no,
+        'purchase_date'           => $purchase_date,
+        'purchase_date_formatted' => date('d-m-Y', strtotime($purchase_date)),
+        'due_date'                => $due_date,
+        'due_date_formatted'      => date('d-m-Y', strtotime($due_date)),
+        'taxable_amount'          => round($totalTaxable, 2),
+        'taxable_formatted'       => '₹' . number_format($totalTaxable, 2),
+        'cgst_amount'             => round($cgst_amount, 2),
+        'sgst_amount'             => round($sgst_amount, 2),
+        'igst_amount'             => round($igst_amount, 2),
+        'tax_amount'              => round($totalTax, 2),
+        'tax_amount_formatted'    => '₹' . number_format($totalTax, 2),
+        'grand_total'             => round($grand_total, 2),
+        'grand_total_formatted'   => '₹' . number_format($grand_total, 2),
+        'paid_amount'             => round($paid_amount, 2),
+        'paid_amount_formatted'   => '₹' . number_format($paid_amount, 2),
+        'payment_status'          => $payment_status,
+        'status'                  => $status,
+        'items_count'             => count($processedItems),
+        'print_url'               => $printUrl,
+        'download_url'            => $printUrl . '&download=1'
+    ]);
+}
+
+if ($action === 'purchase-edit') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $company_id = (int)$company['id'];
+    $purchaseId = (int)($input['id'] ?? ($input['purchase_id'] ?? ($_GET['id'] ?? ($_GET['purchase_id'] ?? 0))));
+
+    if ($purchaseId <= 0) {
+        apiResponse(400, 'Purchase ID is required.');
+    }
+
+    $purchaseQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
+                           s.state_name, ct.city_name
+                    FROM tbl_purchase q
+                    LEFT JOIN tbl_company c ON q.company_id = c.id
+                    LEFT JOIN tbl_party p ON q.party_id = p.id
+                    LEFT JOIN tbl_state s ON q.state_id = s.id
+                    LEFT JOIN tbl_city ct ON q.city_id = ct.id
+                    WHERE q.id = {$purchaseId} AND q.company_id = {$company_id}
+                    LIMIT 1";
+    $res = $ai_db->aiGetQueryObj($purchaseQry);
+
+    if (empty($res)) {
+        apiResponse(404, 'Purchase bill not found.');
+    }
+
+    $q = $res[0];
+    $todayDate = date('Y-m-d');
+    $grandTotal = (float)$q->grand_total;
+    $paidAmt = (float)($q->paid_amount ?? 0);
+    $pendingAmt = max(0, $grandTotal - $paidAmt);
+    $totalTaxable = (float)$q->total_amount;
+    $taxAmount = (float)$q->tax_amount;
+    $cgst = (float)$q->cgst_amount;
+    $sgst = (float)$q->sgst_amount;
+    $igst = (float)$q->igst_amount;
+    $payStatus = $q->payment_status ?? 'Pending';
+    $isPaid = ($payStatus === 'Paid');
+
+    $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $purchaseId;
+
+    // Fetch items with product information
+    $itemsRows = $ai_db->aiGetQueryObj("
+        SELECT pi.*, p.sku, p.stock AS current_stock, p.min_stock_alert, p.track_stock
+        FROM tbl_purchase_items pi
+        LEFT JOIN tbl_product p ON pi.product_id = p.id
+        WHERE pi.purchase_id = {$purchaseId}
+        ORDER BY pi.id ASC
+    ");
+
+    $itemsList = [];
+    if (!empty($itemsRows)) {
+        foreach ($itemsRows as $iRow) {
+            $itemQty = (float)$iRow->qty;
+            $itemsList[] = [
+                'id'              => (int)$iRow->id,
+                'product_id'      => (int)$iRow->product_id,
+                'description'     => $iRow->description ?? '',
+                'sku'             => $iRow->sku ?? '',
+                'hsn_code'        => $iRow->hsn_code ?? '',
+                'rate'            => (float)$iRow->rate,
+                'rate_formatted'  => '₹' . number_format((float)$iRow->rate, 2),
+                'gst_percent'     => (float)$iRow->gst_percent,
+                'discount_type'   => $iRow->discount_type ?? 'percentage',
+                'discount_value'  => (float)$iRow->discount_value,
+                'discount_amount' => (float)$iRow->discount_amount,
+                'qty'             => $itemQty,
+                'net_amount'      => (float)$iRow->net_amount,
+                'tax_amount'      => (float)$iRow->tax_amount,
+                'total_amount'    => (float)$iRow->total_amount,
+                'total_formatted' => '₹' . number_format((float)$iRow->total_amount, 2),
+                'current_stock'   => (float)($iRow->current_stock ?? 0),
+                'track_stock'     => (int)($iRow->track_stock ?? 1) === 1
+            ];
+        }
+    }
+
+    // Payment history
+    $paymentRows = $ai_db->aiGetQueryObj("SELECT * FROM tbl_purchase_payments WHERE purchase_id = {$purchaseId} ORDER BY payment_date DESC, id DESC");
+    $paymentsList = [];
+    if (!empty($paymentRows)) {
+        foreach ($paymentRows as $pRow) {
+            $paymentsList[] = [
+                'id'           => (int)$pRow->id,
+                'amount'       => (float)$pRow->amount,
+                'payment_date' => $pRow->payment_date,
+                'payment_mode' => $pRow->payment_mode,
+                'reference_no' => $pRow->reference_no,
+                'notes'        => $pRow->notes
+            ];
+        }
+    }
+
+    apiResponse(200, 'Purchase bill retrieved successfully.', [
+        'id'                      => $purchaseId,
+        'purchase_no'             => $q->purchase_no ?? '',
+        'company_id'              => (int)$q->company_id,
+        'company_name'            => $q->company_name ?? ($company['company_name'] ?? ''),
+        'party_id'                => (int)$q->party_id,
+        'party_name'              => $q->party_name ?? '',
+        'party_mobile'            => $q->party_mobile ?? '',
+        'party_email'             => $q->party_email ?? '',
+        'gst_no'                  => $q->gst_no ?? '',
+        'rca'                     => $q->rca ?? 'No',
+        'address'                 => $q->address ?? '',
+        'state_id'                => (int)($q->state_id ?? 0),
+        'state_name'              => $q->state_name ?? '',
+        'city_id'                 => (int)($q->city_id ?? 0),
+        'city_name'               => $q->city_name ?? '',
+        'purchase_date'           => $q->purchase_date ?? '',
+        'purchase_date_formatted' => !empty($q->purchase_date) ? date('d-m-Y', strtotime($q->purchase_date)) : '',
+        'due_date'                => $q->due_date ?? null,
+        'due_date_formatted'      => !empty($q->due_date) ? date('d-m-Y', strtotime($q->due_date)) : '',
+        'taxable_amount'          => $totalTaxable,
+        'taxable_formatted'       => '₹' . number_format($totalTaxable, 2),
+        'cgst_amount'             => $cgst,
+        'sgst_amount'             => $sgst,
+        'igst_amount'             => $igst,
+        'tax_amount'              => $taxAmount,
+        'tax_amount_formatted'    => '₹' . number_format($taxAmount, 2),
+        'grand_total'             => $grandTotal,
+        'grand_total_formatted'   => '₹' . number_format($grandTotal, 2),
+        'paid_amount'             => $paidAmt,
+        'paid_amount_formatted'   => '₹' . number_format($paidAmt, 2),
+        'pending_amount'          => $pendingAmt,
+        'pending_amount_formatted'=> '₹' . number_format($pendingAmt, 2),
+        'payment_status'          => $payStatus,
+        'status'                  => $q->status ?? 'active',
+        'is_overdue'              => ($payStatus !== 'Paid' && !empty($q->due_date) && $q->due_date < $todayDate),
+        'is_locked'               => $isPaid,
+        'print_url'               => $printUrl,
+        'download_url'            => $printUrl . '&download=1',
+        'items'                   => $itemsList,
+        'payments'                => $paymentsList
+    ]);
+}
+
+if ($action === 'purchase-update') {
+    if ($method !== 'POST' && $method !== 'PUT') {
+        apiResponse(405, 'Method not allowed. Use POST or PUT.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $company_id = (int)$company['id'];
+    $company_has_gst = (int)($company['gst_applicable'] ?? 0) === 1;
+
+    $purchaseId = (int)($input['id'] ?? ($input['purchase_id'] ?? ($_GET['id'] ?? ($_GET['purchase_id'] ?? 0))));
+    if ($purchaseId <= 0) {
+        apiResponse(400, 'Purchase ID is required.');
+    }
+
+    $currRes = $ai_db->aiGetQueryObj("SELECT * FROM tbl_purchase WHERE id = {$purchaseId} AND company_id = {$company_id} LIMIT 1");
+    if (empty($currRes)) {
+        apiResponse(404, 'Purchase bill not found.');
+    }
+
+    $currPur = $currRes[0];
+    $prevPartyId = (int)($currPur->party_id ?? 0);
+
+    $party_id = isset($input['party_id']) ? (int)$input['party_id'] : $prevPartyId;
+    $party_name = trim($input['party_name'] ?? ($currPur->party_name ?? ''));
+    $gst_no = $company_has_gst ? trim($input['gst_no'] ?? ($currPur->gst_no ?? '')) : '';
+    $address = trim($input['address'] ?? ($currPur->address ?? ''));
+    $state_id = isset($input['state_id']) ? (int)$input['state_id'] : (int)($currPur->state_id ?? 0);
+    $city_id = isset($input['city_id']) ? (int)$input['city_id'] : (int)($currPur->city_id ?? 0);
+    $rca = trim($input['rca'] ?? ($currPur->rca ?? 'No'));
+
+    if ($party_id > 0 && empty($input['party_name'])) {
+        $pRow = $ai_db->aiGetQueryObj("SELECT party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE id={$party_id} AND company_id={$company_id} LIMIT 1");
+        if (!empty($pRow)) {
+            $party_name = $pRow[0]->party_name;
+            if ($company_has_gst && empty($input['gst_no'])) $gst_no = $pRow[0]->gst_no ?? '';
+            if (empty($input['address'])) $address = $pRow[0]->address ?? '';
+            if ($state_id <= 0) $state_id = (int)($pRow[0]->state_id ?? 0);
+            if ($city_id <= 0) $city_id = (int)($pRow[0]->city_id ?? 0);
+        }
+    }
+
+    if (empty($party_id) && empty($party_name)) {
+        apiResponse(400, 'Party Name is required.');
+    }
+
+    if ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        apiResponse(400, 'Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5).');
+    }
+
+    $purchase_no = trim($input['purchase_no'] ?? ($currPur->purchase_no ?? ''));
+    if (empty($purchase_no)) {
+        $purchase_no = $currPur->purchase_no;
+    } else {
+        $safePurNo = mysqli_real_escape_string($ai_conn, $purchase_no);
+        $checkDup = $ai_db->aiGetQueryObj("SELECT id FROM tbl_purchase WHERE purchase_no='{$safePurNo}' AND company_id={$company_id} AND id != {$purchaseId} LIMIT 1");
+        if (!empty($checkDup)) {
+            apiResponse(400, "Purchase Bill Number '{$purchase_no}' is already used by another purchase bill.");
+        }
+    }
+
+    $purchase_date = !empty($input['purchase_date']) ? date('Y-m-d', strtotime($input['purchase_date'])) : ($currPur->purchase_date ?? date('Y-m-d'));
+    $due_date = !empty($input['due_date']) ? date('Y-m-d', strtotime($input['due_date'])) : ($currPur->due_date ?? $purchase_date);
+    if ($due_date < $purchase_date) {
+        apiResponse(400, 'Due date cannot be earlier than Purchase date.');
+    }
+
+    $reqPaymentStatus = isset($input['payment_status']) ? trim((string)$input['payment_status']) : ($currPur->payment_status ?? 'Pending');
+    $payment_status = in_array($reqPaymentStatus, ['Pending', 'Partially Paid', 'Paid'], true) ? $reqPaymentStatus : 'Pending';
+    $rawStatus = isset($input['status']) && $input['status'] !== null ? strtolower(trim((string)$input['status'])) : ($currPur->status ?? 'active');
+    $status = in_array($rawStatus, ['active', 'deactive'], true) ? $rawStatus : 'active';
+
+    $isGujarat = false;
+    if ($state_id > 0) {
+        $stObj = $ai_db->aiGetQueryObj("SELECT state_name FROM tbl_state WHERE id={$state_id} LIMIT 1");
+        if (!empty($stObj)) {
+            $isGujarat = (stripos($stObj[0]->state_name, 'Gujarat') !== false);
+        }
+    }
+
+    $rawItems = $input['items'] ?? null;
+    $processedItems = [];
+    $totalTaxable = 0.00;
+    $totalTax = 0.00;
+
+    if ($rawItems !== null) {
+        if (!is_array($rawItems) || empty($rawItems)) {
+            apiResponse(400, 'Items must be a non-empty array.');
+        }
+
+        foreach ($rawItems as $idx => $it) {
+            $prodId = (int)($it['product_id'] ?? ($it['id'] ?? 0));
+            $desc = trim($it['description'] ?? ($it['product_name'] ?? ''));
+            $hsn = trim($it['hsn_code'] ?? ($it['hsn'] ?? ''));
+
+            if ($prodId <= 0 && !empty($desc)) {
+                $escDesc = mysqli_real_escape_string($ai_conn, $desc);
+                $pFind = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, purchase_price, gst_rate, status FROM tbl_product WHERE LOWER(TRIM(product_name)) = LOWER(TRIM('{$escDesc}')) AND company_id={$company_id} LIMIT 1");
+                if (!empty($pFind)) {
+                    $prodId = (int)$pFind[0]->id;
+                }
+            }
+
+            if ($prodId <= 0) {
+                $nameHint = !empty($desc) ? " for '{$desc}'" : "";
+                apiResponse(400, "Item{$nameHint} (index {$idx}) must have a valid product_id.");
+            }
+
+            $pFind = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, purchase_price, gst_rate, status FROM tbl_product WHERE id={$prodId} AND company_id={$company_id} LIMIT 1");
+            if (empty($pFind)) {
+                $nameText = !empty($desc) ? " '{$desc}'" : "";
+                apiResponse(404, "Product{$nameText} with ID {$prodId} (index {$idx}) does not exist for your company.");
+            }
+            if (strtolower($pFind[0]->status ?? '') !== 'active') {
+                apiResponse(400, "Product '{$pFind[0]->product_name}' (ID {$prodId}) is deactivated. Only active products can be added to a purchase bill.");
+            }
+
+            if (empty($desc)) $desc = $pFind[0]->product_name ?? '';
+            if (empty($hsn))  $hsn  = $pFind[0]->hsn_code ?? '';
+
+            $rate = floatval($it['rate'] ?? ($it['price'] ?? ($pFind[0]->purchase_price ?? 0)));
+            $qty = floatval($it['qty'] ?? ($it['quantity'] ?? 1));
+            if ($qty <= 0) $qty = 1;
+
+            $prodGstRate = floatval($pFind[0]->gst_rate ?? 18);
+            $gstPct = $company_has_gst ? (isset($it['gst_percent']) ? floatval($it['gst_percent']) : (isset($it['gst_pct']) ? floatval($it['gst_pct']) : $prodGstRate)) : 0.00;
+
+            $discType = in_array(strtolower(trim($it['discount_type'] ?? '')), ['fixed', 'percentage'], true) ? strtolower(trim($it['discount_type'])) : 'percentage';
+            $discVal = floatval($it['discount_value'] ?? ($it['discount_val'] ?? 0));
+
+            $baseAmt = $rate * $qty;
+            $discAmt = 0.00;
+            if ($discType === 'percentage') {
+                $discAmt = ($baseAmt * $discVal) / 100.00;
+            } else {
+                $discAmt = min($baseAmt, $discVal);
+            }
+            if ($discAmt > $baseAmt) $discAmt = $baseAmt;
+
+            $netAmt = $baseAmt - $discAmt;
+            $itemTax = $company_has_gst ? (($netAmt * $gstPct) / 100.00) : 0.00;
+            $itemTotal = $netAmt + $itemTax;
+
+            $totalTaxable += $netAmt;
+            $totalTax += $itemTax;
+
+            $processedItems[] = [
+                'product_id'      => $prodId,
+                'description'     => $desc,
+                'hsn_code'        => $hsn,
+                'rate'            => $rate,
+                'gst_percent'     => $gstPct,
+                'discount_type'   => $discType,
+                'discount_value'  => $discVal,
+                'discount_amount' => $discAmt,
+                'qty'             => $qty,
+                'net_amount'      => $netAmt,
+                'tax_amount'      => $itemTax,
+                'total_amount'    => $itemTotal
+            ];
+        }
+
+        $cgst_amount = 0.00;
+        $sgst_amount = 0.00;
+        $igst_amount = 0.00;
+
+        if ($company_has_gst) {
+            if ($isGujarat) {
+                $cgst_amount = $totalTax / 2.00;
+                $sgst_amount = $totalTax / 2.00;
+                $igst_amount = 0.00;
+            } else {
+                $cgst_amount = 0.00;
+                $sgst_amount = 0.00;
+                $igst_amount = $totalTax;
+            }
+        }
+    } else {
+        // Items not provided, keep current totals
+        $totalTaxable = (float)$currPur->total_amount;
+        $cgst_amount = (float)$currPur->cgst_amount;
+        $sgst_amount = (float)$currPur->sgst_amount;
+        $igst_amount = (float)$currPur->igst_amount;
+        $totalTax = (float)$currPur->tax_amount;
+    }
+
+    $grand_total = $totalTaxable + $totalTax;
+    $curPaidAmount = floatval($currPur->paid_amount ?? 0);
+    $paid_amount = ($payment_status === 'Paid') ? $grand_total : $curPaidAmount;
+
+    $safePartyName = mysqli_real_escape_string($ai_conn, $party_name);
+    $safeGstNo = mysqli_real_escape_string($ai_conn, $gst_no);
+    $safePurNo = mysqli_real_escape_string($ai_conn, $purchase_no);
+    $safeAddress = mysqli_real_escape_string($ai_conn, $address);
+    $dueSql = $due_date ? "'{$due_date}'" : "NULL";
+
+    $updatePurchaseQry = "UPDATE tbl_purchase SET
+        party_id = {$party_id},
+        party_name = '{$safePartyName}',
+        gst_no = '{$safeGstNo}',
+        purchase_no = '{$safePurNo}',
+        rca = '{$rca}',
+        address = '{$safeAddress}',
+        state_id = {$state_id},
+        city_id = {$city_id},
+        purchase_date = '{$purchase_date}',
+        due_date = {$dueSql},
+        total_amount = {$totalTaxable},
+        cgst_amount = {$cgst_amount},
+        sgst_amount = {$sgst_amount},
+        igst_amount = {$igst_amount},
+        tax_amount = {$totalTax},
+        grand_total = {$grand_total},
+        paid_amount = {$paid_amount},
+        payment_status = '{$payment_status}',
+        status = '{$status}'
+        WHERE id = {$purchaseId} AND company_id = {$company_id}";
+
+    $updRes = mysqli_query($ai_conn, $updatePurchaseQry);
+    if (!$updRes) {
+        apiResponse(500, 'Failed to update purchase bill: ' . mysqli_error($ai_conn));
+    }
+
+    if ($rawItems !== null) {
+        // Revert previous stock addition before re-inserting
+        if (function_exists('restorePurchaseProductStock')) {
+            restorePurchaseProductStock($purchaseId);
+        }
+
+        mysqli_query($ai_conn, "DELETE FROM tbl_purchase_items WHERE purchase_id = {$purchaseId}");
+
+        foreach ($processedItems as $pItem) {
+            $safeDesc = mysqli_real_escape_string($ai_conn, $pItem['description']);
+            $safeHsn = mysqli_real_escape_string($ai_conn, $pItem['hsn_code']);
+            $itemQry = "INSERT INTO tbl_purchase_items SET
+                purchase_id = {$purchaseId},
+                product_id = {$pItem['product_id']},
+                description = '{$safeDesc}',
+                hsn_code = '{$safeHsn}',
+                rate = {$pItem['rate']},
+                gst_percent = {$pItem['gst_percent']},
+                discount_type = '{$pItem['discount_type']}',
+                discount_value = {$pItem['discount_value']},
+                discount_amount = {$pItem['discount_amount']},
+                qty = {$pItem['qty']},
+                net_amount = {$pItem['net_amount']},
+                tax_amount = {$pItem['tax_amount']},
+                total_amount = {$pItem['total_amount']}";
+            mysqli_query($ai_conn, $itemQry);
+
+            // Add stock for updated items
+            if ($pItem['product_id'] > 0 && function_exists('addProductStock')) {
+                addProductStock($pItem['product_id'], $pItem['qty']);
+            }
+        }
+    }
+
+    if (function_exists('recalculatePartyOutstanding')) {
+        if ($party_id > 0) recalculatePartyOutstanding($party_id);
+        if ($prevPartyId > 0 && $prevPartyId !== $party_id) recalculatePartyOutstanding($prevPartyId);
+    }
+
+    $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $purchaseId;
+
+    apiResponse(200, 'Purchase bill updated successfully.', [
+        'id'                      => $purchaseId,
+        'purchase_no'             => $purchase_no,
+        'company_id'              => $company_id,
+        'party_id'                => $party_id,
+        'party_name'              => $party_name,
+        'gst_no'                  => $gst_no,
+        'purchase_date'           => $purchase_date,
+        'purchase_date_formatted' => date('d-m-Y', strtotime($purchase_date)),
+        'due_date'                => $due_date,
+        'due_date_formatted'      => date('d-m-Y', strtotime($due_date)),
+        'taxable_amount'          => round($totalTaxable, 2),
+        'taxable_formatted'       => '₹' . number_format($totalTaxable, 2),
+        'cgst_amount'             => round($cgst_amount, 2),
+        'sgst_amount'             => round($sgst_amount, 2),
+        'igst_amount'             => round($igst_amount, 2),
+        'tax_amount'              => round($totalTax, 2),
+        'tax_amount_formatted'    => '₹' . number_format($totalTax, 2),
+        'grand_total'             => round($grand_total, 2),
+        'grand_total_formatted'   => '₹' . number_format($grand_total, 2),
+        'paid_amount'             => round($paid_amount, 2),
+        'paid_amount_formatted'   => '₹' . number_format($paid_amount, 2),
+        'payment_status'          => $payment_status,
+        'status'                  => $status,
+        'items_count'             => ($rawItems !== null) ? count($processedItems) : count($ai_db->aiGetQueryObj("SELECT id FROM tbl_purchase_items WHERE purchase_id = {$purchaseId}")),
+        'print_url'               => $printUrl,
+        'download_url'            => $printUrl . '&download=1'
+    ]);
+}
+
+if ($action === 'purchase-delete') {
+    if ($method !== 'DELETE' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use DELETE or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $company_id = (int)$company['id'];
+    $purchaseId = (int)($input['id'] ?? ($input['purchase_id'] ?? ($_GET['id'] ?? ($_GET['purchase_id'] ?? 0))));
+
+    if ($purchaseId <= 0) {
+        apiResponse(400, 'Purchase ID is required.');
+    }
+
+    $existing = $ai_db->aiGetQueryObj("SELECT id, purchase_no, party_id, payment_status, paid_amount FROM tbl_purchase WHERE id = {$purchaseId} AND company_id = {$company_id} LIMIT 1");
+    if (empty($existing)) {
+        apiResponse(404, 'Purchase bill not found.');
+    }
+
+    $currPur = $existing[0];
+    $partyId = (int)($currPur->party_id ?? 0);
+    $purNo = $currPur->purchase_no ?? "#{$purchaseId}";
+
+    // Revert added product stock before deleting purchase items
+    if (function_exists('restorePurchaseProductStock')) {
+        restorePurchaseProductStock($purchaseId);
+    }
+
+    // Delete purchase, items, and payments
+    $delQry = "DELETE FROM tbl_purchase WHERE id = {$purchaseId} AND company_id = {$company_id}";
+    $res = mysqli_query($ai_conn, $delQry);
+
+    if (!$res) {
+        apiResponse(500, 'Failed to delete purchase bill: ' . mysqli_error($ai_conn));
+    }
+
+    mysqli_query($ai_conn, "DELETE FROM tbl_purchase_items WHERE purchase_id = {$purchaseId}");
+    mysqli_query($ai_conn, "DELETE FROM tbl_purchase_payments WHERE purchase_id = {$purchaseId}");
+
+    // Recalculate party outstanding
+    if ($partyId > 0 && function_exists('recalculatePartyOutstanding')) {
+        recalculatePartyOutstanding($partyId);
+    }
+
+    apiResponse(200, 'Purchase bill deleted successfully.', [
+        'id'           => $purchaseId,
+        'purchase_no'  => $purNo,
+        'deleted'      => true
+    ]);
+}
+
+/* =========================================================================
+   LEDGER API (action=ledger)
+   ========================================================================= */
+
+if ($action === 'ledger') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $company_id = (int)$company['id'];
+
+    $partyId = (int)($input['party_id'] ?? ($_GET['party_id'] ?? 0));
+    if ($partyId <= 0) {
+        apiResponse(400, 'Party ID is required.');
+    }
+
+    $pRow = $ai_db->aiGetQueryObj("SELECT p.*, c.company_name, s.state_name, ct.city_name 
+        FROM tbl_party p 
+        LEFT JOIN tbl_company c ON p.company_id = c.id 
+        LEFT JOIN tbl_state s ON p.state_id = s.id 
+        LEFT JOIN tbl_city ct ON p.city_id = ct.id 
+        WHERE p.id = {$partyId} AND p.company_id = {$company_id} 
+        LIMIT 1");
+
+    if (empty($pRow)) {
+        apiResponse(404, 'Party not found for your company.');
+    }
+
+    $party = $pRow[0];
+    $partyStatus = $party->party_status ?? 'Sales';
+    $openingBalance = floatval($party->opening_balance ?? 0);
+    $openingType = $party->balance_type ?? 'Debit';
+
+    $startDate = trim($input['start_date'] ?? ($_GET['start_date'] ?? ''));
+    $endDate = trim($input['end_date'] ?? ($_GET['end_date'] ?? ''));
+
+    // Date filters sanitization
+    $dateWhereInvoice = "";
+    $dateWherePayment = "";
+    $dateWherePurchase = "";
+
+    if (!empty($startDate)) {
+        $sDate = date('Y-m-d', strtotime($startDate));
+        $dateWhereInvoice .= " AND invoice_date >= '{$sDate}'";
+        $dateWherePayment .= " AND payment_date >= '{$sDate}'";
+        $dateWherePurchase .= " AND purchase_date >= '{$sDate}'";
+    }
+    if (!empty($endDate)) {
+        $eDate = date('Y-m-d', strtotime($endDate));
+        $dateWhereInvoice .= " AND invoice_date <= '{$eDate}'";
+        $dateWherePayment .= " AND payment_date <= '{$eDate}'";
+        $dateWherePurchase .= " AND purchase_date <= '{$eDate}'";
+    }
+
+    $rawList = [];
+    $totalDebit = 0.00;
+    $totalCredit = 0.00;
+
+    if ($partyStatus === 'Purchase') {
+        // Purchase Party: Opening Credit = (+ payable), Debit = (- advance)
+        $currentSign = ($openingType === 'Credit') ? $openingBalance : -$openingBalance;
+
+        // 1. Purchase Bills
+        $purchases = $ai_db->aiGetQueryObj("SELECT id, purchase_no AS ref_no, purchase_date AS tx_date, 
+            grand_total AS debit_or_credit, 'Purchase Bill' AS tx_type 
+            FROM tbl_purchase 
+            WHERE party_id = {$partyId} AND company_id = {$company_id} AND status = 'active' {$dateWherePurchase}");
+
+        // 2. Purchase Payments
+        $payments = $ai_db->aiGetQueryObj("SELECT id, reference_no AS ref_no, payment_date AS tx_date, 
+            amount AS debit_or_credit, CONCAT('Payment (', payment_mode, ')') AS tx_type, notes 
+            FROM tbl_purchase_payments 
+            WHERE party_id = {$partyId} AND company_id = {$company_id} {$dateWherePayment}");
+
+        if (!empty($purchases)) {
+            foreach ($purchases as $pur) {
+                $amt = floatval($pur->debit_or_credit);
+                $rawList[] = [
+                    'id'         => (int)$pur->id,
+                    'date'       => $pur->tx_date,
+                    'type'       => 'Purchase Bill',
+                    'ref_no'     => $pur->ref_no ?? ('PUR-' . $pur->id),
+                    'debit'      => 0.00,
+                    'credit'     => $amt,
+                    'notes'      => 'Bill Total',
+                    'sort_order' => 1
+                ];
+            }
+        }
+
+        if (!empty($payments)) {
+            foreach ($payments as $pay) {
+                $amt = floatval($pay->debit_or_credit);
+                $rawList[] = [
+                    'id'         => (int)$pay->id,
+                    'date'       => $pay->tx_date,
+                    'type'       => $pay->tx_type,
+                    'ref_no'     => !empty($pay->ref_no) ? $pay->ref_no : ('PAY-' . $pay->id),
+                    'debit'      => $amt,
+                    'credit'     => 0.00,
+                    'notes'      => $pay->notes ?? 'Paid to Supplier',
+                    'sort_order' => 2
+                ];
+            }
+        }
+
+        usort($rawList, function($a, $b) {
+            $t1 = strtotime($a['date']);
+            $t2 = strtotime($b['date']);
+            if ($t1 === $t2) {
+                return $a['sort_order'] - $b['sort_order'];
+            }
+            return $t1 - $t2;
+        });
+
+        $running = $currentSign;
+        $transactions = [];
+        foreach ($rawList as $item) {
+            $deb = $item['debit'];
+            $crd = $item['credit'];
+            $totalDebit += $deb;
+            $totalCredit += $crd;
+
+            // In Purchase: Credit increases payable (+), Debit payment decreases payable (-)
+            $running += ($crd - $deb);
+            $balType = ($running >= 0) ? 'Credit' : 'Debit';
+            $balVal = abs($running);
+
+            $transactions[] = [
+                'id'                => $item['id'],
+                'date'              => $item['date'],
+                'date_formatted'    => !empty($item['date']) ? date('d-m-Y', strtotime($item['date'])) : '',
+                'type'              => $item['type'],
+                'ref_no'            => $item['ref_no'],
+                'debit'             => $deb,
+                'debit_formatted'   => '₹' . number_format($deb, 2),
+                'credit'            => $crd,
+                'credit_formatted'  => '₹' . number_format($crd, 2),
+                'notes'             => $item['notes'],
+                'balance'           => round($balVal, 2),
+                'balance_type'      => $balType,
+                'balance_formatted' => '₹' . number_format($balVal, 2) . ' ' . ($balType === 'Credit' ? 'Cr' : 'Dr')
+            ];
+        }
+
+        $finalBalance = abs($running);
+        $finalType = ($running >= 0) ? 'Credit' : 'Debit';
+
+    } else {
+        // Sales Party: Opening Debit = (+ receivable), Credit = (- advance)
+        $currentSign = ($openingType === 'Debit') ? $openingBalance : -$openingBalance;
+
+        // 1. Invoices (Debit to customer)
+        $invoices = $ai_db->aiGetQueryObj("SELECT id, invoice_no AS ref_no, invoice_date AS tx_date, 
+            grand_total AS amount, 'Invoice' AS tx_type 
+            FROM tbl_invoice 
+            WHERE party_id = {$partyId} AND company_id = {$company_id} AND status = 'active' {$dateWhereInvoice}");
+
+        // 2. Payments (Credit / payment received from customer)
+        $payments = $ai_db->aiGetQueryObj("SELECT id, reference_no AS ref_no, payment_date AS tx_date, 
+            amount, CONCAT('Receipt (', payment_mode, ')') AS tx_type, notes 
+            FROM tbl_invoice_payments 
+            WHERE party_id = {$partyId} AND company_id = {$company_id} {$dateWherePayment}");
+
+        if (!empty($invoices)) {
+            foreach ($invoices as $inv) {
+                $amt = floatval($inv->amount);
+                $rawList[] = [
+                    'id'         => (int)$inv->id,
+                    'date'       => $inv->tx_date,
+                    'type'       => 'Invoice',
+                    'ref_no'     => $inv->ref_no ?? ('INV-' . $inv->id),
+                    'debit'      => $amt,
+                    'credit'     => 0.00,
+                    'notes'      => 'Invoice Generated',
+                    'sort_order' => 1
+                ];
+            }
+        }
+
+        if (!empty($payments)) {
+            foreach ($payments as $pay) {
+                $amt = floatval($pay->amount);
+                $rawList[] = [
+                    'id'         => (int)$pay->id,
+                    'date'       => $pay->tx_date,
+                    'type'       => $pay->tx_type,
+                    'ref_no'     => !empty($pay->ref_no) ? $pay->ref_no : ('REC-' . $pay->id),
+                    'debit'      => 0.00,
+                    'credit'     => $amt,
+                    'notes'      => $pay->notes ?? 'Payment Received',
+                    'sort_order' => 2
+                ];
+            }
+        }
+
+        usort($rawList, function($a, $b) {
+            $t1 = strtotime($a['date']);
+            $t2 = strtotime($b['date']);
+            if ($t1 === $t2) {
+                return $a['sort_order'] - $b['sort_order'];
+            }
+            return $t1 - $t2;
+        });
+
+        $running = $currentSign;
+        $transactions = [];
+        foreach ($rawList as $item) {
+            $deb = $item['debit'];
+            $crd = $item['credit'];
+            $totalDebit += $deb;
+            $totalCredit += $crd;
+
+            // In Sales: Debit invoice increases receivable (+), Credit payment decreases receivable (-)
+            $running += ($deb - $crd);
+            $balType = ($running >= 0) ? 'Debit' : 'Credit';
+            $balVal = abs($running);
+
+            $transactions[] = [
+                'id'                => $item['id'],
+                'date'              => $item['date'],
+                'date_formatted'    => !empty($item['date']) ? date('d-m-Y', strtotime($item['date'])) : '',
+                'type'              => $item['type'],
+                'ref_no'            => $item['ref_no'],
+                'debit'             => $deb,
+                'debit_formatted'   => '₹' . number_format($deb, 2),
+                'credit'            => $crd,
+                'credit_formatted'  => '₹' . number_format($crd, 2),
+                'notes'             => $item['notes'],
+                'balance'           => round($balVal, 2),
+                'balance_type'      => $balType,
+                'balance_formatted' => '₹' . number_format($balVal, 2) . ' ' . ($balType === 'Debit' ? 'Dr' : 'Cr')
+            ];
+        }
+
+        $finalBalance = abs($running);
+        $finalType = ($running >= 0) ? 'Debit' : 'Credit';
+    }
+
+    $printUrl = rtrim(ADMIN_URL, '/') . '/ledger-print.php?party_id=' . $partyId;
+    if (!empty($startDate)) $printUrl .= '&start_date=' . urlencode($startDate);
+    if (!empty($endDate)) $printUrl .= '&end_date=' . urlencode($endDate);
+
+    apiResponse(200, 'Party ledger retrieved successfully.', [
+        'company_id'      => $company_id,
+        'company_name'    => $company['company_name'] ?? '',
+        'party'           => [
+            'id'                        => (int)$party->id,
+            'party_name'                => $party->party_name ?? '',
+            'party_status'              => $partyStatus,
+            'mobile_no'                 => $party->mobile_no ?? '',
+            'email'                     => $party->email ?? '',
+            'gst_no'                    => $party->gst_no ?? '',
+            'pan_no'                    => $party->pan_no ?? '',
+            'address'                   => $party->address ?? '',
+            'state_id'                  => (int)($party->state_id ?? 0),
+            'state_name'                => $party->state_name ?? '',
+            'city_id'                   => (int)($party->city_id ?? 0),
+            'city_name'                 => $party->city_name ?? '',
+            'pincode'                   => $party->pincode ?? '',
+            'opening_balance'           => $openingBalance,
+            'opening_balance_type'      => $openingType,
+            'opening_balance_formatted' => '₹' . number_format($openingBalance, 2) . ' ' . ($openingType === 'Debit' ? 'Dr' : 'Cr')
+        ],
+        'date_filter'     => [
+            'start_date' => !empty($startDate) ? $startDate : null,
+            'end_date'   => !empty($endDate) ? $endDate : null
+        ],
+        'transactions'    => $transactions,
+        'summary'         => [
+            'total_transactions'     => count($transactions),
+            'total_debit'            => round($totalDebit, 2),
+            'total_debit_formatted'  => '₹' . number_format($totalDebit, 2),
+            'total_credit'           => round($totalCredit, 2),
+            'total_credit_formatted' => '₹' . number_format($totalCredit, 2),
+            'closing_balance'        => round($finalBalance, 2),
+            'closing_balance_type'   => $finalType,
+            'closing_balance_formatted' => '₹' . number_format($finalBalance, 2) . ' ' . ($finalType === 'Debit' ? 'Dr' : 'Cr')
+        ],
+        'print_url'       => $printUrl,
+        'download_url'    => $printUrl . '&download=1'
+    ]);
+}
+
+/* =========================================================================
+   DASHBOARD API (action=dashboard)
+   ========================================================================= */
+
+if ($action === 'dashboard') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $company_id = (int)$company['id'];
+
+
+    // 1. Overall Summary / Metric Cards
+    // Total Sales & Payment Received
+    $salesRow = $ai_db->aiGetQueryObj("SELECT 
+        COALESCE(SUM(grand_total), 0) AS total_sales,
+        COALESCE(SUM(paid_amount), 0) AS total_sales_received,
+        COALESCE(SUM(cgst_amount), 0) AS total_sales_cgst,
+        COALESCE(SUM(sgst_amount), 0) AS total_sales_sgst,
+        COUNT(id) AS total_invoices
+        FROM tbl_invoice 
+        WHERE status = 'active' AND company_id = {$company_id}");
+
+    $totalSales         = !empty($salesRow) ? floatval($salesRow[0]->total_sales) : 0.00;
+    $totalSalesReceived = !empty($salesRow) ? floatval($salesRow[0]->total_sales_received) : 0.00;
+    $totalSalesPending  = max(0, $totalSales - $totalSalesReceived);
+    $totalInvoices      = !empty($salesRow) ? (int)$salesRow[0]->total_invoices : 0;
+
+    // Total Purchase & Payment Payable
+    $purRow = $ai_db->aiGetQueryObj("SELECT 
+        COALESCE(SUM(grand_total), 0) AS total_purchase,
+        COALESCE(SUM(paid_amount), 0) AS total_purchase_paid,
+        COALESCE(SUM(cgst_amount), 0) AS total_pur_cgst,
+        COALESCE(SUM(sgst_amount), 0) AS total_pur_sgst,
+        COUNT(id) AS total_purchases
+        FROM tbl_purchase 
+        WHERE status = 'active' AND company_id = {$company_id}");
+
+    $totalPurchase        = !empty($purRow) ? floatval($purRow[0]->total_purchase) : 0.00;
+    $totalPurchasePaid    = !empty($purRow) ? floatval($purRow[0]->total_purchase_paid) : 0.00;
+    $totalPurchasePayable = max(0, $totalPurchase - $totalPurchasePaid);
+    $totalPurchases       = !empty($purRow) ? (int)$purRow[0]->total_purchases : 0;
+
+    // 2. Customer Counts (Current Year customers for tbl_party where party_status = 'Sales' or general party)
+    $currentYear = date('Y');
+    $custRow = $ai_db->aiGetQueryObj("SELECT 
+        SUM(CASE WHEN YEAR(created_at) = '{$currentYear}' THEN 1 ELSE 0 END) AS current_year_customers
+        FROM tbl_party 
+        WHERE company_id = {$company_id} AND (party_status = 'Sales' OR party_status IS NULL OR party_status = '')");
+
+    $currentYearCustomers = !empty($custRow) ? (int)$custRow[0]->current_year_customers : 0;
+
+    // Suppliers Count (tbl_party where party_status = 'Purchase')
+    $suppRow = $ai_db->aiGetQueryObj("SELECT 
+        COUNT(id) AS total_suppliers,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_suppliers
+        FROM tbl_party 
+        WHERE company_id = {$company_id} AND party_status = 'Purchase'");
+
+    $totalSuppliers  = !empty($suppRow) ? (int)$suppRow[0]->total_suppliers : 0;
+    $activeSuppliers = !empty($suppRow) ? (int)$suppRow[0]->active_suppliers : 0;
+
+    // Total Parties Count (all parties of this company)
+    $partyTotalRow = $ai_db->aiGetQueryObj("SELECT COUNT(id) AS total_parties FROM tbl_party WHERE company_id = {$company_id}");
+    $totalParties = !empty($partyTotalRow) ? (int)$partyTotalRow[0]->total_parties : 0;
+
+    // 3. Product Counts & Low Stock Metrics
+    $prodRow = $ai_db->aiGetQueryObj("SELECT 
+        COUNT(id) AS total_products,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_products,
+        SUM(CASE WHEN (track_stock = 1 OR track_stock IS NULL) AND stock <= min_stock_alert THEN 1 ELSE 0 END) AS restock_needed_products,
+        SUM(CASE WHEN (track_stock = 1 OR track_stock IS NULL) AND stock > 0 AND stock <= min_stock_alert THEN 1 ELSE 0 END) AS low_stock_products,
+        SUM(CASE WHEN (track_stock = 1 OR track_stock IS NULL) AND stock <= 0 THEN 1 ELSE 0 END) AS out_of_stock_products,
+        COALESCE(SUM(stock), 0) AS total_stock_quantity
+        FROM tbl_product 
+        WHERE company_id = {$company_id}");
+
+    $totalProducts         = !empty($prodRow) ? (int)$prodRow[0]->total_products : 0;
+    $activeProducts        = !empty($prodRow) ? (int)$prodRow[0]->active_products : 0;
+    $lowStockProducts      = !empty($prodRow) ? (int)$prodRow[0]->low_stock_products : 0;
+    $outOfStockProducts    = !empty($prodRow) ? (int)$prodRow[0]->out_of_stock_products : 0;
+    $restockNeededProducts = !empty($prodRow) ? (int)$prodRow[0]->restock_needed_products : 0;
+    $totalStockQuantity    = !empty($prodRow) ? floatval($prodRow[0]->total_stock_quantity) : 0.00;
+
+    // 4. Sales & Purchase Outstanding Section (Filtered by sales/purchase dates or today's date by default)
+    $todayDate = date('Y-m-d');
+
+    // Sales specific date filter
+    $salesStartDateRaw = trim($input['sales_start_date'] ?? ($_GET['sales_start_date'] ?? ''));
+    $salesEndDateRaw   = trim($input['sales_end_date'] ?? ($_GET['sales_end_date'] ?? ''));
+
+    $filterSalesStartDate = !empty($salesStartDateRaw) ? date('Y-m-d', strtotime($salesStartDateRaw)) : $todayDate;
+    $filterSalesEndDate   = !empty($salesEndDateRaw) ? date('Y-m-d', strtotime($salesEndDateRaw)) : $todayDate;
+
+    // Purchase specific date filter
+    $purStartDateRaw = trim($input['purchase_start_date'] ?? ($_GET['purchase_start_date'] ?? ''));
+    $purEndDateRaw   = trim($input['purchase_end_date'] ?? ($_GET['purchase_end_date'] ?? ''));
+
+    $filterPurStartDate = !empty($purStartDateRaw) ? date('Y-m-d', strtotime($purStartDateRaw)) : $todayDate;
+    $filterPurEndDate   = !empty($purEndDateRaw) ? date('Y-m-d', strtotime($purEndDateRaw)) : $todayDate;
+
+    // Sales Outstanding query
+    $filteredInvRow = $ai_db->aiGetQueryObj("SELECT 
+        COALESCE(SUM(grand_total), 0) AS total_payment,
+        COALESCE(SUM(paid_amount), 0) AS total_received,
+        COALESCE(SUM(cgst_amount), 0) AS total_cgst,
+        COALESCE(SUM(sgst_amount), 0) AS total_sgst,
+        COUNT(id) AS total_invoices
+        FROM tbl_invoice 
+        WHERE status = 'active' AND company_id = {$company_id} 
+          AND invoice_date >= '{$filterSalesStartDate}' AND invoice_date <= '{$filterSalesEndDate}'");
+
+    $sTotPayment  = !empty($filteredInvRow) ? floatval($filteredInvRow[0]->total_payment) : 0.00;
+    $sTotReceived = !empty($filteredInvRow) ? floatval($filteredInvRow[0]->total_received) : 0.00;
+    $sTotPending  = max(0, $sTotPayment - $sTotReceived);
+    $sTotCgst     = !empty($filteredInvRow) ? floatval($filteredInvRow[0]->total_cgst) : 0.00;
+    $sTotSgst     = !empty($filteredInvRow) ? floatval($filteredInvRow[0]->total_sgst) : 0.00;
+
+    // Purchase Outstanding query
+    $filteredPurRow = $ai_db->aiGetQueryObj("SELECT 
+        COALESCE(SUM(grand_total), 0) AS total_payment,
+        COALESCE(SUM(paid_amount), 0) AS total_payable,
+        COALESCE(SUM(cgst_amount), 0) AS total_cgst,
+        COALESCE(SUM(sgst_amount), 0) AS total_sgst,
+        COUNT(id) AS total_purchases
+        FROM tbl_purchase 
+        WHERE status = 'active' AND company_id = {$company_id} 
+          AND purchase_date >= '{$filterPurStartDate}' AND purchase_date <= '{$filterPurEndDate}'");
+
+    $pTotPayment = !empty($filteredPurRow) ? floatval($filteredPurRow[0]->total_payment) : 0.00;
+    $pTotPayable = !empty($filteredPurRow) ? floatval($filteredPurRow[0]->total_payable) : 0.00;
+    $pTotPending = max(0, $pTotPayment - $pTotPayable);
+    $pTotCgst    = !empty($filteredPurRow) ? floatval($filteredPurRow[0]->total_cgst) : 0.00;
+    $pTotSgst    = !empty($filteredPurRow) ? floatval($filteredPurRow[0]->total_sgst) : 0.00;
+
+    $salesOutstanding = [
+        'title'                   => 'Sales Outstanding',
+        'sub_title'               => 'Customer Overview',
+        'from_date'               => $filterSalesStartDate,
+        'to_date'                 => $filterSalesEndDate,
+        'from_date_formatted'     => date('d/m/Y', strtotime($filterSalesStartDate)),
+        'to_date_formatted'       => date('d/m/Y', strtotime($filterSalesEndDate)),
+        'range_text'              => 'From Date :- ' . date('d/m/Y', strtotime($filterSalesStartDate)) . ' To Date :- ' . date('d/m/Y', strtotime($filterSalesEndDate)),
+        'total_amount'            => round($sTotPayment, 2),
+        'total_amount_formatted'  => '₹' . number_format($sTotPayment, 2),
+        'total_received'          => round($sTotReceived, 2),
+        'total_received_formatted'=> '₹' . number_format($sTotReceived, 2),
+        'total_pending'           => round($sTotPending, 2),
+        'total_pending_formatted' => '₹' . number_format($sTotPending, 2),
+        'total_sgst'              => round($sTotSgst, 2),
+        'total_sgst_formatted'    => '₹' . number_format($sTotSgst, 2),
+        'total_cgst'              => round($sTotCgst, 2),
+        'total_cgst_formatted'    => '₹' . number_format($sTotCgst, 2),
+        'total_invoices'          => !empty($filteredInvRow) ? (int)$filteredInvRow[0]->total_invoices : 0
+    ];
+
+    $purchaseOutstanding = [
+        'title'                   => 'Purchase Outstanding',
+        'sub_title'               => 'Supplier Overview',
+        'from_date'               => $filterPurStartDate,
+        'to_date'                 => $filterPurEndDate,
+        'from_date_formatted'     => date('d/m/Y', strtotime($filterPurStartDate)),
+        'to_date_formatted'       => date('d/m/Y', strtotime($filterPurEndDate)),
+        'range_text'              => 'From Date :- ' . date('d/m/Y', strtotime($filterPurStartDate)) . ' To Date :- ' . date('d/m/Y', strtotime($filterPurEndDate)),
+        'total_bill'              => round($pTotPayment, 2),
+        'total_bill_formatted'    => '₹' . number_format($pTotPayment, 2),
+        'total_payable'           => round($pTotPayable, 2),
+        'total_payable_formatted' => '₹' . number_format($pTotPayable, 2),
+        'total_pending'           => round($pTotPending, 2),
+        'total_pending_formatted' => '₹' . number_format($pTotPending, 2),
+        'total_sgst'              => round($pTotSgst, 2),
+        'total_sgst_formatted'    => '₹' . number_format($pTotSgst, 2),
+        'total_cgst'              => round($pTotCgst, 2),
+        'total_cgst_formatted'    => '₹' . number_format($pTotCgst, 2),
+        'total_purchases'         => !empty($filteredPurRow) ? (int)$filteredPurRow[0]->total_purchases : 0
+    ];
+
+    apiResponse(200, 'Dashboard data retrieved successfully.', [
+        'company_id'   => $company_id,
+        'company_name' => $company['company_name'] ?? '',
+
+        // Metrics (Overview)
+        'metrics' => [
+            'total_sales' => [
+                'amount'           => round($totalSales, 2),
+                'amount_formatted' => '₹' . number_format($totalSales, 2),
+                'label'            => 'Total Sales',
+                'sub_label'        => 'All Invoices'
+            ],
+            'total_purchase' => [
+                'amount'           => round($totalPurchase, 2),
+                'amount_formatted' => '₹' . number_format($totalPurchase, 2),
+                'label'            => 'Total Purchase',
+                'sub_label'        => 'All Bills'
+            ],
+            'payment_received' => [
+                'amount'           => round($totalSalesReceived, 2),
+                'amount_formatted' => '₹' . number_format($totalSalesReceived, 2),
+                'label'            => 'Payment Received',
+                'sub_label'        => 'From Customers'
+            ],
+            'payment_payable' => [
+                'amount'           => round($totalPurchasePayable, 2),
+                'amount_formatted' => '₹' . number_format($totalPurchasePayable, 2),
+                'label'            => 'Payment Payable',
+                'sub_label'        => 'To Suppliers'
+            ],
+            'sales_pending' => [
+                'amount'           => round($totalSalesPending, 2),
+                'amount_formatted' => '₹' . number_format($totalSalesPending, 2),
+                'label'            => 'Sales Pending'
+            ],
+            'total_customers' => [
+                'count' => $currentYearCustomers,
+                'label' => '+12 month'
+            ],
+            'total_products' => [
+                'count'                  => $totalProducts,
+                'active_count'           => $activeProducts,
+                'low_stock_count'        => $lowStockProducts,
+                'out_of_stock_count'     => $outOfStockProducts,
+                'restock_needed_count'   => $restockNeededProducts,
+                'stock_quantity'         => round($totalStockQuantity, 2),
+                'label'                  => 'Total Products'
+            ]
+        ],
+
+        'sales_outstanding'    => $salesOutstanding,
+        'purchase_outstanding' => $purchaseOutstanding
     ]);
 }
 

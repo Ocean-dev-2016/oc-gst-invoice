@@ -942,7 +942,7 @@ function restorePurchaseProductStock($purchaseId) {
 }
 
 /**
- * Auto Generate Purchase Bill No (Prefixed with PUR, e.g. PUR/001/26-27)
+ * Auto Generate Purchase Bill No company wise (Always prefixed with PUR, e.g. PUR/001/26-27)
  */
 function generateCompanyPurchaseNo($ai_db, $company_id = 0) {
     $currentYear = date('y');
@@ -950,17 +950,29 @@ function generateCompanyPurchaseNo($ai_db, $company_id = 0) {
     $fy = $currentYear . '-' . $nextYear;
     
     $prefix = 'PUR';
+    $company_id = intval($company_id);
     
-    $maxRow = $ai_db->aiGetQueryObj("SELECT purchase_no FROM tbl_purchase ORDER BY id DESC LIMIT 1");
+    $whereCompany = ($company_id > 0) ? " WHERE company_id='{$company_id}'" : "";
+    $maxRow = $ai_db->aiGetQueryObj("SELECT purchase_no FROM tbl_purchase{$whereCompany} ORDER BY id DESC LIMIT 1");
     $nextNum = 1;
     if (!empty($maxRow)) {
         $pNo = $maxRow[0]->purchase_no;
         if (preg_match('~/(\d+)/~', $pNo, $matches)) {
             $nextNum = intval($matches[1]) + 1;
         } else {
-            $nextNum = count($ai_db->aiGetQueryObj("SELECT id FROM tbl_purchase")) + 1;
+            $countRow = $ai_db->aiGetQueryObj("SELECT COUNT(id) AS total_cnt FROM tbl_purchase{$whereCompany}");
+            $nextNum = (!empty($countRow) ? intval($countRow[0]->total_cnt) : 0) + 1;
         }
     }
     
     return $prefix . '/' . str_pad($nextNum, 3, '0', STR_PAD_LEFT) . '/' . $fy;
+}
+
+/**
+ * Common Alias: generatePurchaseNo
+ */
+if (!function_exists('generatePurchaseNo')) {
+    function generatePurchaseNo($ai_db, $company_id = 0) {
+        return generateCompanyPurchaseNo($ai_db, $company_id);
+    }
 }
