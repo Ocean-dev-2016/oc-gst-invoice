@@ -60,6 +60,8 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
         $err_msg = "Company Name is required!";
     } elseif ($gst_applicable === 1 && empty($gst_no)) {
         $err_msg = "GST Number is required when GST is Applicable!";
+    } elseif ($gst_applicable === 1 && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } elseif (!empty($pincode) && !preg_match('/^[0-9]{6}$/', $pincode)) {
         $err_msg = "Pincode must be exactly 6 digits!";
     } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {
@@ -141,6 +143,8 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
         $err_msg = "Company Name is required!";
     } elseif ($gst_applicable === 1 && empty($gst_no)) {
         $err_msg = "GST Number is required when GST is Applicable!";
+    } elseif ($gst_applicable === 1 && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+        $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } elseif (!empty($pincode) && !preg_match('/^[0-9]{6}$/', $pincode)) {
         $err_msg = "Pincode must be exactly 6 digits!";
     } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {

@@ -76,6 +76,8 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
         $check_dup = $ai_db->aiGetQueryObj("SELECT id FROM $table WHERE company_id='" . $company_id . "' AND LOWER(party_name)='" . strtolower($party_name) . "' LIMIT 1");
         if (!empty($check_dup)) {
             $err_msg = "Party Name '$party_name' already exists for the selected Company!";
+        } elseif (!empty($gst_no) && !empty($ai_db->aiGetQueryObj("SELECT id FROM $table WHERE company_id='" . $company_id . "' AND LOWER(gst_no)='" . strtolower($gst_no) . "' LIMIT 1"))) {
+            $err_msg = "GST Number '$gst_no' already exists for another party in this Company!";
         } else {
             $add_qry = "INSERT INTO $table SET 
                 company_id='" . $company_id . "',
@@ -158,6 +160,8 @@ if ($mode === 'edit' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['
         $check_dup = $ai_db->aiGetQueryObj("SELECT id FROM $table WHERE company_id='" . $company_id . "' AND LOWER(party_name)='" . strtolower($party_name) . "' AND id!='" . intval($id) . "' LIMIT 1");
         if (!empty($check_dup)) {
             $err_msg = "Party Name '$party_name' already exists for the selected Company!";
+        } elseif (!empty($gst_no) && !empty($ai_db->aiGetQueryObj("SELECT id FROM $table WHERE company_id='" . $company_id . "' AND LOWER(gst_no)='" . strtolower($gst_no) . "' AND id!='" . intval($id) . "' LIMIT 1"))) {
+            $err_msg = "GST Number '$gst_no' already exists for another party in this Company!";
         } else {
             $edit_qry = "UPDATE $table SET 
                 company_id='" . $company_id . "',
