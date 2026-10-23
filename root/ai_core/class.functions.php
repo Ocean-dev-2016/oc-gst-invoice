@@ -976,3 +976,82 @@ if (!function_exists('generatePurchaseNo')) {
         return generateCompanyPurchaseNo($ai_db, $company_id);
     }
 }
+
+/**
+ * Common Payment Modes Master
+ * 1 => Cash, 2 => Bank, 3 => UPI, 4 => Cheque, 5 => Other
+ */
+if (!function_exists('getPaymentModes')) {
+    function getPaymentModes() {
+        return [
+            1 => 'Cash',
+            2 => 'Bank',
+            3 => 'UPI',
+            4 => 'Cheque',
+            5 => 'Other'
+        ];
+    }
+}
+
+/**
+ * Get Payment Mode Name by ID or Value
+ */
+if (!function_exists('getPaymentModeName')) {
+    function getPaymentModeName($modeIdOrName) {
+        $modes = getPaymentModes();
+        if (is_numeric($modeIdOrName)) {
+            $id = intval($modeIdOrName);
+            return $modes[$id] ?? 'Cash';
+        }
+        $val = trim((string)$modeIdOrName);
+        if (empty($val)) return 'Cash';
+        // If string matches key
+        foreach ($modes as $id => $name) {
+            if (strcasecmp($val, $name) === 0) {
+                return $name;
+            }
+        }
+        // Match common string variations
+        if (stripos($val, 'bank') !== false) return 'Bank';
+        if (stripos($val, 'upi') !== false) return 'UPI';
+        if (stripos($val, 'cheque') !== false) return 'Cheque';
+        if (stripos($val, 'cash') !== false) return 'Cash';
+        return $val ?: 'Cash';
+    }
+}
+
+/**
+ * Get Payment Mode ID from input (ID or Name)
+ */
+if (!function_exists('getPaymentModeId')) {
+    function getPaymentModeId($modeInput) {
+        if (is_numeric($modeInput) && intval($modeInput) > 0) {
+            $id = intval($modeInput);
+            $modes = getPaymentModes();
+            return isset($modes[$id]) ? $id : 1;
+        }
+        $val = trim((string)$modeInput);
+        if (empty($val)) return 1;
+        if (stripos($val, 'bank') !== false) return 2;
+        if (stripos($val, 'upi') !== false) return 3;
+        if (stripos($val, 'cheque') !== false) return 4;
+        if (stripos($val, 'other') !== false) return 5;
+        return 1; // default Cash
+    }
+}
+
+/**
+ * Render Payment Mode HTML <option> tags
+ */
+if (!function_exists('renderPaymentModeOptions')) {
+    function renderPaymentModeOptions($selected = 1) {
+        $modes = getPaymentModes();
+        $selectedId = getPaymentModeId($selected);
+        $html = '';
+        foreach ($modes as $id => $name) {
+            $selAttr = ($selectedId === $id) ? 'selected' : '';
+            $html .= '<option value="' . $id . '" ' . $selAttr . '>' . htmlspecialchars($name) . '</option>' . "\n";
+        }
+        return $html;
+    }
+}

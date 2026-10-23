@@ -13,6 +13,14 @@ function apiResponse($status, $message, $data = [])
     exit;
 }
 
+/**
+ * Format currency without decimal points (e.g. ₹4,990)
+ */
+function formatCurrency($amount)
+{
+    return '₹' . number_format((float)$amount, 0);
+}
+
 function validatePasswordPolicy($password)
 {
     if (empty($password)) {
@@ -2847,6 +2855,20 @@ if ($action === 'invoice-list') {
     $partyId = (int)($input['party_id'] ?? ($_GET['party_id'] ?? 0));
     $partyCond = ($partyId > 0) ? " AND q.party_id = {$partyId}" : "";
 
+    // Date range filter (from_date / to_date or start_date / end_date)
+    $fromDate = trim($_GET['from_date'] ?? '');
+    $toDate = trim($_GET['to_date'] ?? '');
+
+    $dateCond = "";
+    if ($fromDate !== '') {
+        $sDate = date('Y-m-d', strtotime($fromDate));
+        $dateCond .= " AND q.invoice_date >= '{$sDate}'";
+    }
+    if ($toDate !== '') {
+        $eDate = date('Y-m-d', strtotime($toDate));
+        $dateCond .= " AND q.invoice_date <= '{$eDate}'";
+    }
+
     $search = trim($input['search'] ?? ($_GET['search'] ?? ''));
     $searchCond = "";
     if ($search !== '') {
@@ -2863,22 +2885,37 @@ if ($action === 'invoice-list') {
                    LEFT JOIN tbl_party p ON q.party_id = p.id
                    LEFT JOIN tbl_state s ON q.state_id = s.id
                    LEFT JOIN tbl_city ct ON q.city_id = ct.id
-                   WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$searchCond}
+                   WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$dateCond} {$searchCond}
                    {$orderBy}";
     $invoices = $ai_db->aiGetQueryObj($invoiceQry);
+
+    $summaryDateCond = "";
+    if ($fromDate !== '') {
+        $sDate = date('Y-m-d', strtotime($fromDate));
+        $summaryDateCond .= " AND invoice_date >= '{$sDate}'";
+    }
+    if ($toDate !== '') {
+        $eDate = date('Y-m-d', strtotime($toDate));
+        $summaryDateCond .= " AND invoice_date <= '{$eDate}'";
+    }
 
     $summaryQry = "SELECT 
                         COUNT(id) AS total_count,
                         COUNT(CASE WHEN payment_status = 'Paid' THEN 1 END) AS paid_count,
-                        COUNT(CASE WHEN payment_status != 'Paid' THEN 1 END) AS unpaid_count
+                        COUNT(CASE WHEN payment_status != 'Paid' THEN 1 END) AS unpaid_count,
+                        COALESCE(SUM(grand_total), 0) AS total_invoice_amount,
+                        COALESCE(SUM(paid_amount), 0) AS paid_invoice_amount
                    FROM tbl_invoice
-                   WHERE company_id = {$cId}";
+                   WHERE company_id = {$cId} AND status = 'active' {$summaryDateCond}";
     $sumRes = $ai_db->aiGetQueryObj($summaryQry);
     $m = !empty($sumRes) ? $sumRes[0] : null;
 
     $statTotalCount = (int)($m->total_count ?? 0);
     $statPaidCount = (int)($m->paid_count ?? 0);
     $statUnpaidCount = (int)($m->unpaid_count ?? 0);
+    $totInvoiceAmount = (float)($m->total_invoice_amount ?? 0);
+    $paidInvoiceAmount = (float)($m->paid_invoice_amount ?? 0);
+    $pendingInvoiceAmount = max(0, $totInvoiceAmount - $paidInvoiceAmount);
 
     $includeItems = !empty($input['include_items']) || !empty($_GET['include_items']);
 
@@ -2962,18 +2999,18 @@ if ($action === 'invoice-list') {
                 'due_date'               => $row->due_date ?? null,
                 'due_date_formatted'     => !empty($row->due_date) ? date('d-m-Y', strtotime($row->due_date)) : '',
                 'taxable_amount'         => $totalTaxable,
-                'taxable_formatted'      => '₹' . number_format($totalTaxable, 2),
+                'taxable_formatted'      => formatCurrency($totalTaxable),
                 'cgst_amount'            => $cgst,
                 'sgst_amount'            => $sgst,
                 'igst_amount'            => $igst,
                 'tax_amount'             => $taxAmount,
-                'tax_amount_formatted'   => '₹' . number_format($taxAmount, 2),
+                'tax_amount_formatted'   => formatCurrency($taxAmount),
                 'grand_total'            => $grandTotal,
-                'grand_total_formatted'  => '₹' . number_format($grandTotal, 2),
+                'grand_total_formatted'  => formatCurrency($grandTotal),
                 'paid_amount'            => $paidAmt,
-                'paid_amount_formatted'  => '₹' . number_format($paidAmt, 2),
+                'paid_amount_formatted'  => formatCurrency($paidAmt),
                 'pending_amount'         => $pendingAmt,
-                'pending_amount_formatted' => '₹' . number_format($pendingAmt, 2),
+                'pending_amount_formatted' => formatCurrency($pendingAmt),
                 'payment_status'         => $payStatus,
                 'status'                 => $row->status ?? 'active',
                 'is_overdue'             => ($payStatus !== 'Paid' && !empty($row->due_date) && $row->due_date < $todayDate),
@@ -2992,13 +3029,19 @@ if ($action === 'invoice-list') {
     }
 
     apiResponse(200, 'Invoice list retrieved successfully.', [
-        'company_id'      => $cId,
-        'company_name'    => $company['company_name'] ?? '',
-        'total'           => count($list),
-        'total_invoices'  => $statTotalCount,
-        'paid_invoices'   => $statPaidCount,
-        'unpaid_invoices' => $statUnpaidCount,
-        'invoices'        => $list
+        'company_id'                   => $cId,
+        'company_name'                 => $company['company_name'] ?? '',
+        'total'                        => count($list),
+        'total_invoices'               => $statTotalCount,
+        'paid_invoices'                => $statPaidCount,
+        'unpaid_invoices'              => $statUnpaidCount,
+        'total_invoice_amount'         => $totInvoiceAmount,
+        'total_invoice_amount_formatted' => formatCurrency($totInvoiceAmount),
+        'paid_invoice_amount'          => $paidInvoiceAmount,
+        'paid_invoice_amount_formatted'=> formatCurrency($paidInvoiceAmount),
+        'pending_invoice_amount'       => $pendingInvoiceAmount,
+        'pending_invoice_amount_formatted' => formatCurrency($pendingInvoiceAmount),
+        'invoices'                     => $list
     ]);
 }
 
@@ -3379,12 +3422,13 @@ if ($action === 'invoice-edit') {
     if (!empty($paymentRows)) {
         foreach ($paymentRows as $pRow) {
             $paymentsList[] = [
-                'id'           => (int)$pRow->id,
-                'amount'       => (float)$pRow->amount,
-                'payment_date' => $pRow->payment_date,
-                'payment_mode' => $pRow->payment_mode,
-                'reference_no' => $pRow->reference_no,
-                'notes'        => $pRow->notes
+                'id'              => (int)$pRow->id,
+                'amount'          => (float)$pRow->amount,
+                'payment_date'    => $pRow->payment_date,
+                'payment_mode_id' => (int)(function_exists('getPaymentModeId') ? getPaymentModeId($pRow->payment_mode) : $pRow->payment_mode),
+                'payment_mode'    => function_exists('getPaymentModeName') ? getPaymentModeName($pRow->payment_mode) : $pRow->payment_mode,
+                'reference_no'    => $pRow->reference_no,
+                'notes'           => $pRow->notes
             ];
         }
     }
@@ -3411,18 +3455,18 @@ if ($action === 'invoice-edit') {
         'due_date'               => $q->due_date ?? null,
         'due_date_formatted'     => !empty($q->due_date) ? date('d-m-Y', strtotime($q->due_date)) : '',
         'taxable_amount'         => $totalTaxable,
-        'taxable_formatted'      => '₹' . number_format($totalTaxable, 2),
+        'taxable_formatted'      => formatCurrency($totalTaxable),
         'cgst_amount'            => $cgst,
         'sgst_amount'            => $sgst,
         'igst_amount'            => $igst,
         'tax_amount'             => $taxAmount,
-        'tax_amount_formatted'   => '₹' . number_format($taxAmount, 2),
+        'tax_amount_formatted'   => formatCurrency($taxAmount),
         'grand_total'            => $grandTotal,
-        'grand_total_formatted'  => '₹' . number_format($grandTotal, 2),
+        'grand_total_formatted'  => formatCurrency($grandTotal),
         'paid_amount'            => $paidAmt,
-        'paid_amount_formatted'  => '₹' . number_format($paidAmt, 2),
+        'paid_amount_formatted'  => formatCurrency($paidAmt),
         'pending_amount'         => $pendingAmt,
-        'pending_amount_formatted' => '₹' . number_format($pendingAmt, 2),
+        'pending_amount_formatted' => formatCurrency($pendingAmt),
         'payment_status'         => $payStatus,
         'status'                 => $q->status ?? 'active',
         'is_overdue'             => ($payStatus !== 'Paid' && !empty($q->due_date) && $q->due_date < $todayDate),
@@ -3870,6 +3914,19 @@ if ($action === 'purchase-list') {
     $partyId = (int)($input['party_id'] ?? ($_GET['party_id'] ?? 0));
     $partyCond = ($partyId > 0) ? " AND q.party_id = {$partyId}" : "";
 
+    // Date range filter (from_date / to_date or start_date / end_date)
+    $fromDate = trim($_GET['from_date'] ?? '');
+    $toDate = trim($_GET['to_date'] ?? '');
+    $dateCond = "";
+    if ($fromDate !== '') {
+        $sDate = date('Y-m-d', strtotime($fromDate));
+        $dateCond .= " AND q.purchase_date >= '{$sDate}'";
+    }
+    if ($toDate !== '') {
+        $eDate = date('Y-m-d', strtotime($toDate));
+        $dateCond .= " AND q.purchase_date <= '{$eDate}'";
+    }
+
     $search = trim($input['search'] ?? ($_GET['search'] ?? ''));
     $searchCond = "";
     if ($search !== '') {
@@ -3886,22 +3943,37 @@ if ($action === 'purchase-list') {
                     LEFT JOIN tbl_party p ON q.party_id = p.id
                     LEFT JOIN tbl_state s ON q.state_id = s.id
                     LEFT JOIN tbl_city ct ON q.city_id = ct.id
-                    WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$searchCond}
+                    WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$dateCond} {$searchCond}
                     {$orderBy}";
     $purchases = $ai_db->aiGetQueryObj($purchaseQry);
+
+    $summaryDateCond = "";
+    if ($fromDate !== '') {
+        $sDate = date('Y-m-d', strtotime($fromDate));
+        $summaryDateCond .= " AND purchase_date >= '{$sDate}'";
+    }
+    if ($toDate !== '') {
+        $eDate = date('Y-m-d', strtotime($toDate));
+        $summaryDateCond .= " AND purchase_date <= '{$eDate}'";
+    }
 
     $summaryQry = "SELECT 
                         COUNT(id) AS total_count,
                         COUNT(CASE WHEN payment_status = 'Paid' THEN 1 END) AS paid_count,
-                        COUNT(CASE WHEN payment_status != 'Paid' THEN 1 END) AS unpaid_count
+                        COUNT(CASE WHEN payment_status != 'Paid' THEN 1 END) AS unpaid_count,
+                        COALESCE(SUM(grand_total), 0) AS total_purchase_amount,
+                        COALESCE(SUM(paid_amount), 0) AS paid_purchase_amount
                    FROM tbl_purchase
-                   WHERE company_id = {$cId}";
+                   WHERE company_id = {$cId} AND status = 'active' {$summaryDateCond}";
     $sumRes = $ai_db->aiGetQueryObj($summaryQry);
     $m = !empty($sumRes) ? $sumRes[0] : null;
 
     $statTotalCount = (int)($m->total_count ?? 0);
     $statPaidCount = (int)($m->paid_count ?? 0);
     $statUnpaidCount = (int)($m->unpaid_count ?? 0);
+    $totPurchaseAmount = (float)($m->total_purchase_amount ?? 0);
+    $paidPurchaseAmount = (float)($m->paid_purchase_amount ?? 0);
+    $pendingPurchaseAmount = max(0, $totPurchaseAmount - $paidPurchaseAmount);
 
     $includeItems = !empty($input['include_items']) || !empty($_GET['include_items']);
 
@@ -3984,18 +4056,18 @@ if ($action === 'purchase-list') {
                 'due_date'                => $row->due_date ?? null,
                 'due_date_formatted'      => !empty($row->due_date) ? date('d-m-Y', strtotime($row->due_date)) : '',
                 'taxable_amount'          => $totalTaxable,
-                'taxable_formatted'       => '₹' . number_format($totalTaxable, 2),
+                'taxable_formatted'       => formatCurrency($totalTaxable),
                 'cgst_amount'             => $cgst,
                 'sgst_amount'             => $sgst,
                 'igst_amount'             => $igst,
                 'tax_amount'              => $taxAmount,
-                'tax_amount_formatted'    => '₹' . number_format($taxAmount, 2),
+                'tax_amount_formatted'    => formatCurrency($taxAmount),
                 'grand_total'             => $grandTotal,
-                'grand_total_formatted'   => '₹' . number_format($grandTotal, 2),
+                'grand_total_formatted'   => formatCurrency($grandTotal),
                 'paid_amount'             => $paidAmt,
-                'paid_amount_formatted'   => '₹' . number_format($paidAmt, 2),
+                'paid_amount_formatted'   => formatCurrency($paidAmt),
                 'pending_amount'          => $pendingAmt,
-                'pending_amount_formatted'=> '₹' . number_format($pendingAmt, 2),
+                'pending_amount_formatted'=> formatCurrency($pendingAmt),
                 'payment_status'          => $payStatus,
                 'status'                  => $row->status ?? 'active',
                 'is_overdue'              => ($payStatus !== 'Paid' && !empty($row->due_date) && $row->due_date < $todayDate),
@@ -4014,13 +4086,19 @@ if ($action === 'purchase-list') {
     }
 
     apiResponse(200, 'Purchase list retrieved successfully.', [
-        'company_id'      => $cId,
-        'company_name'    => $company['company_name'] ?? '',
-        'total'           => count($list),
-        'total_purchases' => $statTotalCount,
-        'paid_purchases'  => $statPaidCount,
-        'unpaid_purchases'=> $statUnpaidCount,
-        'purchases'       => $list
+        'company_id'                     => $cId,
+        'company_name'                   => $company['company_name'] ?? '',
+        'total'                          => count($list),
+        'total_purchases'                => $statTotalCount,
+        'paid_purchases'                 => $statPaidCount,
+        'unpaid_purchases'               => $statUnpaidCount,
+        'total_purchase_amount'          => $totPurchaseAmount,
+        'total_purchase_amount_formatted'=> formatCurrency($totPurchaseAmount),
+        'paid_purchase_amount'           => $paidPurchaseAmount,
+        'paid_purchase_amount_formatted' => formatCurrency($paidPurchaseAmount),
+        'pending_purchase_amount'        => $pendingPurchaseAmount,
+        'pending_purchase_amount_formatted' => formatCurrency($pendingPurchaseAmount),
+        'purchases'                      => $list
     ]);
 }
 
@@ -4371,12 +4449,13 @@ if ($action === 'purchase-edit') {
     if (!empty($paymentRows)) {
         foreach ($paymentRows as $pRow) {
             $paymentsList[] = [
-                'id'           => (int)$pRow->id,
-                'amount'       => (float)$pRow->amount,
-                'payment_date' => $pRow->payment_date,
-                'payment_mode' => $pRow->payment_mode,
-                'reference_no' => $pRow->reference_no,
-                'notes'        => $pRow->notes
+                'id'              => (int)$pRow->id,
+                'amount'          => (float)$pRow->amount,
+                'payment_date'    => $pRow->payment_date,
+                'payment_mode_id' => (int)(function_exists('getPaymentModeId') ? getPaymentModeId($pRow->payment_mode) : $pRow->payment_mode),
+                'payment_mode'    => function_exists('getPaymentModeName') ? getPaymentModeName($pRow->payment_mode) : $pRow->payment_mode,
+                'reference_no'    => $pRow->reference_no,
+                'notes'           => $pRow->notes
             ];
         }
     }
@@ -4842,7 +4921,7 @@ if ($action === 'ledger') {
 
         // 2. Purchase Payments
         $payments = $ai_db->aiGetQueryObj("SELECT id, reference_no AS ref_no, payment_date AS tx_date, 
-            amount AS debit_or_credit, CONCAT('Payment (', payment_mode, ')') AS tx_type, notes 
+            amount AS debit_or_credit, payment_mode, notes 
             FROM tbl_purchase_payments 
             WHERE party_id = {$partyId} AND company_id = {$company_id} {$dateWherePayment}");
 
@@ -4865,10 +4944,11 @@ if ($action === 'ledger') {
         if (!empty($payments)) {
             foreach ($payments as $pay) {
                 $amt = floatval($pay->debit_or_credit);
+                $pModeLabel = function_exists('getPaymentModeName') ? getPaymentModeName($pay->payment_mode) : $pay->payment_mode;
                 $rawList[] = [
                     'id'         => (int)$pay->id,
                     'date'       => $pay->tx_date,
-                    'type'       => $pay->tx_type,
+                    'type'       => 'Payment (' . $pModeLabel . ')',
                     'ref_no'     => !empty($pay->ref_no) ? $pay->ref_no : ('PAY-' . $pay->id),
                     'debit'      => $amt,
                     'credit'     => 0.00,
@@ -4932,7 +5012,7 @@ if ($action === 'ledger') {
 
         // 2. Payments (Credit / payment received from customer)
         $payments = $ai_db->aiGetQueryObj("SELECT id, reference_no AS ref_no, payment_date AS tx_date, 
-            amount, CONCAT('Receipt (', payment_mode, ')') AS tx_type, notes 
+            amount, payment_mode, notes 
             FROM tbl_invoice_payments 
             WHERE party_id = {$partyId} AND company_id = {$company_id} {$dateWherePayment}");
 
@@ -4955,10 +5035,11 @@ if ($action === 'ledger') {
         if (!empty($payments)) {
             foreach ($payments as $pay) {
                 $amt = floatval($pay->amount);
+                $pModeLabel = function_exists('getPaymentModeName') ? getPaymentModeName($pay->payment_mode) : $pay->payment_mode;
                 $rawList[] = [
                     'id'         => (int)$pay->id,
                     'date'       => $pay->tx_date,
-                    'type'       => $pay->tx_type,
+                    'type'       => 'Receipt (' . $pModeLabel . ')',
                     'ref_no'     => !empty($pay->ref_no) ? $pay->ref_no : ('REC-' . $pay->id),
                     'debit'      => 0.00,
                     'credit'     => $amt,

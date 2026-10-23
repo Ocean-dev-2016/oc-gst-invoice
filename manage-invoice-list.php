@@ -78,7 +78,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'record_payment') {
     $invoiceId = intval($_POST['invoice_id'] ?? 0);
     $payAmount = floatval($_POST['amount'] ?? 0);
     $payDate = !empty($_POST['payment_date']) ? date('Y-m-d', strtotime($_POST['payment_date'])) : date('Y-m-d');
-    $payMode = addslashes(trim($_POST['payment_mode'] ?? 'Cash'));
+    $payMode = function_exists('getPaymentModeId') ? getPaymentModeId($_POST['payment_mode'] ?? 1) : addslashes(trim($_POST['payment_mode'] ?? '1'));
     $refNo = addslashes(trim($_POST['reference_no'] ?? ''));
     $notes = addslashes(trim($_POST['notes'] ?? ''));
 
@@ -175,6 +175,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_payment_history') {
     $dueAmt = max(0.0, $gTotal - $pTotal);
 
     $history = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_payments WHERE invoice_id='$invoiceId' ORDER BY payment_date DESC, id DESC");
+    if (!empty($history)) {
+        foreach ($history as $h) {
+            $h->payment_mode_id = $h->payment_mode;
+            $h->payment_mode = function_exists('getPaymentModeName') ? getPaymentModeName($h->payment_mode) : $h->payment_mode;
+        }
+    }
 
     echo json_encode([
         'status' => true,
@@ -589,8 +595,14 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
 
                         <!-- Payment Fields -->
                         <div class="mb-3">
-                            <label class="form-label fw-bold small text-uppercase text-muted">Payment Amount (₹) <span class="badge bg-label-info ms-1">Full Due Amount</span></label>
-                            <input type="number" step="0.01" min="0.01" name="amount" id="modal_amount" class="form-control form-control-lg fw-bold text-success bg-light" placeholder="0.00" readonly required>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label fw-bold small text-uppercase text-muted mb-0">Payment Amount (₹) <span class="text-danger">*</span></label>
+                                <button type="button" class="btn btn-xs btn-label-primary waves-effect" id="btnFillFullInvoiceDue" style="font-size:11px; padding: 1px 6px;">
+                                    Fill Full Due
+                                </button>
+                            </div>
+                            <input type="number" step="0.01" min="0.01" name="amount" id="modal_amount" class="form-control form-control-lg fw-bold text-success" placeholder="Enter amount to pay..." required>
+                            <small class="text-muted" style="font-size: 11.5px;">You can enter a partial amount or click "Fill Full Due".</small>
                         </div>
 
                         <div class="row g-2 mb-3">
@@ -601,11 +613,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                             <div class="col-sm-6">
                                 <label class="form-label fw-bold small text-uppercase text-muted">Payment Mode</label>
                                 <select name="payment_mode" id="modal_payment_mode" class="form-select">
-                                    <option value="Cash">Cash</option>
-                                    <option value="UPI / GPay / PhonePe">UPI / GPay / PhonePe</option>
-                                    <option value="Bank Transfer (NEFT/RTGS/IMPS)">Bank Transfer</option>
-                                    <option value="Cheque">Cheque</option>
-                                    <option value="Other">Other</option>
+                                    <?= function_exists('renderPaymentModeOptions') ? renderPaymentModeOptions(1) : '<option value="1">Cash</option><option value="2">Bank</option><option value="3">UPI</option>' ?>
                                 </select>
                             </div>
                         </div>
@@ -704,11 +712,23 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                 $('#modal_grand_total').text('₹' + total.toFixed(2));
                 $('#modal_already_paid').text('₹' + paid.toFixed(2));
                 $('#modal_due_amount').text('₹' + due.toFixed(2));
+                $('#modalRecordPayment').data('current-due', due);
                 $('#modal_amount').val(due > 0 ? due.toFixed(2) : '').attr('max', due > 0 ? (due * 2).toFixed(2) : '');
                 $('#modal_reference_no').val('');
                 $('#modal_notes').val('');
 
                 $('#modalRecordPayment').modal('show');
+                setTimeout(function() {
+                    $('#modal_amount').focus().select();
+                }, 400);
+            });
+
+            // Quick Fill Full Due Amount
+            $(document).on('click', '#btnFillFullInvoiceDue', function() {
+                var due = $('#modalRecordPayment').data('current-due') || 0;
+                if (due > 0) {
+                    $('#modal_amount').val(due.toFixed(2));
+                }
             });
 
             // Submit Record Payment Form
