@@ -396,14 +396,19 @@ if ($action === 'profile') {
         $safePincode       = mysqli_real_escape_string($ai_conn, $pincode);
         $safeAddress       = mysqli_real_escape_string($ai_conn, $address);
 
-        $dupQry = "SELECT id, email, mobile_no, username FROM tbl_company 
-                   WHERE id != {$cId} AND (
-                       LOWER(email) = '" . strtolower($safeEmail) . "' 
-                       OR mobile_no = '{$safeMobile}' 
-                       " . (!empty($safeUname) ? "OR LOWER(username) = '" . strtolower($safeUname) . "'" : "") . "
-                   ) LIMIT 1";
+        $dupConds = [];
+        if (!empty($safeEmail)) $dupConds[] = "LOWER(email) = '" . strtolower($safeEmail) . "'";
+        if (!empty($safeMobile)) $dupConds[] = "mobile_no = '{$safeMobile}'";
+        if (!empty($safeUname)) $dupConds[] = "LOWER(username) = '" . strtolower($safeUname) . "'";
+        if (!empty($safeGst)) $dupConds[] = "LOWER(gst_no) = '" . strtolower($safeGst) . "'";
 
-        $dupRes = $ai_db->aiGetQueryObj($dupQry);
+        if (!empty($dupConds)) {
+            $dupQry = "SELECT id, email, mobile_no, username, gst_no FROM tbl_company 
+                       WHERE id != {$cId} AND (" . implode(" OR ", $dupConds) . ") LIMIT 1";
+            $dupRes = $ai_db->aiGetQueryObj($dupQry);
+        } else {
+            $dupRes = [];
+        }
         if (!empty($dupRes)) {
             $row = $dupRes[0];
             if (!empty($safeUname) && strtolower($row->username) === strtolower($username)) {
@@ -412,8 +417,8 @@ if ($action === 'profile') {
                 apiResponse(409, 'Email address is already in use by another company.');
             } elseif ($row->mobile_no === $mobile_no) {
                 apiResponse(409, 'Mobile number is already in use by another company.');
-            } elseif ($row->gst_no === $gst_no) {
-                apiResponse(409, 'GST number is already in use by another company.');
+            } elseif (!empty($gst_no) && !empty($row->gst_no) && strtolower($row->gst_no) === strtolower($gst_no)) {
+                apiResponse(409, "GST Number '{$gst_no}' is already in use by another company.");
             } else {
                 apiResponse(409, 'Another company with these details already exists.');
             }
@@ -812,9 +817,17 @@ if ($action === 'customer-add') {
     }
 
     $safePartyName = mysqli_real_escape_string($ai_conn, $party_name);
-    $checkDup = $ai_db->aiGetQueryObj("SELECT id FROM tbl_party WHERE company_id = {$company_id} AND LOWER(party_name) = '" . strtolower($safePartyName) . "' LIMIT 1");
+    $checkDup = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no FROM tbl_party WHERE company_id = {$company_id} AND LOWER(party_name) = '" . strtolower($safePartyName) . "' LIMIT 1");
     if (!empty($checkDup)) {
         apiResponse(409, "Customer Name '{$party_name}' already exists for your company.");
+    }
+
+    if (!empty($gst_no)) {
+        $safeGstCheck = mysqli_real_escape_string($ai_conn, $gst_no);
+        $checkGstDup = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no FROM tbl_party WHERE company_id = {$company_id} AND LOWER(gst_no) = '" . strtolower($safeGstCheck) . "' LIMIT 1");
+        if (!empty($checkGstDup)) {
+            apiResponse(409, "GST Number '{$gst_no}' already exists for another party in your company.");
+        }
     }
 
     $safeAddress        = mysqli_real_escape_string($ai_conn, $address);
@@ -1096,9 +1109,17 @@ if ($action === 'customer-update') {
     }
 
     $safePartyName = mysqli_real_escape_string($ai_conn, $party_name);
-    $checkDup = $ai_db->aiGetQueryObj("SELECT id FROM tbl_party WHERE company_id = {$company_id} AND LOWER(party_name) = '" . strtolower($safePartyName) . "' AND id != {$customerId} LIMIT 1");
+    $checkDup = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no FROM tbl_party WHERE company_id = {$company_id} AND LOWER(party_name) = '" . strtolower($safePartyName) . "' AND id != {$customerId} LIMIT 1");
     if (!empty($checkDup)) {
         apiResponse(409, "Customer Name '{$party_name}' already exists for your company.");
+    }
+
+    if (!empty($gst_no)) {
+        $safeGstCheck = mysqli_real_escape_string($ai_conn, $gst_no);
+        $checkGstDup = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no FROM tbl_party WHERE company_id = {$company_id} AND LOWER(gst_no) = '" . strtolower($safeGstCheck) . "' AND id != {$customerId} LIMIT 1");
+        if (!empty($checkGstDup)) {
+            apiResponse(409, "GST Number '{$gst_no}' already exists for another party in your company.");
+        }
     }
 
     $safeAddress        = mysqli_real_escape_string($ai_conn, $address);
