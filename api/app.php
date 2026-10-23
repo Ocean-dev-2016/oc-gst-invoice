@@ -3108,6 +3108,286 @@ if ($action === 'invoice-list') {
     ]);
 }
 
+if ($action === 'invoice-payment-details') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $companyId = (int)$company['id'];
+    $invoiceId = (int)($input['invoice_id'] ?? ($_GET['invoice_id'] ?? 0));
+
+    if ($invoiceId <= 0) {
+        apiResponse(400, 'Invoice ID is required.');
+    }
+
+    $invoiceRows = $ai_db->aiGetQueryObj("
+        SELECT id, invoice_no, party_name, grand_total, paid_amount, payment_status
+        FROM tbl_invoice
+        WHERE id = {$invoiceId} AND company_id = {$companyId}
+        LIMIT 1
+    ");
+    if (empty($invoiceRows)) {
+        apiResponse(404, 'Invoice not found.');
+    }
+
+    $invoice = $invoiceRows[0];
+    $paymentStatus = trim((string)($invoice->payment_status ?? 'Pending'));
+    if (strcasecmp($paymentStatus, 'Paid') === 0) {
+        apiResponse(404, 'Invoice payment details are no longer available because this invoice is paid.');
+    }
+
+    $grandTotal = (float)($invoice->grand_total ?? 0);
+    $paidAmount = (float)($invoice->paid_amount ?? 0);
+    $dueAmount = max(0, $grandTotal - $paidAmount);
+
+    apiResponse(200, 'Invoice payment details retrieved successfully.', [
+        'id'                    => (int)$invoice->id,
+        'invoice_no'            => $invoice->invoice_no ?? '',
+        'party_name'            => $invoice->party_name ?? '',
+        'grand_total'           => $grandTotal,
+        'grand_total_formatted' => '₹' . number_format($grandTotal, 2),
+        'paid_amount'           => $paidAmount,
+        'paid_amount_formatted' => '₹' . number_format($paidAmount, 2),
+        'due_amount'            => $dueAmount,
+        'due_amount_formatted'  => '₹' . number_format($dueAmount, 2),
+        'payment_status'        => $paymentStatus
+    ]);
+}
+
+if ($action === 'invoice-payment-history') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $companyId = (int)$company['id'];
+    $invoiceId = (int)($input['invoice_id'] ?? ($_GET['invoice_id'] ?? 0));
+
+    if ($invoiceId <= 0) {
+        apiResponse(400, 'Invoice ID is required.');
+    }
+
+    $invoiceRows = $ai_db->aiGetQueryObj("
+        SELECT id, invoice_no, party_name, grand_total, paid_amount, payment_status
+        FROM tbl_invoice
+        WHERE id = {$invoiceId} AND company_id = {$companyId}
+        LIMIT 1
+    ");
+    if (empty($invoiceRows)) {
+        apiResponse(404, 'Invoice not found.');
+    }
+
+    $invoice = $invoiceRows[0];
+    $paymentRows = $ai_db->aiGetQueryObj("
+        SELECT id, amount, payment_date, payment_mode, reference_no, notes
+        FROM tbl_invoice_payments
+        WHERE invoice_id = {$invoiceId} AND company_id = {$companyId}
+        ORDER BY payment_date DESC, id DESC
+    ");
+
+    $payments = [];
+    $historyPaidAmount = 0.0;
+    if (!empty($paymentRows)) {
+        foreach ($paymentRows as $index => $payment) {
+            $amount = (float)($payment->amount ?? 0);
+            $historyPaidAmount += $amount;
+            $paymentDate = $payment->payment_date ?? '';
+            $mode = $payment->payment_mode ?? '';
+
+            $payments[] = [
+                'number'                 => $index + 1,
+                'payment_id'             => (int)$payment->id,
+                'payment_date'           => $paymentDate,
+                'payment_date_formatted' => !empty($paymentDate) ? date('d/m/Y', strtotime($paymentDate)) : '',
+                'amount'                 => $amount,
+                'amount_formatted'       => '₹' . number_format($amount, 2),
+                'payment_mode_id'        => (int)(function_exists('getPaymentModeId') ? getPaymentModeId($mode) : $mode),
+                'payment_mode'           => function_exists('getPaymentModeName') ? getPaymentModeName($mode) : $mode,
+                'reference_no'           => $payment->reference_no ?? '',
+                'notes'                  => $payment->notes ?? ''
+            ];
+        }
+    }
+
+    $grandTotal = (float)($invoice->grand_total ?? 0);
+    $paidAmount = max((float)($invoice->paid_amount ?? 0), $historyPaidAmount);
+    $remainingDue = max(0, $grandTotal - $paidAmount);
+
+    apiResponse(200, 'Invoice payment history retrieved successfully.', [
+        'invoice_id'               => (int)$invoice->id,
+        'invoice_no'               => $invoice->invoice_no ?? '',
+        'party_name'               => $invoice->party_name ?? '',
+        'grand_total'              => $grandTotal,
+        'grand_total_formatted'    => '₹' . number_format($grandTotal, 2),
+        'paid_amount'              => $paidAmount,
+        'paid_amount_formatted'    => '₹' . number_format($paidAmount, 2),
+        'remaining_due'            => $remainingDue,
+        'remaining_due_formatted'  => '₹' . number_format($remainingDue, 2),
+        'payment_status'           => $invoice->payment_status ?? 'Pending',
+        'total_payments'           => count($payments),
+        'payments'                 => $payments
+    ]);
+}
+
+if ($action === 'invoice-payment') {
+    if ($method !== 'POST') {
+        apiResponse(405, 'Only POST method is allowed.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $companyId = (int)$company['id'];
+    $invoiceId = (int)($input['invoice_id'] ?? 0);
+    $amountInput = $input['amount'] ?? null;
+    $paymentDateInput = $input['payment_date'] ?? '';
+    $paymentModeInput = $input['payment_mode'] ?? 1;
+    $referenceNoInput = $input['reference_no'] ?? '';
+    $notesInput = $input['notes'] ?? '';
+
+    if ($invoiceId <= 0) {
+        apiResponse(400, 'Invoice ID is required.');
+    }
+    if (!is_numeric($amountInput) || !is_finite((float)$amountInput) || (float)$amountInput <= 0) {
+        apiResponse(400, 'Please enter a valid payment amount greater than 0.');
+    }
+    if (!is_scalar($paymentDateInput) || !is_scalar($paymentModeInput) || !is_scalar($referenceNoInput) || !is_scalar($notesInput)) {
+        apiResponse(400, 'Payment details must be valid scalar values.');
+    }
+
+    $paymentDate = trim((string)$paymentDateInput);
+    $referenceNo = trim((string)$referenceNoInput);
+    $notes = trim((string)$notesInput);
+    $paymentAmount = round((float)$amountInput, 2);
+    if ($paymentAmount <= 0) {
+        apiResponse(400, 'Please enter a valid payment amount greater than 0.');
+    }
+
+    $paymentDateObject = DateTime::createFromFormat('!Y-m-d', $paymentDate);
+    $dateErrors = DateTime::getLastErrors();
+    if (!$paymentDateObject || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0)) || $paymentDateObject->format('Y-m-d') !== $paymentDate) {
+        apiResponse(400, 'Please provide a valid payment_date in YYYY-MM-DD format.');
+    }
+
+    $paymentModes = function_exists('getPaymentModes') ? getPaymentModes() : [1 => 'Cash', 2 => 'Bank', 3 => 'UPI', 4 => 'Cheque', 5 => 'Other'];
+    if (is_numeric($paymentModeInput)) {
+        $paymentModeId = (int)$paymentModeInput;
+    } else {
+        $paymentModeId = 0;
+        foreach ($paymentModes as $modeId => $modeName) {
+            if (strcasecmp(trim((string)$paymentModeInput), (string)$modeName) === 0) {
+                $paymentModeId = (int)$modeId;
+                break;
+            }
+        }
+    }
+    if (!isset($paymentModes[$paymentModeId])) {
+        apiResponse(400, 'Please provide a valid payment_mode.');
+    }
+
+    if (!mysqli_begin_transaction($ai_conn)) {
+        apiResponse(500, 'Could not start payment transaction.');
+    }
+
+    $invoiceRows = $ai_db->aiGetQueryObj("
+        SELECT id, party_id, company_id, invoice_no, party_name, status, grand_total, paid_amount, payment_status
+        FROM tbl_invoice
+        WHERE id = {$invoiceId} AND company_id = {$companyId}
+        LIMIT 1
+        FOR UPDATE
+    ");
+    if (empty($invoiceRows)) {
+        mysqli_rollback($ai_conn);
+        apiResponse(404, 'Invoice not found.');
+    }
+
+    $invoice = $invoiceRows[0];
+    if (strtolower(trim((string)($invoice->status ?? ''))) !== 'active') {
+        mysqli_rollback($ai_conn);
+        apiResponse(400, 'Cannot record payment for a deactive invoice.');
+    }
+
+    $partyId = (int)($invoice->party_id ?? 0);
+    $grandTotal = (float)($invoice->grand_total ?? 0);
+    if (strcasecmp(trim((string)($invoice->payment_status ?? '')), 'Paid') === 0) {
+        mysqli_rollback($ai_conn);
+        apiResponse(400, 'This invoice is already paid. No further payments can be recorded.');
+    }
+
+    $ledgerPaidRows = $ai_db->aiGetQueryObj("
+        SELECT COALESCE(SUM(amount), 0) AS total_paid
+        FROM tbl_invoice_payments
+        WHERE invoice_id = {$invoiceId} AND company_id = {$companyId}
+    ");
+    if (empty($ledgerPaidRows)) {
+        mysqli_rollback($ai_conn);
+        apiResponse(500, 'Could not verify the current invoice payment total.');
+    }
+
+    $currentPaid = max((float)($invoice->paid_amount ?? 0), (float)$ledgerPaidRows[0]->total_paid);
+
+    $safeReferenceNo = mysqli_real_escape_string($ai_conn, $referenceNo);
+    $safeNotes = mysqli_real_escape_string($ai_conn, $notes);
+    $paymentAmountSql = number_format($paymentAmount, 2, '.', '');
+    $paymentDateSql = mysqli_real_escape_string($ai_conn, $paymentDate);
+
+    $insertResult = mysqli_query($ai_conn, "
+        INSERT INTO tbl_invoice_payments
+            (invoice_id, party_id, company_id, amount, payment_date, payment_mode, reference_no, notes)
+        VALUES
+            ({$invoiceId}, {$partyId}, {$companyId}, '{$paymentAmountSql}', '{$paymentDateSql}', {$paymentModeId}, '{$safeReferenceNo}', '{$safeNotes}')
+    ");
+    if (!$insertResult) {
+        $dbError = mysqli_error($ai_conn);
+        mysqli_rollback($ai_conn);
+        apiResponse(500, 'Failed to record payment: ' . $dbError);
+    }
+
+    $paymentId = (int)mysqli_insert_id($ai_conn);
+    $newPaidAmount = round($currentPaid + $paymentAmount, 2);
+    $paymentStatus = ($grandTotal > 0 && $newPaidAmount >= $grandTotal)
+        ? 'Paid'
+        : ($newPaidAmount > 0 ? 'Partially Paid' : 'Pending');
+    $newPaidAmountSql = number_format($newPaidAmount, 2, '.', '');
+    $safePaymentStatus = mysqli_real_escape_string($ai_conn, $paymentStatus);
+    $updateResult = mysqli_query($ai_conn, "
+        UPDATE tbl_invoice
+        SET paid_amount = '{$newPaidAmountSql}', payment_status = '{$safePaymentStatus}'
+        WHERE id = {$invoiceId} AND company_id = {$companyId}
+    ");
+    if (!$updateResult) {
+        $dbError = mysqli_error($ai_conn);
+        mysqli_rollback($ai_conn);
+        apiResponse(500, 'Payment was not saved because the invoice could not be updated: ' . $dbError);
+    }
+
+    if (!mysqli_commit($ai_conn)) {
+        mysqli_rollback($ai_conn);
+        apiResponse(500, 'Could not finalize the payment transaction.');
+    }
+
+    if ($partyId > 0 && function_exists('recalculatePartyOutstanding')) {
+        recalculatePartyOutstanding($partyId);
+    }
+
+    $dueAmount = max(0, $grandTotal - $newPaidAmount);
+    apiResponse(200, 'Payment recorded successfully.', [
+        'payment_id'             => $paymentId,
+        'invoice_id'             => $invoiceId,
+        'invoice_no'             => $invoice->invoice_no ?? '',
+        'party_name'             => $invoice->party_name ?? '',
+        'payment_amount'         => $paymentAmount,
+        'payment_amount_formatted' => '₹' . number_format($paymentAmount, 2),
+        'paid_amount'            => $newPaidAmount,
+        'paid_amount_formatted'  => '₹' . number_format($newPaidAmount, 2),
+        'due_amount'             => $dueAmount,
+        'due_amount_formatted'  => '₹' . number_format($dueAmount, 2),
+        'payment_status'         => $paymentStatus
+    ]);
+}
+
 if ($action === 'invoice-add') {
     if ($method !== 'POST') {
         apiResponse(405, 'Only POST method is allowed.');
@@ -4206,6 +4486,285 @@ if ($action === 'purchase-list') {
         'pending_purchase_amount'        => $pendingPurchaseAmount,
         'pending_purchase_amount_formatted' => formatCurrency($pendingPurchaseAmount),
         'purchases'                      => $list
+    ]);
+}
+
+if ($action === 'purchase-payment-details') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $companyId = (int)$company['id'];
+    $purchaseId = (int)($input['purchase_id'] ?? ($_GET['purchase_id'] ?? 0));
+
+    if ($purchaseId <= 0) {
+        apiResponse(400, 'Purchase ID is required.');
+    }
+
+    $purchaseRows = $ai_db->aiGetQueryObj("
+        SELECT id, purchase_no, party_name, grand_total, paid_amount, payment_status
+        FROM tbl_purchase
+        WHERE id = {$purchaseId} AND company_id = {$companyId}
+        LIMIT 1
+    ");
+    if (empty($purchaseRows)) {
+        apiResponse(404, 'Purchase bill not found.');
+    }
+
+    $purchase = $purchaseRows[0];
+    $paymentStatus = trim((string)($purchase->payment_status ?? 'Pending'));
+    if (strcasecmp($paymentStatus, 'Paid') === 0) {
+        apiResponse(404, 'Purchase payment details are no longer available because this bill is paid.');
+    }
+
+    $grandTotal = (float)($purchase->grand_total ?? 0);
+    $paidAmount = (float)($purchase->paid_amount ?? 0);
+    $dueAmount = max(0, $grandTotal - $paidAmount);
+
+    apiResponse(200, 'Purchase payment details retrieved successfully.', [
+        'id'                    => (int)$purchase->id,
+        'purchase_no'           => $purchase->purchase_no ?? '',
+        'party_name'             => $purchase->party_name ?? '',
+        'grand_total'           => $grandTotal,
+        'grand_total_formatted' => '₹' . number_format($grandTotal, 2),
+        'paid_amount'           => $paidAmount,
+        'paid_amount_formatted' => '₹' . number_format($paidAmount, 2),
+        'due_amount'            => $dueAmount,
+        'due_amount_formatted'  => '₹' . number_format($dueAmount, 2),
+        'payment_status'        => $paymentStatus
+    ]);
+}
+
+if ($action === 'purchase-payment-history') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $companyId = (int)$company['id'];
+    $purchaseId = (int)($input['purchase_id'] ?? ($_GET['purchase_id'] ?? 0));
+
+    if ($purchaseId <= 0) {
+        apiResponse(400, 'Purchase ID is required.');
+    }
+
+    $purchaseRows = $ai_db->aiGetQueryObj("
+        SELECT id, purchase_no, party_name, grand_total, paid_amount, payment_status
+        FROM tbl_purchase
+        WHERE id = {$purchaseId} AND company_id = {$companyId}
+        LIMIT 1
+    ");
+    if (empty($purchaseRows)) {
+        apiResponse(404, 'Purchase bill not found.');
+    }
+
+    $purchase = $purchaseRows[0];
+    $paymentRows = $ai_db->aiGetQueryObj("
+        SELECT id, amount, payment_date, payment_mode, reference_no, notes
+        FROM tbl_purchase_payments
+        WHERE purchase_id = {$purchaseId} AND company_id = {$companyId}
+        ORDER BY payment_date DESC, id DESC
+    ");
+
+    $payments = [];
+    $historyPaidAmount = 0.0;
+    if (!empty($paymentRows)) {
+        foreach ($paymentRows as $index => $payment) {
+            $amount = (float)($payment->amount ?? 0);
+            $historyPaidAmount += $amount;
+            $paymentDate = $payment->payment_date ?? '';
+            $mode = $payment->payment_mode ?? '';
+
+            $payments[] = [
+                'number'                 => $index + 1,
+                'payment_id'             => (int)$payment->id,
+                'payment_date'           => $paymentDate,
+                'payment_date_formatted' => !empty($paymentDate) ? date('d/m/Y', strtotime($paymentDate)) : '',
+                'amount'                 => $amount,
+                'amount_formatted'       => '₹' . number_format($amount, 2),
+                'payment_mode_id'        => (int)(function_exists('getPaymentModeId') ? getPaymentModeId($mode) : $mode),
+                'payment_mode'           => function_exists('getPaymentModeName') ? getPaymentModeName($mode) : $mode,
+                'reference_no'           => $payment->reference_no ?? '',
+                'notes'                  => $payment->notes ?? ''
+            ];
+        }
+    }
+
+    $grandTotal = (float)($purchase->grand_total ?? 0);
+    $paidAmount = max((float)($purchase->paid_amount ?? 0), $historyPaidAmount);
+    $remainingDue = max(0, $grandTotal - $paidAmount);
+
+    apiResponse(200, 'Purchase payment history retrieved successfully.', [
+        'purchase_id'              => (int)$purchase->id,
+        'purchase_no'              => $purchase->purchase_no ?? '',
+        'party_name'               => $purchase->party_name ?? '',
+        'grand_total'              => $grandTotal,
+        'grand_total_formatted'    => '₹' . number_format($grandTotal, 2),
+        'paid_amount'              => $paidAmount,
+        'paid_amount_formatted'    => '₹' . number_format($paidAmount, 2),
+        'remaining_due'            => $remainingDue,
+        'remaining_due_formatted'  => '₹' . number_format($remainingDue, 2),
+        'payment_status'           => $purchase->payment_status ?? 'Pending',
+        'total_payments'           => count($payments),
+        'payments'                 => $payments
+    ]);
+}
+
+if ($action === 'purchase-payment') {
+    if ($method !== 'POST') {
+        apiResponse(405, 'Only POST method is allowed.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $companyId = (int)$company['id'];
+    $purchaseId = (int)($input['purchase_id'] ?? 0);
+    $amountInput = $input['amount'] ?? null;
+    $paymentDateInput = $input['payment_date'] ?? '';
+    $paymentModeInput = $input['payment_mode'] ?? 1;
+    $referenceNoInput = $input['reference_no'] ?? '';
+    $notesInput = $input['notes'] ?? '';
+
+    if ($purchaseId <= 0) {
+        apiResponse(400, 'Purchase ID is required.');
+    }
+    if (!is_numeric($amountInput) || !is_finite((float)$amountInput) || (float)$amountInput <= 0) {
+        apiResponse(400, 'Please enter a valid payment amount greater than 0.');
+    }
+    if (!is_scalar($paymentDateInput) || !is_scalar($paymentModeInput) || !is_scalar($referenceNoInput) || !is_scalar($notesInput)) {
+        apiResponse(400, 'Payment details must be valid scalar values.');
+    }
+
+    $paymentDate = trim((string)$paymentDateInput);
+    $referenceNo = trim((string)$referenceNoInput);
+    $notes = trim((string)$notesInput);
+    $paymentAmount = round((float)$amountInput, 2);
+    if ($paymentAmount <= 0) {
+        apiResponse(400, 'Please enter a valid payment amount greater than 0.');
+    }
+
+    $paymentDateObject = DateTime::createFromFormat('!Y-m-d', $paymentDate);
+    $dateErrors = DateTime::getLastErrors();
+    if (!$paymentDateObject || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0)) || $paymentDateObject->format('Y-m-d') !== $paymentDate) {
+        apiResponse(400, 'Please provide a valid payment_date in YYYY-MM-DD format.');
+    }
+
+    $paymentModes = function_exists('getPaymentModes') ? getPaymentModes() : [1 => 'Cash', 2 => 'Bank', 3 => 'UPI', 4 => 'Cheque', 5 => 'Other'];
+    if (is_numeric($paymentModeInput)) {
+        $paymentModeId = (int)$paymentModeInput;
+    } else {
+        $paymentModeId = 0;
+        foreach ($paymentModes as $modeId => $modeName) {
+            if (strcasecmp(trim((string)$paymentModeInput), (string)$modeName) === 0) {
+                $paymentModeId = (int)$modeId;
+                break;
+            }
+        }
+    }
+    if (!isset($paymentModes[$paymentModeId])) {
+        apiResponse(400, 'Please provide a valid payment_mode.');
+    }
+
+    if (!mysqli_begin_transaction($ai_conn)) {
+        apiResponse(500, 'Could not start payment transaction.');
+    }
+
+    $purchaseRows = $ai_db->aiGetQueryObj("
+        SELECT id, party_id, company_id, purchase_no, party_name, status, grand_total, paid_amount, payment_status
+        FROM tbl_purchase
+        WHERE id = {$purchaseId} AND company_id = {$companyId}
+        LIMIT 1
+        FOR UPDATE
+    ");
+    if (empty($purchaseRows)) {
+        mysqli_rollback($ai_conn);
+        apiResponse(404, 'Purchase bill not found.');
+    }
+
+    $purchase = $purchaseRows[0];
+    if (strtolower(trim((string)($purchase->status ?? ''))) !== 'active') {
+        mysqli_rollback($ai_conn);
+        apiResponse(400, 'Cannot record payment for a deactive purchase bill.');
+    }
+
+    $partyId = (int)($purchase->party_id ?? 0);
+    $grandTotal = (float)($purchase->grand_total ?? 0);
+    if (strcasecmp(trim((string)($purchase->payment_status ?? '')), 'Paid') === 0) {
+        mysqli_rollback($ai_conn);
+        apiResponse(400, 'This purchase bill is already paid. No further payments can be recorded.');
+    }
+
+    $ledgerPaidRows = $ai_db->aiGetQueryObj("
+        SELECT COALESCE(SUM(amount), 0) AS total_paid
+        FROM tbl_purchase_payments
+        WHERE purchase_id = {$purchaseId} AND company_id = {$companyId}
+    ");
+    if (empty($ledgerPaidRows)) {
+        mysqli_rollback($ai_conn);
+        apiResponse(500, 'Could not verify the current purchase payment total.');
+    }
+
+    $currentPaid = max((float)($purchase->paid_amount ?? 0), (float)$ledgerPaidRows[0]->total_paid);
+    $safeReferenceNo = mysqli_real_escape_string($ai_conn, $referenceNo);
+    $safeNotes = mysqli_real_escape_string($ai_conn, $notes);
+    $paymentAmountSql = number_format($paymentAmount, 2, '.', '');
+    $paymentDateSql = mysqli_real_escape_string($ai_conn, $paymentDate);
+
+    $insertResult = mysqli_query($ai_conn, "
+        INSERT INTO tbl_purchase_payments
+            (purchase_id, party_id, company_id, amount, payment_date, payment_mode, reference_no, notes)
+        VALUES
+            ({$purchaseId}, {$partyId}, {$companyId}, '{$paymentAmountSql}', '{$paymentDateSql}', {$paymentModeId}, '{$safeReferenceNo}', '{$safeNotes}')
+    ");
+    if (!$insertResult) {
+        $dbError = mysqli_error($ai_conn);
+        mysqli_rollback($ai_conn);
+        apiResponse(500, 'Failed to record purchase payment: ' . $dbError);
+    }
+
+    $paymentId = (int)mysqli_insert_id($ai_conn);
+    $newPaidAmount = round($currentPaid + $paymentAmount, 2);
+    $paymentStatus = ($grandTotal > 0 && $newPaidAmount >= $grandTotal)
+        ? 'Paid'
+        : ($newPaidAmount > 0 ? 'Partially Paid' : 'Pending');
+    $newPaidAmountSql = number_format($newPaidAmount, 2, '.', '');
+    $safePaymentStatus = mysqli_real_escape_string($ai_conn, $paymentStatus);
+    $updateResult = mysqli_query($ai_conn, "
+        UPDATE tbl_purchase
+        SET paid_amount = '{$newPaidAmountSql}', payment_status = '{$safePaymentStatus}'
+        WHERE id = {$purchaseId} AND company_id = {$companyId}
+    ");
+    if (!$updateResult) {
+        $dbError = mysqli_error($ai_conn);
+        mysqli_rollback($ai_conn);
+        apiResponse(500, 'Payment was not saved because the purchase bill could not be updated: ' . $dbError);
+    }
+
+    if (!mysqli_commit($ai_conn)) {
+        mysqli_rollback($ai_conn);
+        apiResponse(500, 'Could not finalize the purchase payment transaction.');
+    }
+
+    if ($partyId > 0 && function_exists('recalculatePartyOutstanding')) {
+        recalculatePartyOutstanding($partyId);
+    }
+
+    $dueAmount = max(0, $grandTotal - $newPaidAmount);
+    apiResponse(200, 'Purchase payment recorded successfully.', [
+        'payment_id'               => $paymentId,
+        'purchase_id'              => $purchaseId,
+        'purchase_no'              => $purchase->purchase_no ?? '',
+        'party_name'               => $purchase->party_name ?? '',
+        'payment_amount'           => $paymentAmount,
+        'payment_amount_formatted' => '₹' . number_format($paymentAmount, 2),
+        'paid_amount'              => $newPaidAmount,
+        'paid_amount_formatted'    => '₹' . number_format($newPaidAmount, 2),
+        'due_amount'               => $dueAmount,
+        'due_amount_formatted'     => '₹' . number_format($dueAmount, 2),
+        'payment_status'           => $paymentStatus
     ]);
 }
 
@@ -5510,9 +6069,3 @@ if ($action === 'payment-mode-list') {
 }
 
 apiResponse(404, 'Invalid API action.');
-
-
-
-
-
-

@@ -884,8 +884,11 @@ if ($selected_state_id > 0) {
                 $('#gst_no').val(isCompanyGstActive ? (selected.data('gst') || '') : '');
                 $('#address').val(selected.data('address') || '');
                 var stId = selected.data('state');
+                $('#city_id').data('desired-city-id', selected.data('city') || '');
                 if (stId) {
                     $('#state_id').val(stId).trigger('change');
+                } else {
+                    $('#state_id').val('').trigger('change');
                 }
             }
         });
@@ -902,6 +905,9 @@ if ($selected_state_id > 0) {
                     data: { action: "get_cities_by_state", state_id: stateId },
                     dataType: "json",
                     success: function(res) {
+                        if (String($('#state_id').val()) !== String(stateId)) {
+                            return;
+                        }
                         var html = '<option value="">Enter city / Select</option>';
                         if (res.status === 'success' && res.cities.length > 0) {
                             $.each(res.cities, function(i, city) {
@@ -909,13 +915,23 @@ if ($selected_state_id > 0) {
                             });
                         }
                         citySelect.html(html);
+                        var desiredCityId = citySelect.data('desired-city-id');
+                        if (desiredCityId) {
+                            citySelect.val(String(desiredCityId)).trigger('change');
+                        }
+                        citySelect.removeData('desired-city-id');
                     },
                     error: function() {
+                        if (String($('#state_id').val()) !== String(stateId)) {
+                            return;
+                        }
                         citySelect.html('<option value="">Enter city / Select</option>');
+                        citySelect.removeData('desired-city-id');
                     }
                 });
             } else {
                 citySelect.html('<option value="">Enter city / Select</option>');
+                citySelect.removeData('desired-city-id');
             }
             calculateTotals();
         });
