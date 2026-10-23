@@ -55,7 +55,7 @@ if ($partyStatus === 'Purchase') {
         $eDate = date('Y-m-d', strtotime($filter_end_date));
         $payDateWhere .= " AND payment_date <= '$eDate'";
     }
-    $payments = $ai_db->aiGetQueryObj("SELECT id, reference_no AS ref_no, payment_date AS tx_date, amount AS debit_or_credit, CONCAT('Payment (', payment_mode, ')') AS tx_type, notes 
+    $payments = $ai_db->aiGetQueryObj("SELECT id, reference_no AS ref_no, payment_date AS tx_date, amount AS debit_or_credit, payment_mode, notes 
         FROM tbl_purchase_payments 
         WHERE party_id='$party_id' $payDateWhere");
 
@@ -72,9 +72,10 @@ if ($partyStatus === 'Purchase') {
         ];
     }
     foreach ($payments as $pay) {
+        $pModeLabel = function_exists('getPaymentModeName') ? getPaymentModeName($pay->payment_mode) : $pay->payment_mode;
         $rawList[] = [
             'date' => $pay->tx_date,
-            'type' => $pay->tx_type,
+            'type' => 'Payment (' . $pModeLabel . ')',
             'ref_no' => !empty($pay->ref_no) ? $pay->ref_no : ('PAY-' . $pay->id),
             'debit' => floatval($pay->debit_or_credit),
             'credit' => 0.00,
@@ -124,7 +125,7 @@ if ($partyStatus === 'Purchase') {
         $eDate = date('Y-m-d', strtotime($filter_end_date));
         $payDateWhere .= " AND payment_date <= '$eDate'";
     }
-    $payments = $ai_db->aiGetQueryObj("SELECT id, reference_no AS ref_no, payment_date AS tx_date, amount, CONCAT('Receipt (', payment_mode, ')') AS tx_type, notes 
+    $payments = $ai_db->aiGetQueryObj("SELECT id, reference_no AS ref_no, payment_date AS tx_date, amount, payment_mode, notes 
         FROM tbl_invoice_payments 
         WHERE party_id='$party_id' $payDateWhere");
 
@@ -141,9 +142,10 @@ if ($partyStatus === 'Purchase') {
         ];
     }
     foreach ($payments as $pay) {
+        $pModeLabel = function_exists('getPaymentModeName') ? getPaymentModeName($pay->payment_mode) : $pay->payment_mode;
         $rawList[] = [
             'date' => $pay->tx_date,
-            'type' => $pay->tx_type,
+            'type' => 'Receipt (' . $pModeLabel . ')',
             'ref_no' => !empty($pay->ref_no) ? $pay->ref_no : ('REC-' . $pay->id),
             'debit' => 0.00,
             'credit' => floatval($pay->amount),

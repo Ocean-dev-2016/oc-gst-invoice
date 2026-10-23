@@ -1,16 +1,13 @@
 <?php
 include('includes/header.php');
 
-$userType = isset($ai_db) && function_exists('ai_detect_user_type') 
-    ? ai_detect_user_type($ai_db) 
-    : ($_SESSION['user_type'] ?? 'admin');
+$userType = $_SESSION['user_type'] ?? (function_exists('ai_perm_detect_user_type') && isset($ai_db) ? ai_perm_detect_user_type($ai_db) : 'admin');
 $isCompany = ($userType === 'company');
 
 $page_nm = $isCompany ? "Company Profile" : "Manage Profile";
 $table = $isCompany ? "tbl_company" : "tbl_admin";
 
 error_reporting(E_ALL);
-
 if ($isCompany) {
     $profile_id = !empty($_SESSION['company_id']) ? intval($_SESSION['company_id']) : intval($_SESSION['aid'] ?? 0);
 } else {
@@ -32,7 +29,7 @@ if ($isCompany) {
 }
 
 // ===================== UPDATE PROFILE =====================
-if (isset($_POST['btn_submit'])) {
+if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($isCompany) {
         // Handle Company Profile Update
         $company_name = addslashes(trim($_POST['company_name'] ?? ''));
@@ -53,6 +50,8 @@ if (isset($_POST['btn_submit'])) {
             $err_msg = "Company Name is required!";
         } elseif ($gst_applicable === 1 && empty($gst_no)) {
             $err_msg = "GST Number is required when GST is Applicable!";
+        } elseif ($gst_applicable === 1 && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
+            $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
         } elseif (!empty($pincode) && !preg_match('/^[0-9]{6}$/', $pincode)) {
             $err_msg = "Pincode must be exactly 6 digits!";
         } elseif (!empty($mobile_no) && !preg_match('/^[0-9]{10}$/', $mobile_no)) {
@@ -110,7 +109,7 @@ if (isset($_POST['btn_submit'])) {
                 $_SESSION['username'] = $username;
                 $_SESSION['email'] = $email;
 
-                $ai_core->aiGoPage("dashboard.php?msg=2");
+                $ai_core->aiGoPage("manage-profile-form.php?msg=2");
                 exit;
             }
         }
@@ -588,6 +587,14 @@ if ($isCompany && $profileData) {
                 if ((gstApplicable === '1' || gstApplicable === 1) && gstNo === '') {
                     e.preventDefault();
                     showToastError('GST Number is required when GST is Applicable!');
+                    $('#gst_no').focus();
+                    return false;
+                }
+
+                var gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i;
+                if ((gstApplicable === '1' || gstApplicable === 1) && gstNo !== '' && !gstRegex.test(gstNo)) {
+                    e.preventDefault();
+                    showToastError('Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!');
                     $('#gst_no').focus();
                     return false;
                 }

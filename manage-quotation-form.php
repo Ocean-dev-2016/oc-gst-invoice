@@ -549,7 +549,7 @@ if ($selected_state_id > 0) {
 
                                     <div class="col-md-2">
                                         <label class="form-label fw-bold text-uppercase small text-muted">HSN CODE</label>
-                                        <input type="text" id="input_hsn" class="form-control" placeholder="HSN Code">
+                                        <input type="text" id="input_hsn" class="form-control bg-light" placeholder="HSN Code" readonly>
                                     </div>
 
                                     <div class="col-md-2">
