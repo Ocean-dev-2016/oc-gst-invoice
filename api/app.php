@@ -2983,6 +2983,31 @@ if ($action === 'invoice-list') {
             }
         }
 
+        // Fetch last payment mode for each invoice (most recent payment)
+        $allInvIds = array_map(function($item) { return (int)$item->id; }, $invoices);
+        $lastPaymentModeByInv = [];
+        if (!empty($allInvIds)) {
+            $allInvIdsStr = implode(',', $allInvIds);
+            $lastPmRows = $ai_db->aiGetQueryObj("
+                SELECT ip1.invoice_id, ip1.payment_mode, ip1.payment_date
+                FROM tbl_invoice_payments ip1
+                INNER JOIN (
+                    SELECT invoice_id, MAX(id) AS max_id
+                    FROM tbl_invoice_payments
+                    WHERE invoice_id IN ({$allInvIdsStr})
+                    GROUP BY invoice_id
+                ) ip2 ON ip1.invoice_id = ip2.invoice_id AND ip1.id = ip2.max_id
+            ");
+            if (!empty($lastPmRows)) {
+                foreach ($lastPmRows as $pmRow) {
+                    $lastPaymentModeByInv[(int)$pmRow->invoice_id] = [
+                        'raw'  => $pmRow->payment_mode,
+                        'date' => $pmRow->payment_date
+                    ];
+                }
+            }
+        }
+
         foreach ($invoices as $row) {
             $iid = (int)$row->id;
             $grandTotal = (float)$row->grand_total;
@@ -2996,7 +3021,23 @@ if ($action === 'invoice-list') {
             $payStatus = $row->payment_status ?? 'Pending';
             $isPaid = ($payStatus === 'Paid');
 
-            $printUrl = rtrim(ADMIN_URL, '/') . '/invoice-print.php?id=' . $iid;
+            // Resolve last payment mode for this invoice
+            $lastPmRaw  = $lastPaymentModeByInv[$iid]['raw'] ?? '';
+            $lastPmDate = $lastPaymentModeByInv[$iid]['date'] ?? '';
+            $lastPmName = !empty($lastPmRaw) && function_exists('getPaymentModeName') ? getPaymentModeName($lastPmRaw) : ($lastPmRaw ?: 'Cash');
+            $lastPmId   = !empty($lastPmRaw) && function_exists('getPaymentModeId')   ? getPaymentModeId($lastPmRaw)   : 1;
+
+            // Build human-readable label e.g. "Paid Today Via Cash"
+            $todayStr = date('Y-m-d');
+            $pmDateLabel = '';
+            if (!empty($lastPmDate)) {
+                $pmDateLabel = (substr($lastPmDate, 0, 10) === $todayStr) ? 'Today' : date('d M Y', strtotime($lastPmDate));
+            }
+            if ($paidAmt > 0 && !empty($lastPmName)) {
+                $lastPmLabel = 'Paid' . ($pmDateLabel ? ' ' . $pmDateLabel : '') . ' Via ' . $lastPmName;
+            } else {
+                $lastPmLabel = '';
+            }
 
             $itemData = [
                 'id'                     => $iid,
@@ -3032,13 +3073,14 @@ if ($action === 'invoice-list') {
                 'paid_amount_formatted'  => formatCurrency($paidAmt),
                 'pending_amount'         => $pendingAmt,
                 'pending_amount_formatted' => formatCurrency($pendingAmt),
-                'payment_status'         => $payStatus,
-                'status'                 => $row->status ?? 'active',
-                'is_overdue'             => ($payStatus !== 'Paid' && !empty($row->due_date) && $row->due_date < $todayDate),
-                'is_locked'              => $isPaid,
-                'print_url'              => $printUrl,
-                'download_url'           => $printUrl . '&download=1',
-                'created_at'             => $row->created_at ?? ''
+                'payment_status'              => $payStatus,
+                'last_payment_mode_label'     => $lastPmLabel,
+                'status'                      => $row->status ?? 'active',
+                'is_overdue'                  => ($payStatus !== 'Paid' && !empty($row->due_date) && $row->due_date < $todayDate),
+                'is_locked'                   => $isPaid,
+                'print_url'                   => $printUrl ?? '',
+                'download_url'                => isset($printUrl) ? $printUrl . '&download=1' : '',
+                'created_at'                  => $row->created_at ?? ''
             ];
 
             if ($includeItems) {
@@ -4041,6 +4083,31 @@ if ($action === 'purchase-list') {
             }
         }
 
+        // Fetch last payment mode for each purchase (most recent payment)
+        $allPurIds = array_map(function($item) { return (int)$item->id; }, $purchases);
+        $lastPaymentModeByPur = [];
+        if (!empty($allPurIds)) {
+            $allPurIdsStr = implode(',', $allPurIds);
+            $lastPmPurRows = $ai_db->aiGetQueryObj("
+                SELECT pp1.purchase_id, pp1.payment_mode, pp1.payment_date
+                FROM tbl_purchase_payments pp1
+                INNER JOIN (
+                    SELECT purchase_id, MAX(id) AS max_id
+                    FROM tbl_purchase_payments
+                    WHERE purchase_id IN ({$allPurIdsStr})
+                    GROUP BY purchase_id
+                ) pp2 ON pp1.purchase_id = pp2.purchase_id AND pp1.id = pp2.max_id
+            ");
+            if (!empty($lastPmPurRows)) {
+                foreach ($lastPmPurRows as $pmRow) {
+                    $lastPaymentModeByPur[(int)$pmRow->purchase_id] = [
+                        'raw'  => $pmRow->payment_mode,
+                        'date' => $pmRow->payment_date
+                    ];
+                }
+            }
+        }
+
         foreach ($purchases as $row) {
             $pid = (int)$row->id;
             $grandTotal = (float)$row->grand_total;
@@ -4053,6 +4120,24 @@ if ($action === 'purchase-list') {
             $igst = (float)$row->igst_amount;
             $payStatus = $row->payment_status ?? 'Pending';
             $isPaid = ($payStatus === 'Paid');
+
+            // Resolve last payment mode for this purchase
+            $lastPmRawP  = $lastPaymentModeByPur[$pid]['raw'] ?? '';
+            $lastPmDateP = $lastPaymentModeByPur[$pid]['date'] ?? '';
+            $lastPmNameP = !empty($lastPmRawP) && function_exists('getPaymentModeName') ? getPaymentModeName($lastPmRawP) : ($lastPmRawP ?: 'Cash');
+            $lastPmIdP   = !empty($lastPmRawP) && function_exists('getPaymentModeId')   ? getPaymentModeId($lastPmRawP)   : 1;
+
+            // Build human-readable label e.g. "Paid Today Via Cash"
+            $todayStr = date('Y-m-d');
+            $pmDateLabelP = '';
+            if (!empty($lastPmDateP)) {
+                $pmDateLabelP = (substr($lastPmDateP, 0, 10) === $todayStr) ? 'Today' : date('d M Y', strtotime($lastPmDateP));
+            }
+            if ($paidAmt > 0 && !empty($lastPmNameP)) {
+                $lastPmLabelP = 'Paid' . ($pmDateLabelP ? ' ' . $pmDateLabelP : '') . ' Via ' . $lastPmNameP;
+            } else {
+                $lastPmLabelP = '';
+            }
 
             $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $pid;
 
@@ -4089,7 +4174,8 @@ if ($action === 'purchase-list') {
                 'paid_amount_formatted'   => formatCurrency($paidAmt),
                 'pending_amount'          => $pendingAmt,
                 'pending_amount_formatted'=> formatCurrency($pendingAmt),
-                'payment_status'          => $payStatus,
+                'payment_status'              => $payStatus,
+                'last_payment_mode_label'     => $lastPmLabelP,
                 'status'                  => $row->status ?? 'active',
                 'is_overdue'              => ($payStatus !== 'Paid' && !empty($row->due_date) && $row->due_date < $todayDate),
                 'is_locked'               => $isPaid,
@@ -5389,6 +5475,37 @@ if ($action === 'dashboard') {
 
         'sales_outstanding'    => $salesOutstanding,
         'purchase_outstanding' => $purchaseOutstanding
+    ]);
+}
+
+/* =========================================================================
+   PAYMENT MODES API (action=payment-modes / action=payment-mode-list)
+   ========================================================================= */
+
+if ($action === 'payment-mode-list') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $rawModes = function_exists('getPaymentModes') ? getPaymentModes() : [
+        1 => 'Cash',
+        2 => 'Bank',
+        3 => 'UPI',
+        4 => 'Cheque',
+        5 => 'Other'
+    ];
+
+    $list = [];
+    foreach ($rawModes as $id => $title) {
+        $list[] = [
+            'id'    => (int)$id,
+            'name'  => (string)$title,
+        ];
+    }
+
+    apiResponse(200, 'Payment modes retrieved successfully.', [
+        'total'         => count($list),
+        'payment_modes' => $list
     ]);
 }
 
