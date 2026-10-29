@@ -51,6 +51,55 @@ function getApiInput()
     return is_array($input) ? $input : [];
 }
 
+/**
+ * Extract pagination parameters from GET or POST payload
+ * Returns [$page, $limit, $offset, $isPaginated]
+ */
+function getApiPaginationParams($input = [], $defaultLimit = 1)
+{
+    // Check page parameter: accept 'page' or 'current_page'
+    $rawPage = $_GET['page'] ?? ($input['page'] ?? ($_GET['current_page'] ?? ($input['current_page'] ?? 1)));
+    $page = intval($rawPage);
+    if ($page < 1) {
+        $page = 1;
+    }
+
+    // Check per_page / limit parameter: accept 'per_page' or 'limit'
+    $rawLimit = $_GET['per_page'] ?? ($input['per_page'] ?? ($_GET['limit'] ?? ($input['limit'] ?? null)));
+    if ($rawLimit === 'all' || $rawLimit === '-1') {
+        $limit = 0;
+    } elseif ($rawLimit !== null) {
+        $limit = intval($rawLimit);
+        if ($limit < 0) {
+            $limit = 0;
+        }
+    } else {
+        $limit = $defaultLimit;
+    }
+
+    $offset = ($page - 1) * max(0, $limit);
+    $isPaginated = ($limit > 0);
+
+    return [$page, $limit, $offset, $isPaginated];
+}
+
+/**
+ * Build standardized pagination metadata block
+ */
+function buildApiPaginationData($page, $limit, $totalRecords)
+{
+    $perPage = ($limit > 0) ? (int)$limit : (int)$totalRecords;
+    $totalPages = ($perPage > 0 && $totalRecords > 0) ? (int)ceil($totalRecords / $perPage) : 1;
+    return [
+        'current_page'  => (int)$page,
+        'per_page'      => (int)$perPage,
+        'total_records' => (int)$totalRecords,
+        'total_pages'   => (int)$totalPages,
+        'has_next_page' => ($limit > 0 && $page < $totalPages),
+        'has_prev_page' => ($page > 1)
+    ];
+}
+
 
 function authenticateCompany($input = [], $includeLocation = false)
 {
@@ -322,11 +371,20 @@ if ($action === 'change-password') {
 }
 
 if ($action === 'profile') {
+    require_once __DIR__ . '/../includes/company-logo-migrate.php';
+    require_once __DIR__ . '/../includes/image-transparent-helper.php';
+
     $input = getApiInput();
     $company = authenticateCompany($input, true);
     $cId = (int)$company['id'];
 
     if ($method === 'GET') {
+        $logoPath = trim($company['logo'] ?? '');
+        $logoUrl = !empty($logoPath) ? SITE_URL . ltrim($logoPath, '/') : '';
+
+        $signPath = trim($company['signature'] ?? '');
+        $signUrl = !empty($signPath) ? SITE_URL . ltrim($signPath, '/') : '';
+
         apiResponse(200, 'Profile retrieved successfully.', [
             'id'                   => (int)$company['id'],
             'company_name'         => $company['company_name'] ?? '',
@@ -342,6 +400,10 @@ if ($action === 'profile') {
             'city_name'            => $company['city_name'] ?? '',
             'pincode'              => $company['pincode'] ?? '',
             'address'              => $company['address'] ?? '',
+            'logo'                 => $logoPath,
+            'logo_url'             => $logoUrl,
+            'signature'            => $signPath,
+            'signature_url'        => $signUrl,
             'status'               => $company['status'] ?? 'active'
         ]);
     }
@@ -424,6 +486,95 @@ if ($action === 'profile') {
             }
         }
 
+        // Handle file uploads (Logo & Signature)
+        $uploadDir = dirname(__DIR__) . '/uploads/company/';
+        if (!is_dir($uploadDir)) {
+            @mkdir($uploadDir, 0777, true);
+        }
+
+        $logoSql = "";
+        $updatedLogoPath = $company['logo'] ?? '';
+
+        // 1. Logo upload via multipart/form-data $_FILES['logo']
+        if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+            $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
+            if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
+                $newLogoFile = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
+                if (move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . $newLogoFile)) {
+                    $updatedLogoPath = 'uploads/company/' . $newLogoFile;
+                    $safeLogoPath = mysqli_real_escape_string($ai_conn, $updatedLogoPath);
+                    $logoSql = ", logo = '{$safeLogoPath}'";
+                }
+            } else {
+                apiResponse(400, 'Invalid logo format. Allowed formats: jpg, jpeg, png, svg, webp.');
+            }
+        }
+        // 2. Logo upload via Base64 string in JSON / POST (e.g. "data:image/png;base64,...")
+        elseif (!empty($input['logo_base64']) || !empty($input['logo'])) {
+            $rawLogoData = $input['logo_base64'] ?? $input['logo'];
+            if (is_string($rawLogoData) && preg_match('/^data:image\/(\w+);base64,/', $rawLogoData, $typeMatches)) {
+                $ext = strtolower($typeMatches[1]);
+                if ($ext === 'jpeg') $ext = 'jpg';
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
+                    $base64Str = substr($rawLogoData, strpos($rawLogoData, ',') + 1);
+                    $decodedData = base64_decode($base64Str);
+                    if ($decodedData !== false) {
+                        $newLogoFile = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
+                        if (file_put_contents($uploadDir . $newLogoFile, $decodedData)) {
+                            $updatedLogoPath = 'uploads/company/' . $newLogoFile;
+                            $safeLogoPath = mysqli_real_escape_string($ai_conn, $updatedLogoPath);
+                            $logoSql = ", logo = '{$safeLogoPath}'";
+                        }
+                    }
+                }
+            }
+        }
+
+        $signSql = "";
+        $updatedSignPath = $company['signature'] ?? '';
+
+        // 1. Signature upload via multipart/form-data $_FILES['signature']
+        if (isset($_FILES['signature']) && $_FILES['signature']['error'] === UPLOAD_ERR_OK) {
+            $newSignFile = 'sign_' . time() . '_' . rand(100, 999) . '.png';
+            $destSignPath = $uploadDir . $newSignFile;
+            $tmpPath = $_FILES['signature']['tmp_name'];
+            if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($tmpPath, $destSignPath)) {
+                $updatedSignPath = 'uploads/company/' . $newSignFile;
+                $safeSignPath = mysqli_real_escape_string($ai_conn, $updatedSignPath);
+                $signSql = ", signature = '{$safeSignPath}'";
+            } elseif (move_uploaded_file($tmpPath, $destSignPath)) {
+                $updatedSignPath = 'uploads/company/' . $newSignFile;
+                $safeSignPath = mysqli_real_escape_string($ai_conn, $updatedSignPath);
+                $signSql = ", signature = '{$safeSignPath}'";
+            }
+        }
+        // 2. Signature upload via Base64 string in JSON / POST
+        elseif (!empty($input['signature_base64']) || !empty($input['signature'])) {
+            $rawSignData = $input['signature_base64'] ?? $input['signature'];
+            if (is_string($rawSignData) && preg_match('/^data:image\/(\w+);base64,/', $rawSignData, $typeMatches)) {
+                $base64Str = substr($rawSignData, strpos($rawSignData, ',') + 1);
+                $decodedData = base64_decode($base64Str);
+                if ($decodedData !== false) {
+                    $tmpSignFile = $uploadDir . 'temp_sign_' . time() . '_' . rand(100, 999) . '.png';
+                    file_put_contents($tmpSignFile, $decodedData);
+                    $newSignFile = 'sign_' . time() . '_' . rand(100, 999) . '.png';
+                    $destSignPath = $uploadDir . $newSignFile;
+
+                    if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($tmpSignFile, $destSignPath)) {
+                        @unlink($tmpSignFile);
+                        $updatedSignPath = 'uploads/company/' . $newSignFile;
+                        $safeSignPath = mysqli_real_escape_string($ai_conn, $updatedSignPath);
+                        $signSql = ", signature = '{$safeSignPath}'";
+                    } else {
+                        rename($tmpSignFile, $destSignPath);
+                        $updatedSignPath = 'uploads/company/' . $newSignFile;
+                        $safeSignPath = mysqli_real_escape_string($ai_conn, $updatedSignPath);
+                        $signSql = ", signature = '{$safeSignPath}'";
+                    }
+                }
+            }
+        }
+
         $updateQry = "UPDATE tbl_company SET 
                       company_name       = '{$safeCompany}',
                       gst_applicable     = {$gst_applicable},
@@ -435,7 +586,9 @@ if ($action === 'profile') {
                       state_id           = {$state_id},
                       city_id            = {$city_id},
                       pincode            = '{$safePincode}',
-                      address            = '{$safeAddress}',
+                      address            = '{$safeAddress}'
+                      {$logoSql}
+                      {$signSql},
                       modified_at        = NOW() 
                       WHERE id = {$cId}";
 
@@ -445,6 +598,9 @@ if ($action === 'profile') {
 
         $stateRow        = $state_id > 0 ? $ai_db->aiGetQueryObj("SELECT state_name FROM tbl_state WHERE id={$state_id} LIMIT 1") : [];
         $cityRow         = $city_id > 0 ? $ai_db->aiGetQueryObj("SELECT city_name FROM tbl_city WHERE id={$city_id} LIMIT 1") : [];
+
+        $logoUrl = !empty($updatedLogoPath) ? SITE_URL . ltrim($updatedLogoPath, '/') : '';
+        $signUrl = !empty($updatedSignPath) ? SITE_URL . ltrim($updatedSignPath, '/') : '';
 
         apiResponse(200, 'Profile updated successfully.', [
             'id'                   => $cId,
@@ -461,6 +617,10 @@ if ($action === 'profile') {
             'city_name'            => !empty($cityRow) ? $cityRow[0]->city_name : '',
             'pincode'              => $pincode,
             'address'              => $address,
+            'logo'                 => $updatedLogoPath,
+            'logo_url'             => $logoUrl,
+            'signature'            => $updatedSignPath,
+            'signature_url'        => $signUrl,
             'status'               => $company['status'] ?? 'active'
         ]);
     }
@@ -579,6 +739,15 @@ if ($action === 'customer-list') {
 
     $orderBy = "ORDER BY p.id DESC";
 
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+
+    // Get total filtered count for pagination
+    $countQry = "SELECT COUNT(p.id) AS cnt FROM tbl_party p WHERE p.company_id = {$cId} {$statusCond} {$partyStatusCond} {$searchCond}";
+    $countRes = $ai_db->aiGetQueryObj($countQry);
+    $totalFilteredRecords = (int)($countRes[0]->cnt ?? 0);
+
+    $limitSql = ($limit > 0) ? " LIMIT {$offset}, {$limit}" : "";
+
     $todayDate = date('Y-m-d');
 
     $partyQry = "SELECT p.id, p.company_id, p.party_name, p.address, 
@@ -611,7 +780,7 @@ if ($action === 'customer-list') {
                      GROUP BY party_id
                  ) inv_overdue ON inv_overdue.party_id = p.id
                  WHERE p.company_id = {$cId} {$statusCond} {$partyStatusCond} {$searchCond}
-                 {$orderBy}";
+                 {$orderBy}{$limitSql}";
 
     $parties = $ai_db->aiGetQueryObj($partyQry);
 
@@ -710,6 +879,7 @@ if ($action === 'customer-list') {
         'company_id'   => $cId,
         'company_name' => $company['company_name'] ?? '',
         'total'        => count($list),
+        'pagination'   => buildApiPaginationData($page, $limit, $totalFilteredRecords),
         'summary'      => [
             'total_customers'             => $totalCustomers,
             'total_customers_formatted'   => (string)$totalCustomers,
@@ -962,8 +1132,14 @@ if ($action === 'customer-edit') {
         && ((int)$cust->city_id === (int)$cust->shipping_city_id)
         && (!empty($cust->pincode) && $cust->pincode === $cust->shipping_pincode);
 
+    $customerCode = 'CUST-' . str_pad($cust->id, 3, '0', STR_PAD_LEFT);
+
     apiResponse(200, 'Customer details retrieved successfully.', [
         'id'                  => (int)$cust->id,
+        'customer_code'       => $customerCode,
+        'client_code'         => $customerCode,
+        'is_customer_code_readonly' => true,
+        'is_client_code_readonly'   => true,
         'company_id'          => (int)$cust->company_id,
         'company_name'        => $company['company_name'] ?? '',
         'party_name'          => $cust->party_name ?? '',
@@ -1273,6 +1449,15 @@ if ($action === 'quotation-list') {
 
     $orderBy = "ORDER BY q.id DESC";
 
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+
+    // Total filtered records count for pagination
+    $countQry = "SELECT COUNT(q.id) AS cnt FROM tbl_quotation q WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$searchCond}";
+    $countRes = $ai_db->aiGetQueryObj($countQry);
+    $totalFilteredRecords = (int)($countRes[0]->cnt ?? 0);
+
+    $limitSql = ($limit > 0) ? " LIMIT {$offset}, {$limit}" : "";
+
     $quotationQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
                             s.state_name, ct.city_name
                      FROM tbl_quotation q
@@ -1281,7 +1466,7 @@ if ($action === 'quotation-list') {
                      LEFT JOIN tbl_state s ON q.state_id = s.id
                      LEFT JOIN tbl_city ct ON q.city_id = ct.id
                      WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$searchCond}
-                     {$orderBy}";
+                     {$orderBy}{$limitSql}";
     $quotations = $ai_db->aiGetQueryObj($quotationQry);
 
     $summaryQry = "SELECT 
@@ -1417,6 +1602,7 @@ if ($action === 'quotation-list') {
         'company_id'   => $cId,
         'company_name' => $company['company_name'] ?? '',
         'total'        => count($list),
+        'pagination'   => buildApiPaginationData($page, $limit, $totalFilteredRecords),
         'summary'      => [
             'total_quotations'        => $totalCount,
             'pending_count'           => $pendingCount,
@@ -2436,6 +2622,15 @@ if ($action === 'product-list') {
 
     $orderBy = "ORDER BY p.id DESC";
 
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+
+    // Count total products matching filters
+    $countQry = "SELECT COUNT(p.id) AS cnt FROM tbl_product p WHERE p.company_id = {$cId}{$statusCond}{$searchCond}";
+    $countRes = $ai_db->aiGetQueryObj($countQry);
+    $totalFilteredRecords = (int)($countRes[0]->cnt ?? 0);
+
+    $limitSql = ($limit > 0) ? " LIMIT {$offset}, {$limit}" : "";
+
     // Per-product sold quantity and sold revenue aggregated from tbl_invoice_items (active invoices)
     $productsQry = "
         SELECT p.id, p.company_id, p.product_name, p.sku, p.hsn_code, p.gst_rate, 
@@ -2454,7 +2649,7 @@ if ($action === 'product-list') {
             GROUP BY ii.product_id
         ) inv_sales ON inv_sales.product_id = p.id
         WHERE p.company_id = {$cId}{$statusCond}{$searchCond}
-        {$orderBy}
+        {$orderBy}{$limitSql}
     ";
     $products = $ai_db->aiGetQueryObj($productsQry);
 
@@ -2548,6 +2743,7 @@ if ($action === 'product-list') {
         'company_id'   => $cId,
         'company_name' => $company['company_name'] ?? '',
         'total'        => count($list),
+        'pagination'   => buildApiPaginationData($page, $limit, $totalFilteredRecords),
         'summary'      => [
             'total_products'               => $totalProducts,
             'total_active_products'        => $totalActiveProducts,
@@ -2901,6 +3097,15 @@ if ($action === 'invoice-list') {
 
     $orderBy = "ORDER BY q.id DESC";
 
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+
+    // Count total filtered invoices for pagination
+    $countQry = "SELECT COUNT(q.id) AS cnt FROM tbl_invoice q WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$dateCond} {$searchCond}";
+    $countRes = $ai_db->aiGetQueryObj($countQry);
+    $totalFilteredRecords = (int)($countRes[0]->cnt ?? 0);
+
+    $limitSql = ($limit > 0) ? " LIMIT {$offset}, {$limit}" : "";
+
     $invoiceQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
                           s.state_name, ct.city_name
                    FROM tbl_invoice q
@@ -2909,7 +3114,7 @@ if ($action === 'invoice-list') {
                    LEFT JOIN tbl_state s ON q.state_id = s.id
                    LEFT JOIN tbl_city ct ON q.city_id = ct.id
                    WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$dateCond} {$searchCond}
-                   {$orderBy}";
+                   {$orderBy}{$limitSql}";
     $invoices = $ai_db->aiGetQueryObj($invoiceQry);
 
     $summaryDateCond = "";
@@ -3101,6 +3306,7 @@ if ($action === 'invoice-list') {
         'company_id'                   => $cId,
         'company_name'                 => $company['company_name'] ?? '',
         'total'                        => count($list),
+        'pagination'                   => buildApiPaginationData($page, $limit, $totalFilteredRecords),
         'total_invoices'               => $statTotalCount,
         'paid_invoices'                => $statPaidCount,
         'unpaid_invoices'              => $statUnpaidCount,
@@ -4295,6 +4501,15 @@ if ($action === 'purchase-list') {
 
     $orderBy = "ORDER BY q.id DESC";
 
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+
+    // Count total filtered purchases for pagination
+    $countQry = "SELECT COUNT(q.id) AS cnt FROM tbl_purchase q WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$dateCond} {$searchCond}";
+    $countRes = $ai_db->aiGetQueryObj($countQry);
+    $totalFilteredRecords = (int)($countRes[0]->cnt ?? 0);
+
+    $limitSql = ($limit > 0) ? " LIMIT {$offset}, {$limit}" : "";
+
     $purchaseQry = "SELECT q.*, c.company_name, p.mobile_no AS party_mobile, p.email AS party_email,
                            s.state_name, ct.city_name
                     FROM tbl_purchase q
@@ -4303,7 +4518,7 @@ if ($action === 'purchase-list') {
                     LEFT JOIN tbl_state s ON q.state_id = s.id
                     LEFT JOIN tbl_city ct ON q.city_id = ct.id
                     WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$dateCond} {$searchCond}
-                    {$orderBy}";
+                    {$orderBy}{$limitSql}";
     $purchases = $ai_db->aiGetQueryObj($purchaseQry);
 
     $summaryDateCond = "";
@@ -4496,6 +4711,7 @@ if ($action === 'purchase-list') {
         'company_id'                     => $cId,
         'company_name'                   => $company['company_name'] ?? '',
         'total'                          => count($list),
+        'pagination'                     => buildApiPaginationData($page, $limit, $totalFilteredRecords),
         'total_purchases'                => $statTotalCount,
         'paid_purchases'                 => $statPaidCount,
         'unpaid_purchases'               => $statUnpaidCount,

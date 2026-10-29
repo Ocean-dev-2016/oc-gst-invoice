@@ -288,6 +288,12 @@ if ($selected_shipping_state_id > 0) {
                                                 <?php } ?>
                                             </div>
 
+                                            <!-- Client / Customer Code (Readonly) -->
+                                            <div class="col-md-3">
+                                                <label class="form-label">Client Code</label>
+                                                <input type="text" name="client_code" id="client_code" class="form-control bg-light" placeholder="Auto Generated" value="<?= !empty($categoryData->id) ? 'CUST-' . str_pad($categoryData->id, 3, '0', STR_PAD_LEFT) : 'Auto Generated (On Save)' ?>" readonly>
+                                            </div>
+
                                             <!-- Party Name -->
                                             <div class="col-md-3">
                                                 <label class="form-label">Party Name <span class="text-danger">*</span></label>

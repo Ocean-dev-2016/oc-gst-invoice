@@ -246,10 +246,10 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
                 owner_name='" . $owner_name . "',
                 mobile_no='" . $mobile_no . "',
                 email='" . $email . "',
-                logo='" . $logo_path . "',
-                signature='" . $sign_path . "',
                 username='" . $username . "'
-                $pass_sql,
+                $pass_sql
+                $logo_sql
+                $sign_sql,
                 status='" . $status . "'
                 WHERE id='" . intval($id) . "'";
 
@@ -430,6 +430,42 @@ if ($selected_state_id > 0) {
                                                 <textarea name="address" class="form-control" rows="2" placeholder="Enter full address..."><?= htmlspecialchars($_POST['address'] ?? $categoryData->address ?? '') ?></textarea>
                                             </div>
 
+                                            <!-- Company Logo Box -->
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-bold text-dark">
+                                                    <i class="ti ti-photo me-1 text-primary"></i> Company Logo (for Invoices)
+                                                </label>
+                                                <input type="file" name="logo" id="logoInput" class="form-control" accept="image/*">
+                                                <small class="text-muted d-block mt-1">Recommended: PNG or JPG. Appears on invoice header.</small>
+
+                                                <div class="mt-2 p-3 bg-light border rounded text-center position-relative" style="min-height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fafafa;">
+                                                    <span class="text-muted fs-7 mb-1" id="logoPreviewTitle" style="<?= empty($categoryData->logo) ? 'display:none;' : '' ?>">Current Logo:</span>
+                                                    <img id="logoPreview" src="<?= !empty($categoryData->logo) ? SITE_URL . $categoryData->logo : '' ?>" alt="Logo Preview" style="max-height: 70px; max-width: 220px; object-fit: contain; <?= empty($categoryData->logo) ? 'display:none;' : '' ?>">
+                                                    <div id="logoPlaceholder" class="text-muted" style="<?= !empty($categoryData->logo) ? 'display:none;' : '' ?>">
+                                                        <i class="ti ti-photo-off fs-2 d-block text-secondary"></i>
+                                                        <span class="small">No Logo uploaded yet</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Company Signature Box -->
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-bold text-dark">
+                                                    <i class="ti ti-writing-sign me-1 text-primary"></i> Authorized Signature / Stamp
+                                                </label>
+                                                <input type="file" name="signature" id="signatureInput" class="form-control" accept="image/*">
+                                                <small class="text-muted d-block mt-1">Background will be made 100% transparent automatically.</small>
+
+                                                <div class="mt-2 p-3 bg-light border rounded text-center position-relative" style="min-height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fafafa;">
+                                                    <span class="text-muted fs-7 mb-1" id="signPreviewTitle" style="<?= empty($categoryData->signature) ? 'display:none;' : '' ?>">Current Signature:</span>
+                                                    <img id="signPreview" src="<?= !empty($categoryData->signature) ? SITE_URL . $categoryData->signature : '' ?>" alt="Signature Preview" style="max-height: 65px; max-width: 180px; object-fit: contain; <?= empty($categoryData->signature) ? 'display:none;' : '' ?>">
+                                                    <div id="signPlaceholder" class="text-muted" style="<?= !empty($categoryData->signature) ? 'display:none;' : '' ?>">
+                                                        <i class="ti ti-signature-off fs-2 d-block text-secondary"></i>
+                                                        <span class="small">No Signature uploaded yet</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
                                             <!-- Password Requirements Terms -->
                                             <div class="col-md-4">
                                                 <div class="card bg-label-warning border-warning border shadow-none mb-0">
@@ -509,6 +545,34 @@ if ($selected_state_id > 0) {
             });
 
             // Dynamic City Loading on State Change
+            // Instant Logo Preview upon file select
+            $('#logoInput').on('change', function(e) {
+                var file = e.target.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        $('#logoPreview').attr('src', e.target.result).show();
+                        $('#logoPreviewTitle').text('Selected Logo Preview:').show();
+                        $('#logoPlaceholder').hide();
+                    }
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            // Instant Signature Preview upon file select
+            $('#signatureInput').on('change', function(e) {
+                var file = e.target.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        $('#signPreview').attr('src', e.target.result).show();
+                        $('#signPreviewTitle').text('Selected Signature Preview:').show();
+                        $('#signPlaceholder').hide();
+                    }
+                    reader.readAsDataURL(file);
+                }
+            });
+
             $('#state_id').on('change', function() {
                 var stateId = $(this).val();
                 var $cityDropdown = $('#city_id');

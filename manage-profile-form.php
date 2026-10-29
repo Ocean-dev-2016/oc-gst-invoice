@@ -72,7 +72,7 @@ if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!empty($dup_conds)) {
                 $check_dup = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_no, mobile_no, email, username FROM $table WHERE (" . implode(" OR ", $dup_conds) . ") AND id!='" . intval($profile_id) . "' LIMIT 1");
-                
+
                 if (!empty($check_dup)) {
                     if (!empty($gst_no) && strtolower($check_dup[0]->gst_no) === strtolower($gst_no)) {
                         $err_msg = "GST Number '$gst_no' already exists!";
@@ -88,31 +88,31 @@ if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (empty($err_msg)) {
                 $uploadDir = __DIR__ . '/uploads/company/';
-            if (!is_dir($uploadDir)) @mkdir($uploadDir, 0777, true);
+                if (!is_dir($uploadDir)) @mkdir($uploadDir, 0777, true);
 
-            $logo_sql = "";
-            if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
-                $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
-                if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
-                    $newLogo = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
-                    if (move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . $newLogo)) {
-                        $logo_sql = ", logo='uploads/company/" . $newLogo . "'";
+                $logo_sql = "";
+                if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+                    $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
+                    if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
+                        $newLogo = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
+                        if (move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . $newLogo)) {
+                            $logo_sql = ", logo='uploads/company/" . $newLogo . "'";
+                        }
                     }
                 }
-            }
 
-            $sign_sql = "";
-            if (isset($_FILES['signature']) && $_FILES['signature']['error'] === UPLOAD_ERR_OK) {
-                $newSign = 'sign_' . time() . '_' . rand(100, 999) . '.png';
-                $destSignPath = $uploadDir . $newSign;
-                if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($_FILES['signature']['tmp_name'], $destSignPath)) {
-                    $sign_sql = ", signature='uploads/company/" . $newSign . "'";
-                } elseif (move_uploaded_file($_FILES['signature']['tmp_name'], $destSignPath)) {
-                    $sign_sql = ", signature='uploads/company/" . $newSign . "'";
+                $sign_sql = "";
+                if (isset($_FILES['signature']) && $_FILES['signature']['error'] === UPLOAD_ERR_OK) {
+                    $newSign = 'sign_' . time() . '_' . rand(100, 999) . '.png';
+                    $destSignPath = $uploadDir . $newSign;
+                    if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($_FILES['signature']['tmp_name'], $destSignPath)) {
+                        $sign_sql = ", signature='uploads/company/" . $newSign . "'";
+                    } elseif (move_uploaded_file($_FILES['signature']['tmp_name'], $destSignPath)) {
+                        $sign_sql = ", signature='uploads/company/" . $newSign . "'";
+                    }
                 }
-            }
 
-            $pass_sql = !empty($password) ? ", password='" . md5($password) . "'" : "";
+                $pass_sql = !empty($password) ? ", password='" . md5($password) . "'" : "";
 
                 $edit_qry = "UPDATE $table SET 
                     company_name='" . $company_name . "',
@@ -154,7 +154,7 @@ if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
             $err_msg = "Username cannot be empty!";
         } else {
             $current_user = $ai_db->aiGetQueryObj("SELECT * FROM $table WHERE id='" . intval($profile_id) . "' LIMIT 1");
-            
+
             if (empty($current_user)) {
                 $err_msg = "User record not found!";
             } else {
@@ -312,9 +312,9 @@ if ($isCompany && $profileData) {
                                                 </div>
                                             </div>
 
-                                            <?php 
-                                            $curr_gst_applicable = isset($_POST['gst_applicable']) 
-                                                ? intval($_POST['gst_applicable']) 
+                                            <?php
+                                            $curr_gst_applicable = isset($_POST['gst_applicable'])
+                                                ? intval($_POST['gst_applicable'])
                                                 : intval($profileData->gst_applicable ?? 0);
                                             ?>
                                             <!-- GST Applicable -->
@@ -337,14 +337,14 @@ if ($isCompany && $profileData) {
                                                 <label class="form-label">State</label>
                                                 <select name="state_id" id="state_id" class="form-select select2">
                                                     <option value="">-- Select State --</option>
-                                                    <?php 
+                                                    <?php
                                                     $sel_state = $_POST['state_id'] ?? $profileData->state_id ?? 0;
                                                     if (!empty($states)) {
                                                         foreach ($states as $st) { ?>
                                                             <option value="<?= $st->id ?>" <?= ($sel_state == $st->id) ? 'selected' : '' ?>>
                                                                 <?= htmlspecialchars($st->state_name) ?>
                                                             </option>
-                                                        <?php }
+                                                    <?php }
                                                     } ?>
                                                 </select>
                                             </div>
@@ -360,7 +360,7 @@ if ($isCompany && $profileData) {
                                                             <option value="<?= $ct->id ?>" <?= ($selected_city_id == $ct->id) ? 'selected' : '' ?>>
                                                                 <?= htmlspecialchars($ct->city_name) ?>
                                                             </option>
-                                                        <?php }
+                                                    <?php }
                                                     } ?>
                                                 </select>
                                             </div>
@@ -378,13 +378,13 @@ if ($isCompany && $profileData) {
                                             </div>
 
                                             <!-- Company Logo Box -->
-                                            <div class="col-md-6 mt-3">
+                                            <div class="col-md-4 mt-3">
                                                 <label class="form-label fw-bold text-dark">
                                                     <i class="ti ti-photo me-1 text-primary"></i> Company Logo (for Invoices)
                                                 </label>
                                                 <input type="file" name="logo" id="logoInput" class="form-control" accept="image/*">
                                                 <small class="text-muted d-block mt-1">Recommended: PNG or JPG. Appears on invoice header.</small>
-                                                
+
                                                 <div class="mt-2 p-3 bg-light border rounded text-center position-relative" style="min-height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fafafa;">
                                                     <span class="text-muted fs-7 mb-1" id="logoPreviewTitle" style="<?= empty($profileData->logo) ? 'display:none;' : '' ?>">Current Logo:</span>
                                                     <img id="logoPreview" src="<?= !empty($profileData->logo) ? SITE_URL . $profileData->logo : '' ?>" alt="Logo Preview" style="max-height: 70px; max-width: 220px; object-fit: contain; <?= empty($profileData->logo) ? 'display:none;' : '' ?>">
@@ -396,13 +396,13 @@ if ($isCompany && $profileData) {
                                             </div>
 
                                             <!-- Company Signature Box -->
-                                            <div class="col-md-6 mt-3">
+                                            <div class="col-md-4 mt-3">
                                                 <label class="form-label fw-bold text-dark">
                                                     <i class="ti ti-writing-sign me-1 text-primary"></i> Authorized Signature / Stamp
                                                 </label>
                                                 <input type="file" name="signature" id="signatureInput" class="form-control" accept="image/*">
                                                 <small class="text-muted d-block mt-1">Background will be made 100% transparent automatically.</small>
-                                                
+
                                                 <div class="mt-2 p-3 bg-light border rounded text-center position-relative" style="min-height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fafafa;">
                                                     <span class="text-muted fs-7 mb-1" id="signPreviewTitle" style="<?= empty($profileData->signature) ? 'display:none;' : '' ?>">Current Signature:</span>
                                                     <img id="signPreview" src="<?= !empty($profileData->signature) ? SITE_URL . $profileData->signature : '' ?>" alt="Signature Preview" style="max-height: 65px; max-width: 180px; object-fit: contain; <?= empty($profileData->signature) ? 'display:none;' : '' ?>">
@@ -524,35 +524,35 @@ if ($isCompany && $profileData) {
     <?php include('includes/footer_js.php'); ?>
 
     <script>
-    $(document).ready(function() {
-        // Instant Logo Preview upon file select
-        $('#logoInput').on('change', function(e) {
-            var file = e.target.files[0];
-            if (file) {
-                var reader = new FileReader();
-                reader.onload = function(e) {
-                    $('#logoPreview').attr('src', e.target.result).show();
-                    $('#logoPreviewTitle').text('Selected Logo Preview:').show();
-                    $('#logoPlaceholder').hide();
+        $(document).ready(function() {
+            // Instant Logo Preview upon file select
+            $('#logoInput').on('change', function(e) {
+                var file = e.target.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        $('#logoPreview').attr('src', e.target.result).show();
+                        $('#logoPreviewTitle').text('Selected Logo Preview:').show();
+                        $('#logoPlaceholder').hide();
+                    }
+                    reader.readAsDataURL(file);
                 }
-                reader.readAsDataURL(file);
-            }
-        });
+            });
 
-        // Instant Signature Preview upon file select
-        $('#signatureInput').on('change', function(e) {
-            var file = e.target.files[0];
-            if (file) {
-                var reader = new FileReader();
-                reader.onload = function(e) {
-                    $('#signPreview').attr('src', e.target.result).show();
-                    $('#signPreviewTitle').text('Selected Signature Preview:').show();
-                    $('#signPlaceholder').hide();
+            // Instant Signature Preview upon file select
+            $('#signatureInput').on('change', function(e) {
+                var file = e.target.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        $('#signPreview').attr('src', e.target.result).show();
+                        $('#signPreviewTitle').text('Selected Signature Preview:').show();
+                        $('#signPlaceholder').hide();
+                    }
+                    reader.readAsDataURL(file);
                 }
-                reader.readAsDataURL(file);
-            }
+            });
         });
-    });
     </script>
 
     <?php if (!empty($err_msg)) { ?>
@@ -591,184 +591,185 @@ if ($isCompany && $profileData) {
             });
 
             <?php if ($isCompany) { ?>
-            // Dynamic City Loading on State Change
-            $('#state_id').on('change', function() {
-                var stateId = $(this).val();
-                var $cityDropdown = $('#city_id');
-                $cityDropdown.html('<option value="">Loading cities...</option>');
+                // Dynamic City Loading on State Change
+                $('#state_id').on('change', function() {
+                    var stateId = $(this).val();
+                    var $cityDropdown = $('#city_id');
+                    $cityDropdown.html('<option value="">Loading cities...</option>');
 
-                if (stateId > 0) {
+                    if (stateId > 0) {
+                        $.ajax({
+                            type: "POST",
+                            url: "ajax.php",
+                            data: {
+                                action: "get_cities_by_state",
+                                state_id: stateId
+                            },
+                            dataType: "json",
+                            success: function(response) {
+                                $cityDropdown.html('<option value="">-- Select City --</option>');
+                                if (response.status === "success" && response.cities.length > 0) {
+                                    $.each(response.cities, function(i, city) {
+                                        $cityDropdown.append('<option value="' + city.id + '">' + city.city_name + '</option>');
+                                    });
+                                }
+                                if ($.fn.select2) {
+                                    $cityDropdown.trigger('change');
+                                }
+                            }
+                        });
+                    } else {
+                        $cityDropdown.html('<option value="">-- Select City --</option>');
+                        if ($.fn.select2) {
+                            $cityDropdown.trigger('change');
+                        }
+                    }
+                });
+
+                // Toggle GST No field based on GST Applicable (Yes / No)
+                function syncGstField() {
+                    var gstApp = $('#gst_applicable').val();
+                    if (gstApp === '1' || gstApp === 1) {
+                        $('#gst_no_wrapper').slideDown(200);
+                        $('#gst_no').prop('required', true);
+                    } else {
+                        $('#gst_no_wrapper').slideUp(200);
+                        $('#gst_no').prop('required', false).val('');
+                    }
+                }
+
+                $('#gst_applicable').on('change', function() {
+                    syncGstField();
+                });
+
+                syncGstField();
+
+                // Client AJAX validation for duplicate company name / gst / username / mobile / email
+                $('#mainForm').on('submit', function(e) {
+                    var form = this;
+                    var companyName = $('input[name="company_name"]').val().trim();
+                    var gstApplicable = $('#gst_applicable').val();
+                    var gstNo = (gstApplicable === '1' || gstApplicable === 1) ? $('input[name="gst_no"]').val().trim() : '';
+                    var mobileNo = $('input[name="mobile_no"]').val().trim();
+                    var pincode = $('input[name="pincode"]').val().trim();
+                    var email = $('input[name="email"]').val().trim();
+                    var username = $('input[name="username"]').val().trim();
+                    var password = $('#password').val();
+                    var confirmPassword = $('#confirm_password').val();
+                    var id = $('input[name="id"]').val();
+
+                    function showToastError(msg) {
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Validation Error!',
+                                text: msg,
+                                toast: true,
+                                position: 'top-end',
+                                showConfirmButton: false,
+                                timer: 4000,
+                                timerProgressBar: true
+                            });
+                        } else {
+                            alert(msg);
+                        }
+                    }
+
+                    if (companyName === '') {
+                        e.preventDefault();
+                        showToastError('Company Name is required!');
+                        return false;
+                    }
+
+                    if ((gstApplicable === '1' || gstApplicable === 1) && gstNo === '') {
+                        e.preventDefault();
+                        showToastError('GST Number is required when GST is Applicable!');
+                        $('#gst_no').focus();
+                        return false;
+                    }
+
+                    var gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i;
+                    if ((gstApplicable === '1' || gstApplicable === 1) && gstNo !== '' && !gstRegex.test(gstNo)) {
+                        e.preventDefault();
+                        showToastError('Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!');
+                        $('#gst_no').focus();
+                        return false;
+                    }
+
+                    if (pincode !== '' && !/^[0-9]{6}$/.test(pincode)) {
+                        e.preventDefault();
+                        showToastError('Pincode must be exactly 6 digits!');
+                        $('#pincode').focus();
+                        return false;
+                    }
+
+                    if (mobileNo !== '' && !/^[0-9]{10}$/.test(mobileNo)) {
+                        e.preventDefault();
+                        showToastError('Mobile Number must be exactly 10 digits!');
+                        return false;
+                    }
+
+                    if (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                        e.preventDefault();
+                        showToastError('Please enter a valid Email Address!');
+                        return false;
+                    }
+
+                    if (password !== '' && password !== confirmPassword) {
+                        e.preventDefault();
+                        showToastError('Password and Confirm Password do not match!');
+                        return false;
+                    }
+
+                    if ($(form).data('valid') === true) {
+                        return true;
+                    }
+
+                    e.preventDefault();
+
                     $.ajax({
                         type: "POST",
                         url: "ajax.php",
                         data: {
-                            action: "get_cities_by_state",
-                            state_id: stateId
+                            action: "check_company_duplicate",
+                            company_name: companyName,
+                            gst_no: gstNo,
+                            mobile_no: mobileNo,
+                            email: email,
+                            username: username,
+                            id: id
                         },
                         dataType: "json",
                         success: function(response) {
-                            $cityDropdown.html('<option value="">-- Select City --</option>');
-                            if (response.status === "success" && response.cities.length > 0) {
-                                $.each(response.cities, function(i, city) {
-                                    $cityDropdown.append('<option value="' + city.id + '">' + city.city_name + '</option>');
-                                });
-                            }
-                            if ($.fn.select2) {
-                                $cityDropdown.trigger('change');
-                            }
-                        }
-                    });
-                } else {
-                    $cityDropdown.html('<option value="">-- Select City --</option>');
-                    if ($.fn.select2) {
-                        $cityDropdown.trigger('change');
-                    }
-                }
-            });
-
-            // Toggle GST No field based on GST Applicable (Yes / No)
-            function syncGstField() {
-                var gstApp = $('#gst_applicable').val();
-                if (gstApp === '1' || gstApp === 1) {
-                    $('#gst_no_wrapper').slideDown(200);
-                    $('#gst_no').prop('required', true);
-                } else {
-                    $('#gst_no_wrapper').slideUp(200);
-                    $('#gst_no').prop('required', false).val('');
-                }
-            }
-
-            $('#gst_applicable').on('change', function() {
-                syncGstField();
-            });
-
-            syncGstField();
-
-            // Client AJAX validation for duplicate company name / gst / username / mobile / email
-            $('#mainForm').on('submit', function(e) {
-                var form = this;
-                var companyName = $('input[name="company_name"]').val().trim();
-                var gstApplicable = $('#gst_applicable').val();
-                var gstNo = (gstApplicable === '1' || gstApplicable === 1) ? $('input[name="gst_no"]').val().trim() : '';
-                var mobileNo = $('input[name="mobile_no"]').val().trim();
-                var pincode = $('input[name="pincode"]').val().trim();
-                var email = $('input[name="email"]').val().trim();
-                var username = $('input[name="username"]').val().trim();
-                var password = $('#password').val();
-                var confirmPassword = $('#confirm_password').val();
-                var id = $('input[name="id"]').val();
-
-                function showToastError(msg) {
-                    if (typeof Swal !== 'undefined') {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Validation Error!',
-                            text: msg,
-                            toast: true,
-                            position: 'top-end',
-                            showConfirmButton: false,
-                            timer: 4000,
-                            timerProgressBar: true
-                        });
-                    } else {
-                        alert(msg);
-                    }
-                }
-
-                if (companyName === '') {
-                    e.preventDefault();
-                    showToastError('Company Name is required!');
-                    return false;
-                }
-
-                if ((gstApplicable === '1' || gstApplicable === 1) && gstNo === '') {
-                    e.preventDefault();
-                    showToastError('GST Number is required when GST is Applicable!');
-                    $('#gst_no').focus();
-                    return false;
-                }
-
-                var gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i;
-                if ((gstApplicable === '1' || gstApplicable === 1) && gstNo !== '' && !gstRegex.test(gstNo)) {
-                    e.preventDefault();
-                    showToastError('Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!');
-                    $('#gst_no').focus();
-                    return false;
-                }
-
-                if (pincode !== '' && !/^[0-9]{6}$/.test(pincode)) {
-                    e.preventDefault();
-                    showToastError('Pincode must be exactly 6 digits!');
-                    $('#pincode').focus();
-                    return false;
-                }
-
-                if (mobileNo !== '' && !/^[0-9]{10}$/.test(mobileNo)) {
-                    e.preventDefault();
-                    showToastError('Mobile Number must be exactly 10 digits!');
-                    return false;
-                }
-
-                if (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                    e.preventDefault();
-                    showToastError('Please enter a valid Email Address!');
-                    return false;
-                }
-
-                if (password !== '' && password !== confirmPassword) {
-                    e.preventDefault();
-                    showToastError('Password and Confirm Password do not match!');
-                    return false;
-                }
-
-                if ($(form).data('valid') === true) {
-                    return true;
-                }
-
-                e.preventDefault();
-
-                $.ajax({
-                    type: "POST",
-                    url: "ajax.php",
-                    data: {
-                        action: "check_company_duplicate",
-                        company_name: companyName,
-                        gst_no: gstNo,
-                        mobile_no: mobileNo,
-                        email: email,
-                        username: username,
-                        id: id
-                    },
-                    dataType: "json",
-                    success: function(response) {
-                        if (response.status === "duplicate") {
-                            if (typeof Swal !== 'undefined') {
-                                Swal.fire({
-                                    icon: 'error',
-                                    title: 'Duplicate Entry!',
-                                    text: response.message,
-                                    toast: true,
-                                    position: 'top-end',
-                                    showConfirmButton: false,
-                                    timer: 4000,
-                                    timerProgressBar: true
-                                });
+                            if (response.status === "duplicate") {
+                                if (typeof Swal !== 'undefined') {
+                                    Swal.fire({
+                                        icon: 'error',
+                                        title: 'Duplicate Entry!',
+                                        text: response.message,
+                                        toast: true,
+                                        position: 'top-end',
+                                        showConfirmButton: false,
+                                        timer: 4000,
+                                        timerProgressBar: true
+                                    });
+                                } else {
+                                    alert(response.message);
+                                }
                             } else {
-                                alert(response.message);
+                                $(form).data('valid', true);
+                                HTMLFormElement.prototype.submit.call(form);
                             }
-                        } else {
+                        },
+                        error: function() {
                             $(form).data('valid', true);
                             HTMLFormElement.prototype.submit.call(form);
                         }
-                    },
-                    error: function() {
-                        $(form).data('valid', true);
-                        HTMLFormElement.prototype.submit.call(form);
-                    }
+                    });
                 });
-            });
             <?php } ?>
         });
     </script>
 </body>
+
 </html>
