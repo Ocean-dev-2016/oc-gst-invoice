@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 780" width="100%" height="100%">
+  <rect width="600" height="780" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="8"/>
+  
+  <!-- Top Split Header -->
+  <!-- Left Dark Box -->
+  <polygon points="0,0 340,0 290,130 0,130" fill="#1a1a1a"/>
+  <!-- Left Header Title & Underline -->
+  <text x="35" y="55" font-family="Montserrat, sans-serif" font-size="24" font-weight="900" fill="#ffffff" letter-spacing="1.5">INVOICE</text>
+  <rect x="35" y="65" width="125" height="3" fill="#e5ad45"/>
+  <!-- Left Header Meta Lines (Invoice No, Date, etc.) -->
+  <rect x="35" y="80" width="70" height="8" rx="2" fill="#737373"/>
+  <rect x="115" y="80" width="80" height="8" rx="2" fill="#ffffff"/>
+  <rect x="35" y="95" width="60" height="8" rx="2" fill="#737373"/>
+  <rect x="115" y="95" width="90" height="8" rx="2" fill="#ffffff"/>
+  <rect x="35" y="110" width="65" height="8" rx="2" fill="#737373"/>
+  <rect x="115" y="110" width="75" height="8" rx="2" fill="#ffffff"/>
+
+  <!-- Right Gold Box -->
+  <polygon points="340,0 600,0 600,130 290,130" fill="#e5ad45"/>
+  <!-- Right Brand Logo / Name Skeleton -->
+  <circle cx="430" cy="55" r="16" fill="#1a1a1a"/>
+  <rect x="455" y="46" width="105" height="18" rx="3" fill="#1a1a1a"/>
+  <rect x="430" y="78" width="130" height="10" rx="2" fill="#1a1a1a" opacity="0.6"/>
+
+  <!-- Party Details (Freelancer / Client 2-column info) -->
+  <rect x="35" y="160" width="110" height="12" rx="2" fill="#1a1a1a"/>
+  <rect x="35" y="182" width="55" height="8" rx="2" fill="#737373"/>
+  <rect x="100" y="182" width="110" height="8" rx="2" fill="#525252"/>
+  <rect x="35" y="196" width="55" height="8" rx="2" fill="#737373"/>
+  <rect x="100" y="196" width="140" height="8" rx="2" fill="#525252"/>
+  <rect x="35" y="210" width="55" height="8" rx="2" fill="#737373"/>
+  <rect x="100" y="210" width="90" height="8" rx="2" fill="#525252"/>
+
+  <rect x="320" y="160" width="110" height="12" rx="2" fill="#1a1a1a"/>
+  <rect x="320" y="182" width="65" height="8" rx="2" fill="#737373"/>
+  <rect x="395" y="182" width="110" height="8" rx="2" fill="#525252"/>
+  <rect x="320" y="196" width="65" height="8" rx="2" fill="#737373"/>
+  <rect x="395" y="196" width="140" height="8" rx="2" fill="#525252"/>
+  <rect x="320" y="210" width="65" height="8" rx="2" fill="#737373"/>
+  <rect x="395" y="210" width="90" height="8" rx="2" fill="#525252"/>
+
+  <!-- Items Table with Gold Header & Borders -->
+  <rect x="35" y="245" width="530" height="30" fill="#e5ad45" stroke="#e5ad45" stroke-width="1"/>
+  <rect x="50" y="254" width="20" height="11" rx="2" fill="#1a1a1a"/>
+  <rect x="110" y="254" width="90" height="11" rx="2" fill="#1a1a1a"/>
+  <rect x="290" y="254" width="40" height="11" rx="2" fill="#1a1a1a"/>
+  <rect x="380" y="254" width="50" height="11" rx="2" fill="#1a1a1a"/>
+  <rect x="490" y="254" width="55" height="11" rx="2" fill="#1a1a1a"/>
+
+  <!-- Table Row 1 -->
+  <rect x="35" y="275" width="530" height="28" fill="#ffffff" stroke="#e5ad45" stroke-width="1"/>
+  <rect x="50" y="284" width="16" height="9" rx="2" fill="#737373"/>
+  <rect x="110" y="284" width="130" height="9" rx="2" fill="#1a1a1a"/>
+  <rect x="295" y="284" width="25" height="9" rx="2" fill="#525252"/>
+  <rect x="385" y="284" width="40" height="9" rx="2" fill="#525252"/>
+  <rect x="495" y="284" width="45" height="9" rx="2" fill="#1a1a1a"/>
+
+  <!-- Table Row 2 -->
+  <rect x="35" y="303" width="530" height="28" fill="#ffffff" stroke="#e5ad45" stroke-width="1"/>
+  <rect x="50" y="312" width="16" height="9" rx="2" fill="#737373"/>
+  <rect x="110" y="312" width="110" height="9" rx="2" fill="#1a1a1a"/>
+  <rect x="295" y="312" width="25" height="9" rx="2" fill="#525252"/>
+  <rect x="385" y="312" width="40" height="9" rx="2" fill="#525252"/>
+  <rect x="495" y="312" width="45" height="9" rx="2" fill="#1a1a1a"/>
+
+  <!-- Table Row 3 -->
+  <rect x="35" y="331" width="530" height="28" fill="#ffffff" stroke="#e5ad45" stroke-width="1"/>
+  <rect x="50" y="340" width="16" height="9" rx="2" fill="#737373"/>
+  <rect x="110" y="340" width="145" height="9" rx="2" fill="#1a1a1a"/>
+  <rect x="295" y="340" width="25" height="9" rx="2" fill="#525252"/>
+  <rect x="385" y="340" width="40" height="9" rx="2" fill="#525252"/>
+  <rect x="495" y="340" width="45" height="9" rx="2" fill="#1a1a1a"/>
+
+  <!-- Table Row 4 -->
+  <rect x="35" y="359" width="530" height="28" fill="#ffffff" stroke="#e5ad45" stroke-width="1"/>
+  <rect x="50" y="368" width="16" height="9" rx="2" fill="#737373"/>
+  <rect x="110" y="368" width="120" height="9" rx="2" fill="#1a1a1a"/>
+  <rect x="295" y="368" width="25" height="9" rx="2" fill="#525252"/>
+  <rect x="385" y="368" width="40" height="9" rx="2" fill="#525252"/>
+  <rect x="495" y="368" width="45" height="9" rx="2" fill="#1a1a1a"/>
+
+  <!-- Gold Total Due Strip -->
+  <rect x="35" y="398" width="530" height="32" fill="#e5ad45" rx="3"/>
+  <rect x="200" y="408" width="120" height="12" rx="2" fill="#1a1a1a"/>
+  <rect x="470" y="406" width="75" height="16" rx="2" fill="#1a1a1a"/>
+
+  <!-- Payment Method (Left) & Signature (Right) -->
+  <rect x="35" y="460" width="100" height="12" rx="2" fill="#1a1a1a"/>
+  <rect x="35" y="482" width="65" height="8" rx="2" fill="#737373"/>
+  <rect x="110" y="482" width="100" height="8" rx="2" fill="#525252"/>
+  <rect x="35" y="496" width="65" height="8" rx="2" fill="#737373"/>
+  <rect x="110" y="496" width="130" height="8" rx="2" fill="#525252"/>
+  <rect x="35" y="510" width="65" height="8" rx="2" fill="#737373"/>
+  <rect x="110" y="510" width="90" height="8" rx="2" fill="#525252"/>
+
+  <!-- Signature Section Right -->
+  <rect x="400" y="570" width="140" height="8" rx="2" fill="#737373"/>
+  <path d="M420,615 Q440,585 455,610 T480,590 T510,615" stroke="#1a1a1a" stroke-width="2" fill="none"/>
+  <line x1="390" y1="625" x2="550" y2="625" stroke="#1a1a1a" stroke-width="1.5"/>
+  <rect x="430" y="635" width="80" height="10" rx="2" fill="#1a1a1a"/>
+
+  <!-- Bottom Accent Strip (Left Dark, Right Gold) -->
+  <rect x="0" y="760" width="370" height="20" fill="#1a1a1a"/>
+  <rect x="370" y="760" width="230" height="20" fill="#e5ad45"/>
+</svg>

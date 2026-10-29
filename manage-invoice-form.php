@@ -113,13 +113,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $igst_amount = $company_has_gst ? floatval($_POST['igst_amount'] ?? 0) : 0.00;
     $tax_amount = $company_has_gst ? floatval($_POST['tax_amount'] ?? 0) : 0.00;
     $grand_total = $company_has_gst ? floatval($_POST['grand_total'] ?? 0) : $total_amount;
-    $req_payment_status = $_POST['payment_status'] ?? '';
+    $req_payment_status = $_POST['payment_status'] ?? ($invoiceData->payment_status ?? 'Pending');
+    $prev_paid_amt = floatval($_POST['paid_amount'] ?? ($invoiceData->paid_amount ?? 0));
     if ($req_payment_status === 'Paid') {
         $payment_status = 'Paid';
         $paid_amount = $grand_total;
     } else {
-        $payment_status = 'Pending';
-        $paid_amount = 0.00;
+        $payment_status = ($prev_paid_amt > 0) ? 'Partially Paid' : 'Pending';
+        $paid_amount = $prev_paid_amt;
     }
     $status = $_POST['status'] ?? 'active';
 
@@ -731,15 +732,8 @@ if ($selected_state_id > 0) {
                                                 <input type="text" name="grand_total" id="grand_total" class="form-control summary-input fs-5 fw-bold text-dark" value="0.00" readonly>
                                             </div>
 
-                                            <!-- Payment Status -->
-                                            <div class="card p-3 mb-3 border" style="background-color: #f8fafc; border-radius: 8px;">
-                                                <label class="form-label fw-bold small text-muted text-uppercase mb-1">Payment Status</label>
-                                                <select name="payment_status" id="payment_status" class="form-select form-select-sm fw-semibold">
-                                                    <option value="Pending" <?= (($invoiceData->payment_status ?? 'Pending') === 'Pending') ? 'selected' : '' ?>>⏳ Pending (Unpaid)</option>
-                                                    <option value="Paid" <?= (($invoiceData->payment_status ?? '') === 'Paid') ? 'selected' : '' ?>>✓ Full Paid</option>
-                                                </select>
-                                                <input type="hidden" name="paid_amount" id="paid_amount" value="<?= htmlspecialchars(!empty($invoiceData->paid_amount) ? number_format((float)$invoiceData->paid_amount, 2, '.', '') : '0.00') ?>">
-                                            </div>
+                                            <input type="hidden" name="payment_status" id="payment_status" value="<?= htmlspecialchars($invoiceData->payment_status ?? 'Pending') ?>">
+                                            <input type="hidden" name="paid_amount" id="paid_amount" value="<?= htmlspecialchars(!empty($invoiceData->paid_amount) ? number_format((float)$invoiceData->paid_amount, 2, '.', '') : '0.00') ?>">
 
                                             <!-- ACTION BUTTONS -->
                                             <div class="pt-4 d-flex align-items-center flex-wrap gap-2">
@@ -792,8 +786,11 @@ if ($selected_state_id > 0) {
             <?php } ?>
         <?php } ?>
 
+        // Initialize GST visibility on page load
+        updateInvoiceGstVisibility(isCompanyGstActive);
         renderTable();
         updateProductDropdown();
+        calculateTotals();
 
         // Function to disable or hide already-added products in #product_select
         function updateProductDropdown() {
@@ -1325,7 +1322,14 @@ if ($selected_state_id > 0) {
 
             var gstType = isCompanyGstActive ? $('#gst_type').val() : 'without_gst'; // force without_gst if company has no GST
             var selectedStateText = $('#state_id option:selected').text().trim().toLowerCase();
-            var isGujarat = (selectedStateText.indexOf('gujarat') !== -1);
+            var stateVal = $('#state_id').val();
+            // In Gujarat, state_id or text check
+            var isGujarat = (selectedStateText.indexOf('gujarat') !== -1 || stateVal == '12' || stateVal == '24');
+            // If party is selected and has state in edit mode
+            var partyState = $('#party_id option:selected').data('state');
+            if (partyState && (partyState == '12' || partyState == '24')) {
+                isGujarat = true;
+            }
 
             $.each(itemsList, function(i, item) {
                 var baseAmt = (item.rate * item.qty);
@@ -1428,16 +1432,7 @@ if ($selected_state_id > 0) {
             }
         });
 
-        // Synchronize Payment Status and Paid Amount
-        $('#payment_status').on('change', function() {
-            var st = $(this).val();
-            var gTotal = parseFloat($('#grand_total').val()) || 0;
-            if (st === 'Paid') {
-                $('#paid_amount').val(gTotal.toFixed(2));
-            } else {
-                $('#paid_amount').val('0.00');
-            }
-        });
+
 
         function escapeHtml(text) {
             return text ? String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';

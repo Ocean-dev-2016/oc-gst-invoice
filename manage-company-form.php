@@ -1,5 +1,7 @@
 <?php
 include('includes/header.php');
+require_once __DIR__ . '/includes/company-logo-migrate.php';
+require_once __DIR__ . '/includes/image-transparent-helper.php';
 
 $page_nm = 'Company';
 $table = 'tbl_company';
@@ -13,7 +15,8 @@ $id = isset($_REQUEST['id']) ? intval($_REQUEST['id']) : 0;
 $err_msg = '';
 $categoryData = null;
 
-function validatePasswordComplexity($password, $confirm_password) {
+function validatePasswordComplexity($password, $confirm_password)
+{
     if (empty($password)) return '';
     if (strlen($password) < 8) {
         return "Password must be at least 8 characters long!";
@@ -80,7 +83,7 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
 
         if (!empty($dup_conds)) {
             $check_dup = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_no, mobile_no, email, username FROM $table WHERE (" . implode(" OR ", $dup_conds) . ") LIMIT 1");
-            
+
             if (!empty($check_dup)) {
                 if (!empty($gst_no) && strtolower($check_dup[0]->gst_no) === strtolower($gst_no)) {
                     $err_msg = "GST Number '$gst_no' already exists!";
@@ -95,6 +98,31 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
         }
 
         if (empty($err_msg)) {
+            $uploadDir = __DIR__ . '/uploads/company/';
+            if (!is_dir($uploadDir)) @mkdir($uploadDir, 0777, true);
+
+            $logo_path = '';
+            if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+                $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
+                    $newLogo = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
+                    if (move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . $newLogo)) {
+                        $logo_path = 'uploads/company/' . $newLogo;
+                    }
+                }
+            }
+
+            $sign_path = '';
+            if (isset($_FILES['signature']) && $_FILES['signature']['error'] === UPLOAD_ERR_OK) {
+                $newSign = 'sign_' . time() . '_' . rand(100, 999) . '.png';
+                $destSignPath = $uploadDir . $newSign;
+                if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($_FILES['signature']['tmp_name'], $destSignPath)) {
+                    $sign_path = 'uploads/company/' . $newSign;
+                } elseif (move_uploaded_file($_FILES['signature']['tmp_name'], $destSignPath)) {
+                    $sign_path = 'uploads/company/' . $newSign;
+                }
+            }
+
             $pass_hash = !empty($password) ? md5($password) : '';
 
             $add_qry = "INSERT INTO $table SET 
@@ -108,6 +136,8 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
                 owner_name='" . $owner_name . "',
                 mobile_no='" . $mobile_no . "',
                 email='" . $email . "',
+                logo='" . $logo_path . "',
+                signature='" . $sign_path . "',
                 username='" . $username . "',
                 password='" . $pass_hash . "',
                 status='" . $status . "'";
@@ -163,7 +193,7 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
 
         if (!empty($dup_conds)) {
             $check_dup = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_no, mobile_no, email, username FROM $table WHERE (" . implode(" OR ", $dup_conds) . ") AND id!='" . intval($id) . "' LIMIT 1");
-            
+
             if (!empty($check_dup)) {
                 if (!empty($gst_no) && strtolower($check_dup[0]->gst_no) === strtolower($gst_no)) {
                     $err_msg = "GST Number '$gst_no' already exists!";
@@ -178,6 +208,31 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
         }
 
         if (empty($err_msg)) {
+            $uploadDir = __DIR__ . '/uploads/company/';
+            if (!is_dir($uploadDir)) @mkdir($uploadDir, 0777, true);
+
+            $logo_sql = "";
+            if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+                $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
+                    $newLogo = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
+                    if (move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . $newLogo)) {
+                        $logo_sql = ", logo='uploads/company/" . $newLogo . "'";
+                    }
+                }
+            }
+
+            $sign_sql = "";
+            if (isset($_FILES['signature']) && $_FILES['signature']['error'] === UPLOAD_ERR_OK) {
+                $newSign = 'sign_' . time() . '_' . rand(100, 999) . '.png';
+                $destSignPath = $uploadDir . $newSign;
+                if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($_FILES['signature']['tmp_name'], $destSignPath)) {
+                    $sign_sql = ", signature='uploads/company/" . $newSign . "'";
+                } elseif (move_uploaded_file($_FILES['signature']['tmp_name'], $destSignPath)) {
+                    $sign_sql = ", signature='uploads/company/" . $newSign . "'";
+                }
+            }
+
             $pass_sql = !empty($password) ? ", password='" . md5($password) . "'" : "";
 
             $edit_qry = "UPDATE $table SET 
@@ -191,6 +246,8 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
                 owner_name='" . $owner_name . "',
                 mobile_no='" . $mobile_no . "',
                 email='" . $email . "',
+                logo='" . $logo_path . "',
+                signature='" . $sign_path . "',
                 username='" . $username . "'
                 $pass_sql,
                 status='" . $status . "'
@@ -310,9 +367,9 @@ if ($selected_state_id > 0) {
                                                 </select>
                                             </div>
 
-                                            <?php 
-                                            $curr_gst_applicable = isset($_POST['gst_applicable']) 
-                                                ? intval($_POST['gst_applicable']) 
+                                            <?php
+                                            $curr_gst_applicable = isset($_POST['gst_applicable'])
+                                                ? intval($_POST['gst_applicable'])
                                                 : intval($categoryData->gst_applicable ?? 0);
                                             ?>
                                             <!-- GST Applicable -->
@@ -340,7 +397,7 @@ if ($selected_state_id > 0) {
                                                             <option value="<?= $st->id ?>" <?= ($selected_state_id == $st->id) ? 'selected' : '' ?>>
                                                                 <?= htmlspecialchars($st->state_name) ?>
                                                             </option>
-                                                        <?php }
+                                                    <?php }
                                                     } ?>
                                                 </select>
                                             </div>
@@ -356,7 +413,7 @@ if ($selected_state_id > 0) {
                                                             <option value="<?= $ct->id ?>" <?= ($selected_city_id == $ct->id) ? 'selected' : '' ?>>
                                                                 <?= htmlspecialchars($ct->city_name) ?>
                                                             </option>
-                                                        <?php }
+                                                    <?php }
                                                     } ?>
                                                 </select>
                                             </div>
@@ -688,4 +745,5 @@ if ($selected_state_id > 0) {
         });
     </script>
 </body>
+
 </html>

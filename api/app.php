@@ -73,8 +73,8 @@ function authenticateCompany($input = [], $includeLocation = false)
     $companyName = trim($input['company_name'] ?? ($_GET['company_name'] ?? ''));
 
     $company = null;
-    $compSelect = $includeLocation 
-        ? "SELECT c.*, s.state_name, ct.city_name FROM tbl_company c LEFT JOIN tbl_state s ON c.state_id = s.id LEFT JOIN tbl_city ct ON c.city_id = ct.id" 
+    $compSelect = $includeLocation
+        ? "SELECT c.*, s.state_name, ct.city_name FROM tbl_company c LEFT JOIN tbl_state s ON c.state_id = s.id LEFT JOIN tbl_city ct ON c.city_id = ct.id"
         : "SELECT * FROM tbl_company";
 
     $wherePrefix = $includeLocation ? "c." : "";
@@ -654,7 +654,7 @@ if ($action === 'customer-list') {
     $list = [];
     if (!empty($parties)) {
         foreach ($parties as $pty) {
-            $name = trim($pty->party_name ?? '');            
+            $name = trim($pty->party_name ?? '');
             $words = preg_split('/\s+/', $name);
             $initials = '';
             if (count($words) >= 2) {
@@ -832,8 +832,8 @@ if ($action === 'customer-add') {
 
     $safeAddress        = mysqli_real_escape_string($ai_conn, $address);
     $safePincode        = mysqli_real_escape_string($ai_conn, $pincode);
-    $safeShippingAddress= mysqli_real_escape_string($ai_conn, $shipping_address);
-    $safeShippingPincode= mysqli_real_escape_string($ai_conn, $shipping_pincode);
+    $safeShippingAddress = mysqli_real_escape_string($ai_conn, $shipping_address);
+    $safeShippingPincode = mysqli_real_escape_string($ai_conn, $shipping_pincode);
     $safeMobileNo       = mysqli_real_escape_string($ai_conn, $mobile_no);
     $safeEmail          = mysqli_real_escape_string($ai_conn, $email);
     $safeGstNo          = mysqli_real_escape_string($ai_conn, $gst_no);
@@ -1124,8 +1124,8 @@ if ($action === 'customer-update') {
 
     $safeAddress        = mysqli_real_escape_string($ai_conn, $address);
     $safePincode        = mysqli_real_escape_string($ai_conn, $pincode);
-    $safeShippingAddress= mysqli_real_escape_string($ai_conn, $shipping_address);
-    $safeShippingPincode= mysqli_real_escape_string($ai_conn, $shipping_pincode);
+    $safeShippingAddress = mysqli_real_escape_string($ai_conn, $shipping_address);
+    $safeShippingPincode = mysqli_real_escape_string($ai_conn, $shipping_pincode);
     $safeMobileNo       = mysqli_real_escape_string($ai_conn, $mobile_no);
     $safeEmail          = mysqli_real_escape_string($ai_conn, $email);
     $safeGstNo          = mysqli_real_escape_string($ai_conn, $gst_no);
@@ -1309,7 +1309,9 @@ if ($action === 'quotation-list') {
     if (!empty($quotations)) {
         $itemsByQuotation = [];
         if ($includeItems) {
-            $qIds = array_map(function($item) { return (int)$item->id; }, $quotations);
+            $qIds = array_map(function ($item) {
+                return (int)$item->id;
+            }, $quotations);
             if (!empty($qIds)) {
                 $qIdsStr = implode(',', $qIds);
                 $itemsRows = $ai_db->aiGetQueryObj("
@@ -1397,7 +1399,7 @@ if ($action === 'quotation-list') {
                 'is_overdue'             => ($payStatus === 'Pending' && !empty($row->due_date) && $row->due_date < date('Y-m-d')),
                 'converted_invoice_id'   => (int)($row->converted_invoice_id ?? 0),
                 'is_converted'           => (!empty($row->converted_invoice_id) && (int)$row->converted_invoice_id > 0),
-                'is_locked'              => ($isPaid || (!empty($row->converted_invoice_id) && (int)$row->converted_invoice_id > 0)), 
+                'is_locked'              => ($isPaid || (!empty($row->converted_invoice_id) && (int)$row->converted_invoice_id > 0)),
                 'print_url'              => $printUrl,
                 'download_url'           => $printUrl . '&download=1',
                 'created_at'             => $row->created_at ?? ''
@@ -1419,7 +1421,7 @@ if ($action === 'quotation-list') {
             'total_quotations'        => $totalCount,
             'pending_count'           => $pendingCount,
             'pending_amount'          => $pendingAmount,
-            'pending_amount_formatted'=> '₹' . number_format($pendingAmount, 2),
+            'pending_amount_formatted' => '₹' . number_format($pendingAmount, 2),
             'paid_count'              => $paidCount,
             'paid_amount'             => $paidAmount,
             'paid_amount_formatted'   => '₹' . number_format($paidAmount, 2),
@@ -1514,7 +1516,7 @@ if ($action === 'quotation-add') {
 
     $rca = (isset($input['rca']) && strtolower(trim($input['rca'])) === 'yes') ? 'Yes' : 'No';
     $quotation_date = !empty($input['quotation_date']) ? date('Y-m-d', strtotime($input['quotation_date'])) : (!empty($input['date']) ? date('Y-m-d', strtotime($input['date'])) : date('Y-m-d'));
-    
+
     $due_date = !empty($input['due_date']) ? date('Y-m-d', strtotime($input['due_date'])) : $quotation_date;
     if ($due_date < $quotation_date) {
         apiResponse(400, "Due Date cannot be earlier than Quotation Date ({$quotation_date}).");
@@ -1611,7 +1613,7 @@ if ($action === 'quotation-add') {
     $isGujarat = false;
     if (!empty($state_name) && stripos($state_name, 'gujarat') !== false) {
         $isGujarat = true;
-    } elseif ($state_id === 7) { 
+    } elseif ($state_id === 7) {
         $isGujarat = true;
     }
 
@@ -2019,7 +2021,7 @@ if ($action === 'quotation-update') {
     $isGujarat = false;
     if (!empty($state_name) && stripos($state_name, 'gujarat') !== false) {
         $isGujarat = true;
-    } elseif ($state_id === 7) { 
+    } elseif ($state_id === 7) {
         $isGujarat = true;
     }
 
@@ -2397,7 +2399,7 @@ if ($action === 'quotation-convert-to-invoice') {
         'party_id'              => $partyId,
         'party_name'            => $quot->party_name,
         'invoice_date'          => $invoiceDate,
-        'invoice_date_formatted'=> date('d-m-Y', strtotime($invoiceDate)),
+        'invoice_date_formatted' => date('d-m-Y', strtotime($invoiceDate)),
         'due_date'              => $dueDate,
         'due_date_formatted'    => date('d-m-Y', strtotime($dueDate)),
         'grand_total'           => round($invGrandTotal, 2),
@@ -2473,7 +2475,7 @@ if ($action === 'product-list') {
 
     $totalProducts        = (int)($sumRow->total_products ?? 0);
     $totalActiveProducts  = (int)($sumRow->total_active_products ?? 0);
-    $totalDeactiveProducts= (int)($sumRow->total_deactive_products ?? 0);
+    $totalDeactiveProducts = (int)($sumRow->total_deactive_products ?? 0);
     $restockNeededCount   = (int)($sumRow->restock_needed_count ?? 0);
     $outOfStockCount      = (int)($sumRow->out_of_stock_count ?? 0);
     $lowStockCount        = (int)($sumRow->low_stock_count ?? 0);
@@ -2944,7 +2946,9 @@ if ($action === 'invoice-list') {
     if (!empty($invoices)) {
         $itemsByInvoice = [];
         if ($includeItems) {
-            $invIds = array_map(function($item) { return (int)$item->id; }, $invoices);
+            $invIds = array_map(function ($item) {
+                return (int)$item->id;
+            }, $invoices);
             if (!empty($invIds)) {
                 $invIdsStr = implode(',', $invIds);
                 $itemsRows = $ai_db->aiGetQueryObj("
@@ -2984,7 +2988,9 @@ if ($action === 'invoice-list') {
         }
 
         // Fetch last payment mode for each invoice (most recent payment)
-        $allInvIds = array_map(function($item) { return (int)$item->id; }, $invoices);
+        $allInvIds = array_map(function ($item) {
+            return (int)$item->id;
+        }, $invoices);
         $lastPaymentModeByInv = [];
         if (!empty($allInvIds)) {
             $allInvIdsStr = implode(',', $allInvIds);
@@ -3101,7 +3107,7 @@ if ($action === 'invoice-list') {
         'total_invoice_amount'         => $totInvoiceAmount,
         'total_invoice_amount_formatted' => formatCurrency($totInvoiceAmount),
         'paid_invoice_amount'          => $paidInvoiceAmount,
-        'paid_invoice_amount_formatted'=> formatCurrency($paidInvoiceAmount),
+        'paid_invoice_amount_formatted' => formatCurrency($paidInvoiceAmount),
         'pending_invoice_amount'       => $pendingInvoiceAmount,
         'pending_invoice_amount_formatted' => formatCurrency($pendingInvoiceAmount),
         'invoices'                     => $list
@@ -3588,7 +3594,11 @@ if ($action === 'invoice-add') {
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
 
+    $reqTemplateId = (int)($input['template_id'] ?? ($company['invoice_template_id'] ?? 1));
+    if ($reqTemplateId <= 0) $reqTemplateId = 1;
+
     $insertInvoiceQry = "INSERT INTO tbl_invoice SET
+        template_id = {$reqTemplateId},
         company_id = {$company_id},
         party_id = {$party_id},
         party_name = '{$safePartyName}',
@@ -4054,7 +4064,13 @@ if ($action === 'invoice-update') {
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
 
+    $$tplUpdateSql = "";
+    if (isset($input['template_id']) && (int)$input['template_id'] > 0) {
+        $tplUpdateSql = "template_id = " . (int)$input['template_id'] . ", ";
+    }
+
     $updateInvoiceQry = "UPDATE tbl_invoice SET
+        {$tplUpdateSql}
         party_id = {$party_id},
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
@@ -4324,7 +4340,9 @@ if ($action === 'purchase-list') {
     if (!empty($purchases)) {
         $itemsByPurchase = [];
         if ($includeItems) {
-            $purIds = array_map(function($item) { return (int)$item->id; }, $purchases);
+            $purIds = array_map(function ($item) {
+                return (int)$item->id;
+            }, $purchases);
             if (!empty($purIds)) {
                 $purIdsStr = implode(',', $purIds);
                 $itemsRows = $ai_db->aiGetQueryObj("
@@ -4364,7 +4382,9 @@ if ($action === 'purchase-list') {
         }
 
         // Fetch last payment mode for each purchase (most recent payment)
-        $allPurIds = array_map(function($item) { return (int)$item->id; }, $purchases);
+        $allPurIds = array_map(function ($item) {
+            return (int)$item->id;
+        }, $purchases);
         $lastPaymentModeByPur = [];
         if (!empty($allPurIds)) {
             $allPurIdsStr = implode(',', $allPurIds);
@@ -4453,7 +4473,7 @@ if ($action === 'purchase-list') {
                 'paid_amount'             => $paidAmt,
                 'paid_amount_formatted'   => formatCurrency($paidAmt),
                 'pending_amount'          => $pendingAmt,
-                'pending_amount_formatted'=> formatCurrency($pendingAmt),
+                'pending_amount_formatted' => formatCurrency($pendingAmt),
                 'payment_status'              => $payStatus,
                 'last_payment_mode_label'     => $lastPmLabelP,
                 'status'                  => $row->status ?? 'active',
@@ -4480,7 +4500,7 @@ if ($action === 'purchase-list') {
         'paid_purchases'                 => $statPaidCount,
         'unpaid_purchases'               => $statUnpaidCount,
         'total_purchase_amount'          => $totPurchaseAmount,
-        'total_purchase_amount_formatted'=> formatCurrency($totPurchaseAmount),
+        'total_purchase_amount_formatted' => formatCurrency($totPurchaseAmount),
         'paid_purchase_amount'           => $paidPurchaseAmount,
         'paid_purchase_amount_formatted' => formatCurrency($paidPurchaseAmount),
         'pending_purchase_amount'        => $pendingPurchaseAmount,
@@ -5158,7 +5178,7 @@ if ($action === 'purchase-edit') {
         'paid_amount'             => $paidAmt,
         'paid_amount_formatted'   => '₹' . number_format($paidAmt, 2),
         'pending_amount'          => $pendingAmt,
-        'pending_amount_formatted'=> '₹' . number_format($pendingAmt, 2),
+        'pending_amount_formatted' => '₹' . number_format($pendingAmt, 2),
         'payment_status'          => $payStatus,
         'status'                  => $q->status ?? 'active',
         'is_overdue'              => ($payStatus !== 'Paid' && !empty($q->due_date) && $q->due_date < $todayDate),
@@ -5624,7 +5644,7 @@ if ($action === 'ledger') {
             }
         }
 
-        usort($rawList, function($a, $b) {
+        usort($rawList, function ($a, $b) {
             $t1 = strtotime($a['date']);
             $t2 = strtotime($b['date']);
             if ($t1 === $t2) {
@@ -5665,7 +5685,6 @@ if ($action === 'ledger') {
 
         $finalBalance = abs($running);
         $finalType = ($running >= 0) ? 'Credit' : 'Debit';
-
     } else {
         // Sales Party: Opening Debit = (+ receivable), Credit = (- advance)
         $currentSign = ($openingType === 'Debit') ? $openingBalance : -$openingBalance;
@@ -5715,7 +5734,7 @@ if ($action === 'ledger') {
             }
         }
 
-        usort($rawList, function($a, $b) {
+        usort($rawList, function ($a, $b) {
             $t1 = strtotime($a['date']);
             $t2 = strtotime($b['date']);
             if ($t1 === $t2) {
@@ -5951,7 +5970,7 @@ if ($action === 'dashboard') {
         'total_amount'            => round($sTotPayment, 2),
         'total_amount_formatted'  => '₹' . number_format($sTotPayment, 2),
         'total_received'          => round($sTotReceived, 2),
-        'total_received_formatted'=> '₹' . number_format($sTotReceived, 2),
+        'total_received_formatted' => '₹' . number_format($sTotReceived, 2),
         'total_pending'           => round($sTotPending, 2),
         'total_pending_formatted' => '₹' . number_format($sTotPending, 2),
         'total_sgst'              => round($sTotSgst, 2),
@@ -6066,6 +6085,100 @@ if ($action === 'payment-mode-list') {
         'total'         => count($list),
         'payment_modes' => $list
     ]);
+}
+
+
+/* =========================================================================
+   INVOICE TEMPLATES APIS FOR MOBILE APP
+   ========================================================================= */
+
+/**
+ * 1. Get List of all active Invoice Templates + Current Company Selected Template
+ * Action: invoice-template-list
+ * Method: GET / POST
+ */
+if ($action === 'invoice-template-list') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $cId = (int)$company['id'];
+
+    // Get current company default template id
+    $currCompany = $ai_db->aiGetQueryObj("SELECT invoice_template_id FROM tbl_company WHERE id = {$cId} LIMIT 1");
+    $currentTplId = (!empty($currCompany) && isset($currCompany[0]->invoice_template_id)) ? (int)$currCompany[0]->invoice_template_id : 1;
+
+    $tplRows = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates WHERE status='active' ORDER BY id ASC");
+    $list = [];
+
+    // Get a sample invoice id for live preview
+    $sampleInv = $ai_db->aiGetQueryObj("SELECT id FROM tbl_invoice WHERE company_id={$cId} ORDER BY id DESC LIMIT 1");
+    $sampleId = !empty($sampleInv) ? (int)$sampleInv[0]->id : 0;
+
+    foreach ($tplRows as $tpl) {
+        $previewImg = !empty($tpl->preview_image) ? rtrim(SITE_URL, '/') . '/' . ltrim($tpl->preview_image, '/') : '';
+        // If real invoice exists use it, otherwise provide sample_preview URL
+        if ($sampleId > 0) {
+            $previewUrl = rtrim(ADMIN_URL, '/') . '/invoice-print.php?id=' . $sampleId . '&preview_template=' . $tpl->id;
+        } else {
+            $previewUrl = rtrim(ADMIN_URL, '/') . '/invoice-print.php?sample_preview=1&company_id=' . $cId . '&preview_template=' . $tpl->id;
+        }
+
+        $list[] = [
+            'id'            => (int)$tpl->id,
+            'template_name' => (string)$tpl->template_name,
+            'template_slug' => (string)$tpl->template_slug,
+            'preview_image' => $previewImg,
+            'is_selected'   => ((int)$tpl->id === $currentTplId),
+            'preview_url'   => $previewUrl
+        ];
+    }
+
+    apiResponse(200, 'Invoice templates retrieved successfully.', [
+        'company_id'          => $cId,
+        'current_template_id' => $currentTplId,
+        'total'               => count($list),
+        'templates'           => $list
+    ]);
+}
+
+/**
+ * 2. Set Default Invoice Template for Company
+ * Action: invoice-template-set-default
+ * Method: POST
+ * Parameters: template_id (required)
+ */
+if ($action === 'invoice-template-set-default') {
+    if ($method !== 'POST') {
+        apiResponse(405, 'Only POST method is allowed.');
+    }
+
+    $input = getApiInput();
+    $company = authenticateCompany($input);
+    $cId = (int)$company['id'];
+
+    $templateId = (int)($input['template_id'] ?? 0);
+    if ($templateId <= 0) {
+        apiResponse(400, 'template_id is required.');
+    }
+
+    $tplFind = $ai_db->aiGetQueryObj("SELECT id, template_name FROM tbl_invoice_templates WHERE id={$templateId} AND status='active' LIMIT 1");
+    if (empty($tplFind)) {
+        apiResponse(404, 'Template not found or inactive.');
+    }
+
+    $update = $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id={$templateId} WHERE id={$cId}");
+    if ($update) {
+        apiResponse(200, 'Default invoice template updated successfully.', [
+            'company_id'    => $cId,
+            'template_id'   => $templateId,
+            'template_name' => (string)$tplFind[0]->template_name
+        ]);
+    } else {
+        apiResponse(500, 'Failed to update template.');
+    }
 }
 
 apiResponse(404, 'Invalid API action.');

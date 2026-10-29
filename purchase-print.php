@@ -7,6 +7,37 @@ if (empty($_SESSION['aid'])) {
     exit;
 }
 
+$docType = 'purchase';
+require_once __DIR__ . '/includes/invoice-data-loader.php';
+
+// ==========================================
+// DYNAMIC_TEMPLATE_ROUTER: Load Company Template
+// ==========================================
+$templateIdToUse = 1;
+if (!empty($_GET['preview_template'])) {
+    $templateIdToUse = intval($_GET['preview_template']);
+} elseif (!empty($company->invoice_template_id)) {
+    $templateIdToUse = intval($company->invoice_template_id);
+}
+
+// Fetch template file from DB
+$tplObj = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates WHERE id='$templateIdToUse' LIMIT 1");
+if (!empty($tplObj) && !empty($tplObj[0]->file_path)) {
+    $tplRelativePath = $tplObj[0]->file_path;
+    $fullTemplatePath = __DIR__ . '/' . ltrim($tplRelativePath, '/');
+    if (file_exists($fullTemplatePath) && basename($fullTemplatePath) !== 'purchase-print.php') {
+        include $fullTemplatePath;
+        exit;
+    }
+}
+require_once __DIR__ . '/root/config.php';
+
+// Check login
+if (empty($_SESSION['aid'])) {
+    header('Location: index.php');
+    exit;
+}
+
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if ($id <= 0) {
     die("Invalid Purchase Bill ID!");
@@ -84,7 +115,7 @@ function getIndianCurrencyWords(float $number) {
         }
     }
     $Rupees = implode('', array_reverse(array_filter($str)));
-    $paise = ($decimal > 0) ? " and " . ($words[$decimal / 10] . " " . $words[$decimal % 10]) . ' Paise' : '';
+    $paise = ""; if ((int)$decimal > 0) { $d = (int)$decimal; $paise = " and " . ($d < 21 ? ($words[$d] ?? "") : (($words[(int)floor($d / 10) * 10] ?? "") . " " . ($words[$d % 10] ?? ""))) . " Paise"; }
     return ($Rupees ? $Rupees . 'Rupees ' : '') . $paise . " Only";
 }
 
