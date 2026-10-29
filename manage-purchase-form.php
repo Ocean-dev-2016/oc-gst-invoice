@@ -102,14 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $igst_amount = $company_has_gst ? floatval($_POST['igst_amount'] ?? 0) : 0.00;
     $tax_amount = $company_has_gst ? floatval($_POST['tax_amount'] ?? 0) : 0.00;
     $grand_total = $company_has_gst ? floatval($_POST['grand_total'] ?? 0) : $total_amount;
-    $req_payment_status = $_POST['payment_status'] ?? '';
-    if ($req_payment_status === 'Paid') {
-        $payment_status = 'Paid';
-        $paid_amount = $grand_total;
-    } else {
-        $payment_status = 'Pending';
-        $paid_amount = 0.00;
-    }
+    $payment_status = ($mode === 'edit' && !empty($purchaseData->payment_status)) ? $purchaseData->payment_status : 'Pending';
+    $paid_amount = ($mode === 'edit' && isset($purchaseData->paid_amount)) ? floatval($purchaseData->paid_amount) : 0.00;
     $status = $_POST['status'] ?? 'active';
 
     // Get State Name
@@ -297,6 +291,10 @@ if ($mode === 'edit' && $id > 0) {
     $qRes = $ai_db->aiGetQueryObj("SELECT * FROM tbl_purchase WHERE id='$id' LIMIT 1");
     if ($qRes) {
         $purchaseData = $qRes[0];
+        if (($purchaseData->payment_status ?? '') === 'Paid') {
+            $ai_core->aiGoPage('manage-purchase-list.php?msg=paid_locked');
+            exit;
+        }
         $purchaseItems = $ai_db->aiGetQueryObj("SELECT * FROM tbl_purchase_items WHERE purchase_id='$id'");
         if (!empty($purchaseItems)) {
             foreach ($purchaseItems as &$qItem) {
@@ -651,15 +649,8 @@ if ($selected_state_id > 0) {
                                                 <input type="text" name="grand_total" id="grand_total" class="form-control summary-input fs-5 fw-bold text-dark" value="0.00" readonly>
                                             </div>
 
-                                            <!-- Payment Status -->
-                                            <div class="card p-3 mb-3 border" style="background-color: #f8fafc; border-radius: 8px;">
-                                                <label class="form-label fw-bold small text-muted text-uppercase mb-1">Payment Status</label>
-                                                <select name="payment_status" id="payment_status" class="form-select form-select-sm fw-semibold">
-                                                    <option value="Pending" <?= (($purchaseData->payment_status ?? 'Pending') === 'Pending') ? 'selected' : '' ?>>⏳ Pending (Unpaid)</option>
-                                                    <option value="Paid" <?= (($purchaseData->payment_status ?? '') === 'Paid') ? 'selected' : '' ?>>✓ Full Paid</option>
-                                                </select>
-                                                <input type="hidden" name="paid_amount" id="paid_amount" value="<?= htmlspecialchars(!empty($purchaseData->paid_amount) ? number_format((float)$purchaseData->paid_amount, 2, '.', '') : '0.00') ?>">
-                                            </div>
+                                            <input type="hidden" name="payment_status" id="payment_status" value="<?= htmlspecialchars($purchaseData->payment_status ?? 'Pending') ?>">
+                                            <input type="hidden" name="paid_amount" id="paid_amount" value="<?= htmlspecialchars(!empty($purchaseData->paid_amount) ? number_format((float)$purchaseData->paid_amount, 2, '.', '') : '0.00') ?>">
 
                                             <!-- ACTION BUTTONS -->
                                             <div class="pt-4 d-flex align-items-center flex-wrap gap-2">
@@ -711,8 +702,11 @@ if ($selected_state_id > 0) {
             <?php } ?>
         <?php } ?>
 
+        // Initialize GST visibility and table on page load
+        updatePurchaseGstVisibility(isCompanyGstActive ? 1 : 0);
         renderTable();
         updateProductDropdown();
+        calculateTotals();
 
         // Function to disable or hide already-added products in #product_select
         function updateProductDropdown() {
@@ -1246,11 +1240,7 @@ if ($selected_state_id > 0) {
 
             var grandTotal = totalAmt + (isCompanyGstActive && gstType === 'with_gst' ? totalTax : 0);
             $('#grand_total').val(grandTotal.toFixed(2));
-            if ($('#payment_status').val() === 'Paid') {
-                $('#paid_amount').val(grandTotal.toFixed(2));
-            } else {
-                $('#paid_amount').val('0.00');
-            }
+            // Grand Total calculation
         }
 
         // Synchronize Purchase Date and Due Date

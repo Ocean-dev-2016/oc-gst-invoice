@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     if (!$company_has_gst) {
         $gst_no = '';
     }
-    
+
     $total_amount = floatval($_POST['total_amount'] ?? 0);
     $cgst_amount = $company_has_gst ? floatval($_POST['cgst_amount'] ?? 0) : 0.00;
     $sgst_amount = $company_has_gst ? floatval($_POST['sgst_amount'] ?? 0) : 0.00;
@@ -94,7 +94,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     } elseif ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
         $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
-        // Validate each item product exists and is active
         $invalidProductError = '';
         if (empty($_POST['item_description']) || !is_array($_POST['item_description'])) {
             $invalidProductError = "Please add at least one product item!";
@@ -318,62 +317,71 @@ if ($selected_state_id > 0) {
 ?>
 
 <style>
-.quotation-card {
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    background: #ffffff;
-}
-.form-section-title {
-    font-size: 15px;
-    font-weight: 700;
-    color: #444;
-    border-bottom: 2px solid #eee;
-    padding-bottom: 8px;
-    margin-bottom: 20px;
-}
-.btn-submit-orange {
-    background-color: #f37021 !important;
-    border-color: #f37021 !important;
-    color: #fff !important;
-    font-weight: 600;
-}
-.btn-submit-orange:hover {
-    background-color: #d95e14 !important;
-    border-color: #d95e14 !important;
-}
-.btn-cancel-orange {
-    background-color: #f37021 !important;
-    border-color: #f37021 !important;
-    color: #fff !important;
-    font-weight: 600;
-}
-.btn-add-product {
-    background-color: #10b981 !important;
-    border-color: #10b981 !important;
-    color: #fff !important;
-    font-weight: 600;
-}
-.btn-add-product:hover {
-    background-color: #059669 !important;
-}
-.summary-box {
-    width: 320px;
-    margin-left: auto;
-}
-.summary-label {
-    background-color: #f1f3f5;
-    font-weight: 600;
-    color: #495057;
-    width: 130px;
-    display: inline-block;
-    padding: 6px 12px;
-    border-radius: 4px 0 0 4px;
-}
-.summary-input {
-    border-radius: 0 4px 4px 0 !important;
-    text-align: right;
-    font-weight: 600;
-}
+    .quotation-card {
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        background: #ffffff;
+    }
+
+    .form-section-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #444;
+        border-bottom: 2px solid #eee;
+        padding-bottom: 8px;
+        margin-bottom: 20px;
+    }
+
+    .btn-submit-orange {
+        background-color: #f37021 !important;
+        border-color: #f37021 !important;
+        color: #fff !important;
+        font-weight: 600;
+    }
+
+    .btn-submit-orange:hover {
+        background-color: #d95e14 !important;
+        border-color: #d95e14 !important;
+    }
+
+    .btn-cancel-orange {
+        background-color: #f37021 !important;
+        border-color: #f37021 !important;
+        color: #fff !important;
+        font-weight: 600;
+    }
+
+    .btn-add-product {
+        background-color: #10b981 !important;
+        border-color: #10b981 !important;
+        color: #fff !important;
+        font-weight: 600;
+    }
+
+    .btn-add-product:hover {
+        background-color: #059669 !important;
+    }
+
+    .summary-box {
+        width: 320px;
+        margin-left: auto;
+    }
+
+    .summary-label {
+        background-color: #f1f3f5;
+        font-weight: 600;
+        color: #495057;
+        width: 130px;
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 4px 0 0 4px;
+    }
+
+    .summary-input {
+        border-radius: 0 4px 4px 0 !important;
+        text-align: right;
+        font-weight: 600;
+    }
 </style>
 
 <body>
@@ -445,7 +453,7 @@ if ($selected_state_id > 0) {
                                         <select name="party_id" id="party_select" class="form-select select2" required>
                                             <option value="">-- Select Party --</option>
                                             <?php foreach ($parties as $pty) { ?>
-                                                <option value="<?= $pty->id ?>" 
+                                                <option value="<?= $pty->id ?>"
                                                     data-name="<?= htmlspecialchars($pty->party_name) ?>"
                                                     data-gst="<?= htmlspecialchars($pty->gst_no) ?>"
                                                     data-address="<?= htmlspecialchars($pty->address) ?>"
@@ -668,419 +676,498 @@ if ($selected_state_id > 0) {
     <?php include('includes/footer_js.php'); ?>
 
     <script>
-    $(document).ready(function() {
-        var itemsList = [];
+        $(document).ready(function() {
+            var itemsList = [];
 
-        // Existing items from PHP if Edit mode
-        <?php if (!empty($quotationItems)) { ?>
-            <?php foreach ($quotationItems as $item) { ?>
-                itemsList.push({
-                    product_id: <?= intval($item->product_id ?? 0) ?>,
-                    description: <?= json_encode($item->description) ?>,
-                    hsn_code: <?= json_encode($item->hsn_code) ?>,
-                    rate: <?= floatval($item->rate) ?>,
-                    gst_percent: <?= floatval($item->gst_percent) ?>,
-                    discount_type: <?= json_encode(!empty($item->discount_type) ? $item->discount_type : 'percentage') ?>,
-                    discount_value: <?= floatval($item->discount_value ?? 0) ?>,
-                    qty: <?= floatval($item->qty) ?>
-                });
+            // Existing items from PHP if Edit mode
+            <?php if (!empty($quotationItems)) { ?>
+                <?php foreach ($quotationItems as $item) { ?>
+                    itemsList.push({
+                        product_id: <?= intval($item->product_id ?? 0) ?>,
+                        description: <?= json_encode($item->description) ?>,
+                        hsn_code: <?= json_encode($item->hsn_code) ?>,
+                        rate: <?= floatval($item->rate) ?>,
+                        gst_percent: <?= floatval($item->gst_percent) ?>,
+                        discount_type: <?= json_encode(!empty($item->discount_type) ? $item->discount_type : 'percentage') ?>,
+                        discount_value: <?= floatval($item->discount_value ?? 0) ?>,
+                        qty: <?= floatval($item->qty) ?>
+                    });
+                <?php } ?>
             <?php } ?>
-        <?php } ?>
 
-        renderTable();
-        updateProductDropdown();
-
-        // Function to disable or hide already-added products in #product_select
-        function updateProductDropdown() {
-            var addedProductIds = [];
-            var addedDescriptions = [];
-            $.each(itemsList, function(i, item) {
-                if (item.product_id && item.product_id > 0) {
-                    addedProductIds.push(String(item.product_id));
-                }
-                if (item.description) {
-                    addedDescriptions.push($.trim(item.description).toLowerCase());
-                }
-            });
-
-            $('#product_select option').each(function() {
-                var val = $(this).val();
-                if (!val) return; // Keep placeholder enabled
-                var optTitle = $.trim($(this).data('title') || $(this).text()).toLowerCase();
-                var isAdded = (addedProductIds.indexOf(String(val)) !== -1) || (addedDescriptions.indexOf(optTitle) !== -1);
-
-                if (isAdded) {
-                    $(this).prop('disabled', true);
-                    $(this).attr('hidden', true);
-                } else {
-                    $(this).prop('disabled', false);
-                    $(this).removeAttr('hidden');
-                }
-            });
-
-            // If current selected option is disabled, reset select
-            var currentVal = $('#product_select').val();
-            var currentTitle = $.trim($('#product_select').find('option:selected').data('title') || '').toLowerCase();
-            if (currentVal && (addedProductIds.indexOf(String(currentVal)) !== -1 || (currentTitle && addedDescriptions.indexOf(currentTitle) !== -1))) {
-                $('#product_select').val('').trigger('change');
-            }
-
-            if ($.fn.select2) {
-                $('#product_select').trigger('change.select2');
-            }
-        }
-
-        var isCompanyGstActive = <?= $show_quotation_gst ? 'true' : 'false' ?>;
-
-        function updateQuotationGstVisibility(hasGst) {
-            if (typeof hasGst !== 'undefined') {
-                isCompanyGstActive = (hasGst == 1 || hasGst === true);
-            } else {
-                var $compSelect = $('select[name="company_id"]');
-                if ($compSelect.length > 0) {
-                    var selectedOpt = $compSelect.find('option:selected');
-                    isCompanyGstActive = (selectedOpt.data('gst-applicable') == 1);
-                } else {
-                    isCompanyGstActive = <?= $show_quotation_gst ? 'true' : 'false' ?>;
-                }
-            }
-
-            if (isCompanyGstActive) {
-                $('#quotation_gst_no_wrapper').slideDown(200);
-                $('#quotation_gst_select_wrapper').show();
-                $('#quotation_add_btn_wrapper').show();
-                $('#quotation_nogst_btn_wrapper').hide();
-                $('#gst_type').val('with_gst');
-                $('#th_item_gst').show();
-                $('#itemsTable').find('.col-item-gst').show();
-                $('#summary_gst_breakdown').show();
-            } else {
-                $('#quotation_gst_no_wrapper').slideUp(200);
-                $('#quotation_gst_select_wrapper').hide();
-                $('#quotation_add_btn_wrapper').hide();
-                $('#quotation_nogst_btn_wrapper').show();
-                $('#gst_no').val('');
-                $('#gst_type').val('without_gst');
-                $('#th_item_gst').hide();
-                $('#itemsTable').find('.col-item-gst').hide();
-                $('#summary_gst_breakdown').hide();
-
-                // If any items have gst_percent, reset to 0
-                $.each(itemsList, function(i, item) {
-                    item.gst_percent = 0;
-                });
-            }
-
-            calculateTotals();
-        }
-
-        // When Company Changed (for Admin): dynamically reload parties, products, and quotation number
-        $('#company_id').change(function() {
-            var compId = $(this).val();
-            var partySelect = $('#party_select');
-            var prodSelect = $('#product_select');
-            var selectedOpt = $(this).find('option:selected');
-            var compGstApplicable = selectedOpt.data('gst-applicable');
-
-            updateQuotationGstVisibility(compGstApplicable);
-
-            partySelect.html('<option value="">Loading parties...</option>');
-            prodSelect.html('<option value="">Loading products...</option>');
-
-            // Clear current items on company change to prevent cross-company products
-            itemsList = [];
+            // Initialize GST visibility and table on page load
+            updateQuotationGstVisibility(isCompanyGstActive);
             renderTable();
+            updateProductDropdown();
+            calculateTotals();
 
-            if (compId > 0) {
-                $.ajax({
-                    type: "POST",
-                    url: "ajax.php",
-                    data: { action: "get_parties_and_quotation_no", company_id: compId },
-                    dataType: "json",
-                    success: function(res) {
-                        if (typeof res.gst_applicable !== 'undefined') {
-                            updateQuotationGstVisibility(res.gst_applicable);
-                        }
+            // Function to disable or hide already-added products in #product_select
+            function updateProductDropdown() {
+                var addedProductIds = [];
+                var addedDescriptions = [];
+                $.each(itemsList, function(i, item) {
+                    if (item.product_id && item.product_id > 0) {
+                        addedProductIds.push(String(item.product_id));
+                    }
+                    if (item.description) {
+                        addedDescriptions.push($.trim(item.description).toLowerCase());
+                    }
+                });
 
-                        // 1. Populate Parties
-                        var partyHtml = '<option value="">-- Select Party --</option>';
-                        if (res.status === 'success') {
-                            if (res.parties && res.parties.length > 0) {
-                                $.each(res.parties, function(i, p) {
-                                    partyHtml += '<option value="' + p.id + '" ' +
+                $('#product_select option').each(function() {
+                    var val = $(this).val();
+                    if (!val) return; // Keep placeholder enabled
+                    var optTitle = $.trim($(this).data('title') || $(this).text()).toLowerCase();
+                    var isAdded = (addedProductIds.indexOf(String(val)) !== -1) || (addedDescriptions.indexOf(optTitle) !== -1);
+
+                    if (isAdded) {
+                        $(this).prop('disabled', true);
+                        $(this).attr('hidden', true);
+                    } else {
+                        $(this).prop('disabled', false);
+                        $(this).removeAttr('hidden');
+                    }
+                });
+
+                // If current selected option is disabled, reset select
+                var currentVal = $('#product_select').val();
+                var currentTitle = $.trim($('#product_select').find('option:selected').data('title') || '').toLowerCase();
+                if (currentVal && (addedProductIds.indexOf(String(currentVal)) !== -1 || (currentTitle && addedDescriptions.indexOf(currentTitle) !== -1))) {
+                    $('#product_select').val('').trigger('change');
+                }
+
+                if ($.fn.select2) {
+                    $('#product_select').trigger('change.select2');
+                }
+            }
+
+            var isCompanyGstActive = <?= $show_quotation_gst ? 'true' : 'false' ?>;
+
+            function updateQuotationGstVisibility(hasGst) {
+                if (typeof hasGst !== 'undefined') {
+                    isCompanyGstActive = (hasGst == 1 || hasGst === true);
+                } else {
+                    var $compSelect = $('select[name="company_id"]');
+                    if ($compSelect.length > 0) {
+                        var selectedOpt = $compSelect.find('option:selected');
+                        isCompanyGstActive = (selectedOpt.data('gst-applicable') == 1);
+                    } else {
+                        isCompanyGstActive = <?= $show_quotation_gst ? 'true' : 'false' ?>;
+                    }
+                }
+
+                if (isCompanyGstActive) {
+                    $('#quotation_gst_no_wrapper').slideDown(200);
+                    $('#quotation_gst_select_wrapper').show();
+                    $('#quotation_add_btn_wrapper').show();
+                    $('#quotation_nogst_btn_wrapper').hide();
+                    $('#gst_type').val('with_gst');
+                    $('#th_item_gst').show();
+                    $('#itemsTable').find('.col-item-gst').show();
+                    $('#summary_gst_breakdown').show();
+                } else {
+                    $('#quotation_gst_no_wrapper').slideUp(200);
+                    $('#quotation_gst_select_wrapper').hide();
+                    $('#quotation_add_btn_wrapper').hide();
+                    $('#quotation_nogst_btn_wrapper').show();
+                    $('#gst_no').val('');
+                    $('#gst_type').val('without_gst');
+                    $('#th_item_gst').hide();
+                    $('#itemsTable').find('.col-item-gst').hide();
+                    $('#summary_gst_breakdown').hide();
+
+                    // If any items have gst_percent, reset to 0
+                    $.each(itemsList, function(i, item) {
+                        item.gst_percent = 0;
+                    });
+                }
+
+                calculateTotals();
+            }
+
+            // When Company Changed (for Admin): dynamically reload parties, products, and quotation number
+            $('#company_id').change(function() {
+                var compId = $(this).val();
+                var partySelect = $('#party_select');
+                var prodSelect = $('#product_select');
+                var selectedOpt = $(this).find('option:selected');
+                var compGstApplicable = selectedOpt.data('gst-applicable');
+
+                updateQuotationGstVisibility(compGstApplicable);
+
+                partySelect.html('<option value="">Loading parties...</option>');
+                prodSelect.html('<option value="">Loading products...</option>');
+
+                // Clear current items on company change to prevent cross-company products
+                itemsList = [];
+                renderTable();
+
+                if (compId > 0) {
+                    $.ajax({
+                        type: "POST",
+                        url: "ajax.php",
+                        data: {
+                            action: "get_parties_and_quotation_no",
+                            company_id: compId
+                        },
+                        dataType: "json",
+                        success: function(res) {
+                            if (typeof res.gst_applicable !== 'undefined') {
+                                updateQuotationGstVisibility(res.gst_applicable);
+                            }
+
+                            // 1. Populate Parties
+                            var partyHtml = '<option value="">-- Select Party --</option>';
+                            if (res.status === 'success') {
+                                if (res.parties && res.parties.length > 0) {
+                                    $.each(res.parties, function(i, p) {
+                                        partyHtml += '<option value="' + p.id + '" ' +
                                             'data-name="' + (p.party_name || '') + '" ' +
                                             'data-gst="' + (p.gst_no || '') + '" ' +
                                             'data-address="' + (p.address || '') + '" ' +
                                             'data-state="' + (p.state_id || 0) + '" ' +
                                             'data-city="' + (p.city_id || 0) + '">' +
                                             p.party_name + '</option>';
-                                });
-                            }
-                            // 2. Populate Products for the chosen company
-                            var prodHtml = '<option value="">-- Select Product --</option>';
-                            if (res.products && res.products.length > 0) {
-                                $.each(res.products, function(i, p) {
-                                    var price = parseFloat(p.sales_price) || 0;
-                                    var gstRate = (typeof p.gst_rate !== 'undefined' && p.gst_rate !== null) ? parseFloat(p.gst_rate) : 18;
-                                    prodHtml += '<option value="' + p.id + '" ' +
+                                    });
+                                }
+                                // 2. Populate Products for the chosen company
+                                var prodHtml = '<option value="">-- Select Product --</option>';
+                                if (res.products && res.products.length > 0) {
+                                    $.each(res.products, function(i, p) {
+                                        var price = parseFloat(p.sales_price) || 0;
+                                        var gstRate = (typeof p.gst_rate !== 'undefined' && p.gst_rate !== null) ? parseFloat(p.gst_rate) : 18;
+                                        prodHtml += '<option value="' + p.id + '" ' +
                                             'data-title="' + escapeHtml(p.product_name) + '" ' +
                                             'data-hsn="' + escapeHtml(p.hsn_code || '') + '" ' +
                                             'data-rate="' + price + '" ' +
                                             'data-gst="' + gstRate + '">' +
                                             escapeHtml(p.product_name) + ' (₹' + price.toFixed(2) + ')</option>';
-                                });
-                            }
-                            prodSelect.html(prodHtml);
-
-                            // 3. Update quotation number if in add mode
-                            <?php if ($mode === 'add') { ?>
-                                if (res.quotation_no) {
-                                    $('#quotation_no').val(res.quotation_no);
+                                    });
                                 }
-                            <?php } ?>
-                        } else {
+                                prodSelect.html(prodHtml);
+
+                                // 3. Update quotation number if in add mode
+                                <?php if ($mode === 'add') { ?>
+                                    if (res.quotation_no) {
+                                        $('#quotation_no').val(res.quotation_no);
+                                    }
+                                <?php } ?>
+                            } else {
+                                prodSelect.html('<option value="">-- Select Product --</option>');
+                            }
+
+                            partySelect.html(partyHtml);
+
+                            if ($.fn.select2) {
+                                partySelect.trigger('change.select2');
+                                prodSelect.trigger('change.select2');
+                            }
+
+                            updateProductDropdown();
+                        },
+                        error: function() {
+                            partySelect.html('<option value="">-- Select Party --</option>');
                             prodSelect.html('<option value="">-- Select Product --</option>');
                         }
-
-                        partySelect.html(partyHtml);
-
-                        if ($.fn.select2) {
-                            partySelect.trigger('change.select2');
-                            prodSelect.trigger('change.select2');
-                        }
-
-                        updateProductDropdown();
-                    },
-                    error: function() {
-                        partySelect.html('<option value="">-- Select Party --</option>');
-                        prodSelect.html('<option value="">-- Select Product --</option>');
-                    }
-                });
-            } else {
-                partySelect.html('<option value="">-- Select Party --</option>');
-                prodSelect.html('<option value="">-- Select Product --</option>');
-                if ($.fn.select2) {
-                    partySelect.trigger('change.select2');
-                    prodSelect.trigger('change.select2');
-                }
-            }
-
-            // Clear party details
-            $('#party_name').val('');
-            $('#gst_no').val('');
-            $('#address').val('');
-            $('#input_hsn').val('');
-            $('#input_rate').val('');
-            $('#input_discount_val').val('0');
-        });
-
-        // When Party Selected from Dropdown
-        $('#party_select').change(function() {
-            var selected = $(this).find('option:selected');
-            var partyId = selected.val();
-            if (partyId) {
-                $('#party_id').val(partyId);
-                $('#party_name').val(selected.data('name') || '');
-                $('#gst_no').val(isCompanyGstActive ? (selected.data('gst') || '') : '');
-                $('#address').val(selected.data('address') || '');
-                var stId = selected.data('state');
-                $('#city_id').data('desired-city-id', selected.data('city') || '');
-                if (stId) {
-                    $('#state_id').val(stId).trigger('change');
+                    });
                 } else {
-                    $('#state_id').val('').trigger('change');
-                }
-            }
-        });
-
-        // When State Changed -> Load Cities
-        $('#state_id').change(function() {
-            var stateId = $(this).val();
-            var citySelect = $('#city_id');
-            citySelect.html('<option value="">Loading...</option>');
-            if (stateId > 0) {
-                $.ajax({
-                    type: "POST",
-                    url: "ajax.php",
-                    data: { action: "get_cities_by_state", state_id: stateId },
-                    dataType: "json",
-                    success: function(res) {
-                        if (String($('#state_id').val()) !== String(stateId)) {
-                            return;
-                        }
-                        var html = '<option value="">Enter city / Select</option>';
-                        if (res.status === 'success' && res.cities.length > 0) {
-                            $.each(res.cities, function(i, city) {
-                                html += '<option value="' + city.id + '">' + city.city_name + '</option>';
-                            });
-                        }
-                        citySelect.html(html);
-                        var desiredCityId = citySelect.data('desired-city-id');
-                        if (desiredCityId) {
-                            citySelect.val(String(desiredCityId)).trigger('change');
-                        }
-                        citySelect.removeData('desired-city-id');
-                    },
-                    error: function() {
-                        if (String($('#state_id').val()) !== String(stateId)) {
-                            return;
-                        }
-                        citySelect.html('<option value="">Enter city / Select</option>');
-                        citySelect.removeData('desired-city-id');
+                    partySelect.html('<option value="">-- Select Party --</option>');
+                    prodSelect.html('<option value="">-- Select Product --</option>');
+                    if ($.fn.select2) {
+                        partySelect.trigger('change.select2');
+                        prodSelect.trigger('change.select2');
                     }
-                });
-            } else {
-                citySelect.html('<option value="">Enter city / Select</option>');
-                citySelect.removeData('desired-city-id');
-            }
-            calculateTotals();
-        });
-
-        // When Product Selected from Dropdown -> auto-fill HSN, Rate and Product's GST %
-        $('#product_select').change(function() {
-            var selected = $(this).find('option:selected');
-            if (selected.val()) {
-                $('#input_hsn').val(selected.data('hsn') || '');
-                $('#input_rate').val(selected.data('rate') || 0);
-
-                var prodGst = selected.data('gst');
-                if (typeof prodGst !== 'undefined' && prodGst !== '') {
-                    var gstVal = parseFloat(prodGst) || 0;
-                    $('#input_gst_pct').val(gstVal);
-                    $('#input_gst_pct_display').val(gstVal + '%');
-                } else {
-                    $('#input_gst_pct').val('0');
-                    $('#input_gst_pct_display').val('0%');
                 }
-            } else {
+
+                // Clear party details
+                $('#party_name').val('');
+                $('#gst_no').val('');
+                $('#address').val('');
                 $('#input_hsn').val('');
                 $('#input_rate').val('');
-                $('#input_gst_pct').val('0');
-                $('#input_gst_pct_display').val('');
-            }
-        });
-
-        // Add Product Item Button Click
-        $(document).on('click', '.btnAddItem', function(e) {
-            e.preventDefault();
-            var selected = $('#product_select').find('option:selected');
-            var prodId = parseInt(selected.val()) || 0;
-            var desc = selected.data('title') || (selected.val() ? selected.text().trim() : '');
-            var hsn = $('#input_hsn').val().trim();
-            var rate = parseFloat($('#input_rate').val()) || 0;
-            var gstPct = isCompanyGstActive ? (parseFloat($('#input_gst_pct').val()) || 0) : 0;
-
-            if (!prodId || desc === '') {
-                alert('Please select a Product!');
-                $('#product_select').focus();
-                return false;
-            }
-
-            // Check if product is already added in the table
-            var normDesc = $.trim(desc).toLowerCase();
-            var alreadyExists = itemsList.some(function(item) {
-                var matchId = (prodId > 0 && item.product_id > 0 && item.product_id === prodId);
-                var matchDesc = (item.description && $.trim(item.description).toLowerCase() === normDesc);
-                return matchId || matchDesc;
+                $('#input_discount_val').val('0');
             });
 
-            if (alreadyExists) {
-                alert('This product (' + desc + ') has already been added to the quotation!');
+            // When Party Selected from Dropdown
+            $('#party_select').change(function() {
+                var selected = $(this).find('option:selected');
+                var partyId = selected.val();
+                if (partyId) {
+                    $('#party_id').val(partyId);
+                    $('#party_name').val(selected.data('name') || '');
+                    $('#gst_no').val(isCompanyGstActive ? (selected.data('gst') || '') : '');
+                    $('#address').val(selected.data('address') || '');
+                    var stId = selected.data('state');
+                    $('#city_id').data('desired-city-id', selected.data('city') || '');
+                    if (stId) {
+                        $('#state_id').val(stId).trigger('change');
+                    } else {
+                        $('#state_id').val('').trigger('change');
+                    }
+                }
+            });
+
+            // When State Changed -> Load Cities
+            $('#state_id').change(function() {
+                var stateId = $(this).val();
+                var citySelect = $('#city_id');
+                citySelect.html('<option value="">Loading...</option>');
+                if (stateId > 0) {
+                    $.ajax({
+                        type: "POST",
+                        url: "ajax.php",
+                        data: {
+                            action: "get_cities_by_state",
+                            state_id: stateId
+                        },
+                        dataType: "json",
+                        success: function(res) {
+                            if (String($('#state_id').val()) !== String(stateId)) {
+                                return;
+                            }
+                            var html = '<option value="">Enter city / Select</option>';
+                            if (res.status === 'success' && res.cities.length > 0) {
+                                $.each(res.cities, function(i, city) {
+                                    html += '<option value="' + city.id + '">' + city.city_name + '</option>';
+                                });
+                            }
+                            citySelect.html(html);
+                            var desiredCityId = citySelect.data('desired-city-id');
+                            if (desiredCityId) {
+                                citySelect.val(String(desiredCityId)).trigger('change');
+                            }
+                            citySelect.removeData('desired-city-id');
+                        },
+                        error: function() {
+                            if (String($('#state_id').val()) !== String(stateId)) {
+                                return;
+                            }
+                            citySelect.html('<option value="">Enter city / Select</option>');
+                            citySelect.removeData('desired-city-id');
+                        }
+                    });
+                } else {
+                    citySelect.html('<option value="">Enter city / Select</option>');
+                    citySelect.removeData('desired-city-id');
+                }
+                calculateTotals();
+            });
+
+            // When Product Selected from Dropdown -> auto-fill HSN, Rate and Product's GST %
+            $('#product_select').change(function() {
+                var selected = $(this).find('option:selected');
+                if (selected.val()) {
+                    $('#input_hsn').val(selected.data('hsn') || '');
+                    $('#input_rate').val(selected.data('rate') || 0);
+
+                    var prodGst = selected.data('gst');
+                    if (typeof prodGst !== 'undefined' && prodGst !== '') {
+                        var gstVal = parseFloat(prodGst) || 0;
+                        $('#input_gst_pct').val(gstVal);
+                        $('#input_gst_pct_display').val(gstVal + '%');
+                    } else {
+                        $('#input_gst_pct').val('0');
+                        $('#input_gst_pct_display').val('0%');
+                    }
+                } else {
+                    $('#input_hsn').val('');
+                    $('#input_rate').val('');
+                    $('#input_gst_pct').val('0');
+                    $('#input_gst_pct_display').val('');
+                }
+            });
+
+            // Add Product Item Button Click
+            $(document).on('click', '.btnAddItem', function(e) {
+                e.preventDefault();
+                var selected = $('#product_select').find('option:selected');
+                var prodId = parseInt(selected.val()) || 0;
+                var desc = selected.data('title') || (selected.val() ? selected.text().trim() : '');
+                var hsn = $('#input_hsn').val().trim();
+                var rate = parseFloat($('#input_rate').val()) || 0;
+                var gstPct = isCompanyGstActive ? (parseFloat($('#input_gst_pct').val()) || 0) : 0;
+
+                if (!prodId || desc === '') {
+                    alert('Please select a Product!');
+                    $('#product_select').focus();
+                    return false;
+                }
+
+                // Check if product is already added in the table
+                var normDesc = $.trim(desc).toLowerCase();
+                var alreadyExists = itemsList.some(function(item) {
+                    var matchId = (prodId > 0 && item.product_id > 0 && item.product_id === prodId);
+                    var matchDesc = (item.description && $.trim(item.description).toLowerCase() === normDesc);
+                    return matchId || matchDesc;
+                });
+
+                if (alreadyExists) {
+                    alert('This product (' + desc + ') has already been added to the quotation!');
+                    $('#product_select').val('').trigger('change');
+                    return false;
+                }
+
+                itemsList.push({
+                    product_id: prodId,
+                    description: desc,
+                    hsn_code: hsn,
+                    rate: rate,
+                    gst_percent: gstPct,
+                    discount_type: 'percentage',
+                    discount_value: 0,
+                    qty: 1
+                });
+
+                // Reset inputs
                 $('#product_select').val('').trigger('change');
-                return false;
-            }
+                $('#input_hsn').val('');
+                $('#input_rate').val('');
 
-            itemsList.push({
-                product_id: prodId,
-                description: desc,
-                hsn_code: hsn,
-                rate: rate,
-                gst_percent: gstPct,
-                discount_type: 'percentage',
-                discount_value: 0,
-                qty: 1
+                renderTable();
+                updateProductDropdown();
             });
 
-            // Reset inputs
-            $('#product_select').val('').trigger('change');
-            $('#input_hsn').val('');
-            $('#input_rate').val('');
+            // Update item quantity
+            $(document).on('input change', '.item-qty-input', function() {
+                var index = $(this).data('index');
+                var val = parseFloat($(this).val()) || 0;
+                if (val < 0) val = 0;
+                itemsList[index].qty = val;
+                renderTable();
+            });
 
-            renderTable();
-            updateProductDropdown();
-        });
+            // Update item discount type
+            $(document).on('change', '.item-disc-type-select', function() {
+                var index = $(this).data('index');
+                itemsList[index].discount_type = $(this).val();
+                renderTable();
+            });
 
-        // Update item quantity
-        $(document).on('input change', '.item-qty-input', function() {
-            var index = $(this).data('index');
-            var val = parseFloat($(this).val()) || 0;
-            if (val < 0) val = 0;
-            itemsList[index].qty = val;
-            renderTable();
-        });
+            // Update item discount value
+            $(document).on('input change', '.item-disc-val-input', function() {
+                var index = $(this).data('index');
+                var val = parseFloat($(this).val()) || 0;
+                if (val < 0) val = 0;
+                itemsList[index].discount_value = val;
+                renderTable();
+            });
 
-        // Update item discount type
-        $(document).on('change', '.item-disc-type-select', function() {
-            var index = $(this).data('index');
-            itemsList[index].discount_type = $(this).val();
-            renderTable();
-        });
+            // Remove item
+            $(document).on('click', '.btn-remove-item', function() {
+                var index = $(this).data('index');
+                itemsList.splice(index, 1);
+                renderTable();
+                updateProductDropdown();
+            });
 
-        // Update item discount value
-        $(document).on('input change', '.item-disc-val-input', function() {
-            var index = $(this).data('index');
-            var val = parseFloat($(this).val()) || 0;
-            if (val < 0) val = 0;
-            itemsList[index].discount_value = val;
-            renderTable();
-        });
+            // GST Type or State change recalculation
+            $('#gst_type, #state_id').change(function() {
+                calculateTotals();
+            });
 
-        // Remove item
-        $(document).on('click', '.btn-remove-item', function() {
-            var index = $(this).data('index');
-            itemsList.splice(index, 1);
-            renderTable();
-            updateProductDropdown();
-        });
+            // Form Submit Validation (including GST validation)
+            $('#quotationForm').on('submit', function(e) {
+                var gstVal = $('#gst_no').val().trim().toUpperCase();
+                var gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
-        // GST Type or State change recalculation
-        $('#gst_type, #state_id').change(function() {
-            calculateTotals();
-        });
+                if (isCompanyGstActive && gstVal !== '' && !gstRegex.test(gstVal)) {
+                    e.preventDefault();
+                    alert('Please enter a valid 15-character GST Number (e.g. 24AAAAA0000A1Z5)!');
+                    $('#gst_no').focus();
+                    return false;
+                }
 
-        // Form Submit Validation (including GST validation)
-        $('#quotationForm').on('submit', function(e) {
-            var gstVal = $('#gst_no').val().trim().toUpperCase();
-            var gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+                if (itemsList.length === 0) {
+                    e.preventDefault();
+                    alert('Please add at least one product item to the quotation!');
+                    $('#product_select').focus();
+                    return false;
+                }
+            });
 
-            if (isCompanyGstActive && gstVal !== '' && !gstRegex.test(gstVal)) {
-                e.preventDefault();
-                alert('Please enter a valid 15-character GST Number (e.g. 24AAAAA0000A1Z5)!');
-                $('#gst_no').focus();
-                return false;
+            // Auto uppercase GST No on typing
+            $('#gst_no').on('input', function() {
+                $(this).val($(this).val().toUpperCase());
+            });
+
+            // Render Table Rows
+            function renderTable() {
+                var tbody = $('#itemsTableBody');
+                tbody.empty();
+
+                if (itemsList.length === 0) {
+                    tbody.html('<tr><td colspan="9" class="text-muted py-3">No products added yet. Use the inputs above to add items.</td></tr>');
+                } else {
+                    $.each(itemsList, function(i, item) {
+                        var baseAmt = (item.rate * item.qty);
+                        var discType = item.discount_type || 'percentage';
+                        var discVal = parseFloat(item.discount_value) || 0;
+                        var discAmt = 0;
+
+                        if (discType === 'percentage') {
+                            discAmt = (baseAmt * discVal) / 100;
+                        } else {
+                            discAmt = Math.min(baseAmt, discVal);
+                        }
+                        if (discAmt > baseAmt) discAmt = baseAmt;
+
+                        var netAmt = baseAmt - discAmt;
+
+                        var html = '<tr>' +
+                            '<td>' + (i + 1) + '</td>' +
+                            '<td class="text-start">' +
+                            '<strong>' + escapeHtml(item.description) + '</strong>' +
+                            '<input type="hidden" name="item_product_id[]" value="' + (item.product_id || 0) + '">' +
+                            '<input type="hidden" name="item_description[]" value="' + escapeHtml(item.description) + '">' +
+                            '</td>' +
+                            '<td>' +
+                            escapeHtml(item.hsn_code) +
+                            '<input type="hidden" name="item_hsn[]" value="' + escapeHtml(item.hsn_code) + '">' +
+                            '</td>' +
+                            '<td>' +
+                            item.rate.toFixed(2) +
+                            '<input type="hidden" name="item_rate[]" value="' + item.rate + '">' +
+                            '<input type="hidden" name="item_gst_pct[]" value="' + item.gst_percent + '">' +
+                            '</td>' +
+                            '<td>' +
+                            '<input type="number" step="1" min="1" class="form-control form-control-sm text-center item-qty-input" data-index="' + i + '" name="item_qty[]" value="' + item.qty + '">' +
+                            '</td>' +
+                            '<td>' +
+                            '<select name="item_discount_type[]" class="form-select form-select-sm text-center item-disc-type-select" data-index="' + i + '">' +
+                            '<option value="percentage"' + (discType === 'percentage' ? ' selected' : '') + '>Percentage (%)</option>' +
+                            '<option value="fixed"' + (discType === 'fixed' ? ' selected' : '') + '>Fixed (₹)</option>' +
+                            '</select>' +
+                            '</td>' +
+                            '<td>' +
+                            '<input type="number" step="0.01" min="0" name="item_discount_val[]" class="form-control form-control-sm text-center item-disc-val-input" data-index="' + i + '" value="' + discVal + '">' +
+                            (discAmt > 0 ? '<div class="text-muted small mt-1" style="font-size:11px;">-₹' + discAmt.toFixed(2) + '</div>' : '') +
+                            '<input type="hidden" name="item_discount_amt[]" class="item-discount-amt" value="' + discAmt.toFixed(2) + '">' +
+                            '</td>' +
+                            '<td class="fw-bold">' +
+                            netAmt.toFixed(2) +
+                            '<input type="hidden" name="item_net_amt[]" class="item-net-amt" value="' + netAmt.toFixed(2) + '">' +
+                            '<input type="hidden" name="item_tax_amt[]" class="item-tax-amt" value="0">' +
+                            '<input type="hidden" name="item_total_amt[]" class="item-total-amt" value="0">' +
+                            '</td>' +
+                            '<td>' +
+                            '<button type="button" class="btn btn-sm btn-outline-danger btn-remove-item" data-index="' + i + '"><i class="ti ti-trash"></i></button>' +
+                            '</td>' +
+                            '</tr>';
+                        tbody.append(html);
+                    });
+                }
+                calculateTotals();
             }
 
-            if (itemsList.length === 0) {
-                e.preventDefault();
-                alert('Please add at least one product item to the quotation!');
-                $('#product_select').focus();
-                return false;
-            }
-        });
+            // Calculate Summary Totals based on State & GST Type
+            function calculateTotals() {
+                var totalAmt = 0;
+                var totalTax = 0;
 
-        // Auto uppercase GST No on typing
-        $('#gst_no').on('input', function() {
-            $(this).val($(this).val().toUpperCase());
-        });
+                var gstType = isCompanyGstActive ? $('#gst_type').val() : 'without_gst'; // force without_gst if company has no GST
+                var selectedStateText = $('#state_id option:selected').text().trim().toLowerCase();
+                var isGujarat = (selectedStateText.indexOf('gujarat') !== -1);
 
-        // Render Table Rows
-        function renderTable() {
-            var tbody = $('#itemsTableBody');
-            tbody.empty();
-
-            if (itemsList.length === 0) {
-                tbody.html('<tr><td colspan="9" class="text-muted py-3">No products added yet. Use the inputs above to add items.</td></tr>');
-            } else {
                 $.each(itemsList, function(i, item) {
                     var baseAmt = (item.rate * item.qty);
                     var discType = item.discount_type || 'percentage';
@@ -1094,163 +1181,94 @@ if ($selected_state_id > 0) {
                     }
                     if (discAmt > baseAmt) discAmt = baseAmt;
 
-                    var netAmt = baseAmt - discAmt;
+                    var net = baseAmt - discAmt;
+                    totalAmt += net;
 
-                    var html = '<tr>' +
-                        '<td>' + (i + 1) + '</td>' +
-                        '<td class="text-start">' +
-                            '<strong>' + escapeHtml(item.description) + '</strong>' +
-                            '<input type="hidden" name="item_product_id[]" value="' + (item.product_id || 0) + '">' +
-                            '<input type="hidden" name="item_description[]" value="' + escapeHtml(item.description) + '">' +
-                        '</td>' +
-                        '<td>' +
-                            escapeHtml(item.hsn_code) +
-                            '<input type="hidden" name="item_hsn[]" value="' + escapeHtml(item.hsn_code) + '">' +
-                        '</td>' +
-                        '<td>' +
-                            item.rate.toFixed(2) +
-                            '<input type="hidden" name="item_rate[]" value="' + item.rate + '">' +
-                            '<input type="hidden" name="item_gst_pct[]" value="' + item.gst_percent + '">' +
-                        '</td>' +
-                        '<td>' +
-                            '<input type="number" step="1" min="1" class="form-control form-control-sm text-center item-qty-input" data-index="' + i + '" name="item_qty[]" value="' + item.qty + '">' +
-                        '</td>' +
-                        '<td>' +
-                            '<select name="item_discount_type[]" class="form-select form-select-sm text-center item-disc-type-select" data-index="' + i + '">' +
-                                '<option value="percentage"' + (discType === 'percentage' ? ' selected' : '') + '>Percentage (%)</option>' +
-                                '<option value="fixed"' + (discType === 'fixed' ? ' selected' : '') + '>Fixed (₹)</option>' +
-                            '</select>' +
-                        '</td>' +
-                        '<td>' +
-                            '<input type="number" step="0.01" min="0" name="item_discount_val[]" class="form-control form-control-sm text-center item-disc-val-input" data-index="' + i + '" value="' + discVal + '">' +
-                            (discAmt > 0 ? '<div class="text-muted small mt-1" style="font-size:11px;">-₹' + discAmt.toFixed(2) + '</div>' : '') +
-                            '<input type="hidden" name="item_discount_amt[]" class="item-discount-amt" value="' + discAmt.toFixed(2) + '">' +
-                        '</td>' +
-                        '<td class="fw-bold">' +
-                            netAmt.toFixed(2) +
-                            '<input type="hidden" name="item_net_amt[]" class="item-net-amt" value="' + netAmt.toFixed(2) + '">' +
-                            '<input type="hidden" name="item_tax_amt[]" class="item-tax-amt" value="0">' +
-                            '<input type="hidden" name="item_total_amt[]" class="item-total-amt" value="0">' +
-                        '</td>' +
-                        '<td>' +
-                            '<button type="button" class="btn btn-sm btn-outline-danger btn-remove-item" data-index="' + i + '"><i class="ti ti-trash"></i></button>' +
-                        '</td>' +
-                    '</tr>';
-                    tbody.append(html);
+                    var tax = 0;
+                    if (isCompanyGstActive && gstType === 'with_gst') {
+                        tax = net * ((parseFloat(item.gst_percent) || 0) / 100);
+                    } else {
+                        item.gst_percent = 0;
+                    }
+                    totalTax += tax;
+
+                    // Update hidden inputs per row
+                    $('#itemsTableBody tr').eq(i).find('.item-discount-amt').val(discAmt.toFixed(2));
+                    $('#itemsTableBody tr').eq(i).find('.item-net-amt').val(net.toFixed(2));
+                    $('#itemsTableBody tr').eq(i).find('.item-tax-amt').val(tax.toFixed(2));
+                    $('#itemsTableBody tr').eq(i).find('.item-total-amt').val((net + tax).toFixed(2));
                 });
-            }
-            calculateTotals();
-        }
 
-        // Calculate Summary Totals based on State & GST Type
-        function calculateTotals() {
-            var totalAmt = 0;
-            var totalTax = 0;
+                $('#total_amount').val(totalAmt.toFixed(2));
+                $('#tax_amount').val(totalTax.toFixed(2));
 
-            var gstType = isCompanyGstActive ? $('#gst_type').val() : 'without_gst'; // force without_gst if company has no GST
-            var selectedStateText = $('#state_id option:selected').text().trim().toLowerCase();
-            var isGujarat = (selectedStateText.indexOf('gujarat') !== -1);
+                var cgst = 0;
+                var sgst = 0;
+                var igst = 0;
 
-            $.each(itemsList, function(i, item) {
-                var baseAmt = (item.rate * item.qty);
-                var discType = item.discount_type || 'percentage';
-                var discVal = parseFloat(item.discount_value) || 0;
-                var discAmt = 0;
-
-                if (discType === 'percentage') {
-                    discAmt = (baseAmt * discVal) / 100;
-                } else {
-                    discAmt = Math.min(baseAmt, discVal);
-                }
-                if (discAmt > baseAmt) discAmt = baseAmt;
-
-                var net = baseAmt - discAmt;
-                totalAmt += net;
-
-                var tax = 0;
                 if (isCompanyGstActive && gstType === 'with_gst') {
-                    tax = net * ((parseFloat(item.gst_percent) || 0) / 100);
+                    $('#summary_gst_breakdown').show();
+                    if (isGujarat) {
+                        cgst = totalTax / 2;
+                        sgst = totalTax / 2;
+                        igst = 0;
+                        $('#row_cgst, #row_sgst').show();
+                        $('#row_igst').hide();
+                    } else {
+                        igst = totalTax;
+                        cgst = 0;
+                        sgst = 0;
+                        $('#row_cgst, #row_sgst').hide();
+                        $('#row_igst').show();
+                    }
                 } else {
-                    item.gst_percent = 0;
-                }
-                totalTax += tax;
-
-                // Update hidden inputs per row
-                $('#itemsTableBody tr').eq(i).find('.item-discount-amt').val(discAmt.toFixed(2));
-                $('#itemsTableBody tr').eq(i).find('.item-net-amt').val(net.toFixed(2));
-                $('#itemsTableBody tr').eq(i).find('.item-tax-amt').val(tax.toFixed(2));
-                $('#itemsTableBody tr').eq(i).find('.item-total-amt').val((net + tax).toFixed(2));
-            });
-
-            $('#total_amount').val(totalAmt.toFixed(2));
-            $('#tax_amount').val(totalTax.toFixed(2));
-
-            var cgst = 0;
-            var sgst = 0;
-            var igst = 0;
-
-            if (isCompanyGstActive && gstType === 'with_gst') {
-                $('#summary_gst_breakdown').show();
-                if (isGujarat) {
-                    cgst = totalTax / 2;
-                    sgst = totalTax / 2;
-                    igst = 0;
-                    $('#row_cgst, #row_sgst').show();
-                    $('#row_igst').hide();
-                } else {
-                    igst = totalTax;
+                    // Without GST or Company GST Inactive -> Everything 0 and hidden
                     cgst = 0;
                     sgst = 0;
-                    $('#row_cgst, #row_sgst').hide();
-                    $('#row_igst').show();
+                    igst = 0;
+                    $('#row_cgst, #row_sgst, #row_igst').hide();
+                    if (!isCompanyGstActive) {
+                        $('#summary_gst_breakdown').hide();
+                    } else {
+                        $('#summary_gst_breakdown').show();
+                        $('#row_cgst, #row_sgst').show();
+                    }
                 }
-            } else {
-                // Without GST or Company GST Inactive -> Everything 0 and hidden
-                cgst = 0;
-                sgst = 0;
-                igst = 0;
-                $('#row_cgst, #row_sgst, #row_igst').hide();
-                if (!isCompanyGstActive) {
-                    $('#summary_gst_breakdown').hide();
-                } else {
-                    $('#summary_gst_breakdown').show();
-                    $('#row_cgst, #row_sgst').show();
-                }
+
+                $('#cgst_amount').val(cgst.toFixed(2));
+                $('#sgst_amount').val(sgst.toFixed(2));
+                $('#igst_amount').val(igst.toFixed(2));
+
+                var grandTotal = totalAmt + (isCompanyGstActive && gstType === 'with_gst' ? totalTax : 0);
+                $('#grand_total').val(grandTotal.toFixed(2));
             }
 
-            $('#cgst_amount').val(cgst.toFixed(2));
-            $('#sgst_amount').val(sgst.toFixed(2));
-            $('#igst_amount').val(igst.toFixed(2));
-
-            var grandTotal = totalAmt + (isCompanyGstActive && gstType === 'with_gst' ? totalTax : 0);
-            $('#grand_total').val(grandTotal.toFixed(2));
-        }
-
-        // Synchronize Quotation Date and Due Date (Due date cannot be less than quotation date)
-        $('#quotation_date').on('change', function() {
-            var qDate = $(this).val();
-            if (qDate) {
-                $('#due_date').attr('min', qDate);
-                var curDueDate = $('#due_date').val();
-                if (curDueDate && curDueDate < qDate) {
-                    $('#due_date').val(qDate);
+            // Synchronize Quotation Date and Due Date (Due date cannot be less than quotation date)
+            $('#quotation_date').on('change', function() {
+                var qDate = $(this).val();
+                if (qDate) {
+                    $('#due_date').attr('min', qDate);
+                    var curDueDate = $('#due_date').val();
+                    if (curDueDate && curDueDate < qDate) {
+                        $('#due_date').val(qDate);
+                    }
                 }
-            }
-        });
+            });
 
-        $('#due_date').on('change', function() {
-            var qDate = $('#quotation_date').val();
-            var dDate = $(this).val();
-            if (qDate && dDate && dDate < qDate) {
-                alert('Due Date cannot be earlier than Quotation Date (' + qDate + ')!');
-                $(this).val(qDate);
+            $('#due_date').on('change', function() {
+                var qDate = $('#quotation_date').val();
+                var dDate = $(this).val();
+                if (qDate && dDate && dDate < qDate) {
+                    alert('Due Date cannot be earlier than Quotation Date (' + qDate + ')!');
+                    $(this).val(qDate);
+                }
+            });
+
+            function escapeHtml(text) {
+                return text ? String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
             }
         });
-
-        function escapeHtml(text) {
-            return text ? String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
-        }
-    });
     </script>
 </body>
+
 </html>

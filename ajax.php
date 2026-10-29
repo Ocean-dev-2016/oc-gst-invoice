@@ -668,3 +668,46 @@ if ($_POST['action'] === 'get_dashboard_outstanding') {
     }
 }
 
+
+
+if (isset($_POST['action']) && $_POST['action'] === 'set_company_invoice_template') {
+    header('Content-Type: application/json');
+    if (empty($_SESSION['aid'])) {
+        echo json_encode(['status' => false, 'message' => 'Unauthorized access.']);
+        exit;
+    }
+
+    $companyId = isset($_POST['company_id']) ? intval($_POST['company_id']) : 0;
+    $templateId = isset($_POST['template_id']) ? intval($_POST['template_id']) : 0;
+
+    if (isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'company') {
+        if (!empty($_SESSION['company_id']) && (int)$_SESSION['company_id'] !== $companyId) {
+            echo json_encode(['status' => false, 'message' => 'You can only update your own company template.']);
+            exit;
+        }
+    }
+
+    if ($companyId <= 0 || $templateId <= 0) {
+        echo json_encode(['status' => false, 'message' => 'Invalid Company or Template ID.']);
+        exit;
+    }
+
+    $tplCheck = $ai_db->aiGetQueryObj("SELECT id, template_name FROM tbl_invoice_templates WHERE id='$templateId' AND status='active' LIMIT 1");
+    if (empty($tplCheck)) {
+        echo json_encode(['status' => false, 'message' => 'Selected template is not active or does not exist.']);
+        exit;
+    }
+
+    $update = $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id='$templateId' WHERE id='$companyId'");
+    if ($update) {
+        echo json_encode([
+            'status' => true,
+            'message' => 'Default template updated to "' . $tplCheck[0]->template_name . '" successfully!',
+            'template_id' => $templateId,
+            'template_name' => $tplCheck[0]->template_name
+        ]);
+    } else {
+        echo json_encode(['status' => false, 'message' => 'Database error while updating template.']);
+    }
+    exit;
+}

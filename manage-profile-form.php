@@ -1,5 +1,7 @@
 <?php
 include('includes/header.php');
+require_once __DIR__ . '/includes/company-logo-migrate.php';
+require_once __DIR__ . '/includes/image-transparent-helper.php';
 
 $userType = $_SESSION['user_type'] ?? (function_exists('ai_perm_detect_user_type') && isset($ai_db) ? ai_perm_detect_user_type($ai_db) : 'admin');
 $isCompany = ($userType === 'company');
@@ -85,7 +87,32 @@ if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (empty($err_msg)) {
-                $pass_sql = !empty($password) ? ", password='" . md5($password) . "'" : "";
+                $uploadDir = __DIR__ . '/uploads/company/';
+            if (!is_dir($uploadDir)) @mkdir($uploadDir, 0777, true);
+
+            $logo_sql = "";
+            if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+                $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
+                    $newLogo = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
+                    if (move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . $newLogo)) {
+                        $logo_sql = ", logo='uploads/company/" . $newLogo . "'";
+                    }
+                }
+            }
+
+            $sign_sql = "";
+            if (isset($_FILES['signature']) && $_FILES['signature']['error'] === UPLOAD_ERR_OK) {
+                $newSign = 'sign_' . time() . '_' . rand(100, 999) . '.png';
+                $destSignPath = $uploadDir . $newSign;
+                if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($_FILES['signature']['tmp_name'], $destSignPath)) {
+                    $sign_sql = ", signature='uploads/company/" . $newSign . "'";
+                } elseif (move_uploaded_file($_FILES['signature']['tmp_name'], $destSignPath)) {
+                    $sign_sql = ", signature='uploads/company/" . $newSign . "'";
+                }
+            }
+
+            $pass_sql = !empty($password) ? ", password='" . md5($password) . "'" : "";
 
                 $edit_qry = "UPDATE $table SET 
                     company_name='" . $company_name . "',
@@ -100,6 +127,8 @@ if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
                     email='" . $email . "',
                     username='" . $username . "'
                     $pass_sql
+                    $logo_sql
+                    $sign_sql
                     WHERE id='" . intval($profile_id) . "'";
 
                 $ai_db->aiQuery($edit_qry);
@@ -231,7 +260,7 @@ if ($isCompany && $profileData) {
 
                                 <?php if ($isCompany) { ?>
                                     <!-- ==================== COMPANY PROFILE FORM (Includes GST fields) ==================== -->
-                                    <form class="card-body p-0" id="mainForm" method="post" action="manage-profile-form.php">
+                                    <form class="card-body p-0" id="mainForm" method="post" action="manage-profile-form.php" enctype="multipart/form-data">
                                         <input type="hidden" name="id" value="<?= intval($profile_id) ?>">
 
                                         <div class="row g-3">
@@ -347,6 +376,42 @@ if ($isCompany && $profileData) {
                                                 <label class="form-label">Address</label>
                                                 <textarea name="address" class="form-control" rows="2" placeholder="Enter full address..."><?= htmlspecialchars($_POST['address'] ?? $profileData->address ?? '') ?></textarea>
                                             </div>
+
+                                            <!-- Company Logo Box -->
+                                            <div class="col-md-6 mt-3">
+                                                <label class="form-label fw-bold text-dark">
+                                                    <i class="ti ti-photo me-1 text-primary"></i> Company Logo (for Invoices)
+                                                </label>
+                                                <input type="file" name="logo" id="logoInput" class="form-control" accept="image/*">
+                                                <small class="text-muted d-block mt-1">Recommended: PNG or JPG. Appears on invoice header.</small>
+                                                
+                                                <div class="mt-2 p-3 bg-light border rounded text-center position-relative" style="min-height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fafafa;">
+                                                    <span class="text-muted fs-7 mb-1" id="logoPreviewTitle" style="<?= empty($profileData->logo) ? 'display:none;' : '' ?>">Current Logo:</span>
+                                                    <img id="logoPreview" src="<?= !empty($profileData->logo) ? SITE_URL . $profileData->logo : '' ?>" alt="Logo Preview" style="max-height: 70px; max-width: 220px; object-fit: contain; <?= empty($profileData->logo) ? 'display:none;' : '' ?>">
+                                                    <div id="logoPlaceholder" class="text-muted" style="<?= !empty($profileData->logo) ? 'display:none;' : '' ?>">
+                                                        <i class="ti ti-photo-off fs-2 d-block text-secondary"></i>
+                                                        <span class="small">No Logo uploaded yet</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Company Signature Box -->
+                                            <div class="col-md-6 mt-3">
+                                                <label class="form-label fw-bold text-dark">
+                                                    <i class="ti ti-writing-sign me-1 text-primary"></i> Authorized Signature / Stamp
+                                                </label>
+                                                <input type="file" name="signature" id="signatureInput" class="form-control" accept="image/*">
+                                                <small class="text-muted d-block mt-1">Background will be made 100% transparent automatically.</small>
+                                                
+                                                <div class="mt-2 p-3 bg-light border rounded text-center position-relative" style="min-height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fafafa;">
+                                                    <span class="text-muted fs-7 mb-1" id="signPreviewTitle" style="<?= empty($profileData->signature) ? 'display:none;' : '' ?>">Current Signature:</span>
+                                                    <img id="signPreview" src="<?= !empty($profileData->signature) ? SITE_URL . $profileData->signature : '' ?>" alt="Signature Preview" style="max-height: 65px; max-width: 180px; object-fit: contain; <?= empty($profileData->signature) ? 'display:none;' : '' ?>">
+                                                    <div id="signPlaceholder" class="text-muted" style="<?= !empty($profileData->signature) ? 'display:none;' : '' ?>">
+                                                        <i class="ti ti-signature-off fs-2 d-block text-secondary"></i>
+                                                        <span class="small">No Signature uploaded yet</span>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
 
                                         <div class="pt-4">
@@ -457,6 +522,38 @@ if ($isCompany && $profileData) {
     </div>
 
     <?php include('includes/footer_js.php'); ?>
+
+    <script>
+    $(document).ready(function() {
+        // Instant Logo Preview upon file select
+        $('#logoInput').on('change', function(e) {
+            var file = e.target.files[0];
+            if (file) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    $('#logoPreview').attr('src', e.target.result).show();
+                    $('#logoPreviewTitle').text('Selected Logo Preview:').show();
+                    $('#logoPlaceholder').hide();
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Instant Signature Preview upon file select
+        $('#signatureInput').on('change', function(e) {
+            var file = e.target.files[0];
+            if (file) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    $('#signPreview').attr('src', e.target.result).show();
+                    $('#signPreviewTitle').text('Selected Signature Preview:').show();
+                    $('#signPlaceholder').hide();
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+    });
+    </script>
 
     <?php if (!empty($err_msg)) { ?>
         <script>

@@ -7,54 +7,37 @@ if (empty($_SESSION['aid'])) {
     exit;
 }
 
-$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-if ($id <= 0) {
-    die("Invalid Invoice ID!");
+require_once __DIR__ . '/includes/invoice-data-loader.php';
+
+// ==========================================
+// DYNAMIC_TEMPLATE_ROUTER: Load Company Template
+// ==========================================
+$templateIdToUse = 1;
+if (!empty($_GET['preview_template'])) {
+    // 1. Explicit preview parameter from template selection
+    $templateIdToUse = intval($_GET['preview_template']);
+} elseif (!empty($company->invoice_template_id)) {
+    // 2. Company's currently ACTIVE template
+    $templateIdToUse = intval($company->invoice_template_id);
+} elseif (!empty($q->template_id)) {
+    // 3. Invoice specific template fallback
+    $templateIdToUse = intval($q->template_id);
 }
 
-// Fetch Invoice with state and city
-$invoiceRow = $ai_db->aiGetQueryObj("
-    SELECT q.*, s.state_name, ct.city_name 
-    FROM tbl_invoice q 
-    LEFT JOIN tbl_state s ON q.state_id = s.id 
-    LEFT JOIN tbl_city ct ON q.city_id = ct.id 
-    WHERE q.id='$id' 
-    LIMIT 1
-");
-if (empty($invoiceRow)) {
-    die("Invoice not found!");
-}
-$q = $invoiceRow[0];
-
-// Fetch Quotation Items joined with product for SKU if available
-$items = $ai_db->aiGetQueryObj("
-    SELECT qi.*, p.sku, p.product_name 
-    FROM tbl_invoice_items qi
-    LEFT JOIN tbl_product p ON p.id = qi.product_id
-    WHERE qi.invoice_id='$id'
-    ORDER BY qi.id ASC
-");
-
-// Fetch Company Details
-$company = null;
-if (!empty($q->company_id)) {
-    $compRow = $ai_db->aiGetQueryObj("SELECT * FROM tbl_company WHERE id='{$q->company_id}' LIMIT 1");
-    if (!empty($compRow)) {
-        $company = $compRow[0];
+// Fetch template file from DB
+$tplObj = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates WHERE id='$templateIdToUse' LIMIT 1");
+if (!empty($tplObj) && !empty($tplObj[0]->file_path)) {
+    $tplRelativePath = $tplObj[0]->file_path;
+    $fullTemplatePath = __DIR__ . '/' . ltrim($tplRelativePath, '/');
+    if (file_exists($fullTemplatePath) && basename($fullTemplatePath) !== 'invoice-print.php') {
+        include $fullTemplatePath;
+        exit;
     }
 }
-
-// Fetch Party Details
-$party = null;
-if (!empty($q->party_id)) {
-    $partyRow = $ai_db->aiGetQueryObj("SELECT * FROM tbl_party WHERE id='{$q->party_id}' LIMIT 1");
-    if (!empty($partyRow)) {
-        $party = $partyRow[0];
-    }
-}
+// Fallback: If template file not found or default, continue below with original layout
 
 // Helper: Convert numbers to Indian Rupees in words
-function getIndianCurrencyWords(float $number) {
+if (!function_exists('getIndianCurrencyWords')) { function getIndianCurrencyWords(float $number) {
     $decimal = round($number - ($no = floor($number)), 2) * 100;
     $hundred = null;
     $digits_length = strlen($no);
@@ -84,8 +67,9 @@ function getIndianCurrencyWords(float $number) {
         }
     }
     $Rupees = implode('', array_reverse(array_filter($str)));
-    $paise = ($decimal > 0) ? " and " . ($words[$decimal / 10] . " " . $words[$decimal % 10]) . ' Paise' : '';
+    $paise = ""; if ((int)$decimal > 0) { $d = (int)$decimal; $paise = " and " . ($d < 21 ? ($words[$d] ?? "") : (($words[(int)floor($d / 10) * 10] ?? "") . " " . ($words[$d % 10] ?? ""))) . " Paise"; }
     return ($Rupees ? $Rupees . 'Rupees ' : '') . $paise . " Only";
+}
 }
 
 $isCompanyGst = (!empty($company) && isset($company->gst_applicable)) ? ((int)$company->gst_applicable === 1) : true;
@@ -143,7 +127,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
             padding: 12px 24px;
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-end;
             align-items: center;
         }
         .action-btns {
@@ -426,29 +410,25 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                 margin: 10mm 12mm 10mm 12mm;
             }
         }
+        @media screen and (max-width: 768px) {
+            .top-action-bar { padding: 10px 15px; justify-content: center; }
+            .action-btns { width: 100%; justify-content: center; flex-wrap: wrap; }
+            .invoice-card { margin: 10px; padding: 15px; }
+            .invoice-header { flex-direction: column; gap: 15px; }
+            .header-right { text-align: left; }
+            .parties-row { flex-direction: column; gap: 15px; }
+            .party-box { width: 100% !important; }
+        }
     </style>
 </head>
 <body>
 
     <!-- Floating Top Action Bar -->
     <div class="top-action-bar no-print">
-        <div style="font-size: 16px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
-            <i class="ti ti-file-invoice fs-4 text-primary"></i>
-            Invoice Preview &mdash; <?= htmlspecialchars($q->invoice_no) ?>
-        </div>
         <div class="action-btns">
-            <button onclick="downloadPDF()" id="btnDownloadPdf" class="btn btn-success">
-                <i class="ti ti-download"></i> Download PDF
-            </button>
-            <button onclick="window.print()" class="btn btn-primary">
-                <i class="ti ti-printer"></i> Print / Save as PDF
-            </button>
-            <a href="manage-invoice-form.php?mode=edit&id=<?= $q->id ?>" class="btn btn-secondary">
-                <i class="ti ti-pencil"></i> Edit Invoice
-            </a>
-            <a href="manage-invoice-list.php" class="btn btn-secondary">
-                <i class="ti ti-arrow-left"></i> Back to List
-            </a>
+            <button onclick="window.print()" class="btn btn-primary"><i class="ti ti-printer"></i> Print</button>
+            <button onclick="downloadPDF()" id="btnDownloadPdf" class="btn btn-success"><i class="ti ti-download"></i> Save as PDF</button>
+            <button onclick="window.close()" class="btn btn-secondary"><i class="ti ti-x"></i> Cancel</button>
         </div>
     </div>
 
@@ -663,7 +643,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
         </div>
     </div>
 
-    <!-- html2pdf.js for direct client-side PDF download -->
+        <!-- html2pdf.js for direct client-side PDF download -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script>
         function downloadPDF() {
@@ -671,18 +651,29 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             var originalText = btn ? btn.innerHTML : '';
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="ti ti-loader"></i> Generating PDF...';
+                btn.innerHTML = '<i class="ti ti-loader"></i> Downloading...';
             }
 
             var element = document.querySelector('.invoice-card');
-            var fileName = <?= json_encode(preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->invoice_no) . '.pdf') ?>;
+            var fileName = <?= json_encode(preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->invoice_no ?? 'invoice') . '.pdf') ?>;
 
             var opt = {
-                margin:       [10, 10, 10, 10], // top, left, bottom, right in mm
-                filename:     fileName,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true, logging: false },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                margin: [5, 8, 5, 8], // top, left, bottom, right in mm
+                filename: fileName,
+                image: {
+                    type: 'jpeg',
+                    quality: 0.98
+                },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false
+                },
+                jsPDF: {
+                    unit: 'mm',
+                    format: 'a4',
+                    orientation: 'portrait'
+                }
             };
 
             html2pdf().set(opt).from(element).save().then(function() {
@@ -696,7 +687,6 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                     btn.disabled = false;
                     btn.innerHTML = originalText;
                 }
-                // Fallback to print
                 window.print();
             });
         }
@@ -704,9 +694,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
         window.addEventListener('load', function() {
             var urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('download') === '1') {
-                setTimeout(downloadPDF, 500);
-            } else if (urlParams.get('print') === '1') {
-                window.print();
+                setTimeout(downloadPDF, 600);
             }
         });
     </script>

@@ -232,7 +232,11 @@ if (isset($_GET['toggle']) && isset($_GET['id'])) {
 if (isset($_GET['action']) && $_GET['action'] === 'delete') {
     $del_id = intval($_GET['id'] ?? 0);
     if ($del_id > 0) {
-        $qRow = $ai_db->aiGetQueryObj("SELECT party_id FROM tbl_purchase WHERE id='$del_id' LIMIT 1");
+        $qRow = $ai_db->aiGetQueryObj("SELECT party_id, payment_status FROM tbl_purchase WHERE id='$del_id' LIMIT 1");
+        if (!empty($qRow) && ($qRow[0]->payment_status ?? '') === 'Paid') {
+            $ai_core->aiGoPage($pageUrl . '?msg=paid_locked');
+            exit;
+        }
         $partyId = !empty($qRow) ? intval($qRow[0]->party_id) : 0;
 
         // Revert product stock before deleting purchase items
@@ -505,12 +509,14 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                                 <a class="dropdown-item" href="purchase-print.php?id=<?= $q->id ?>&download=1" target="_blank">
                                                                     <i class="ti ti-download me-1"></i> Download PDF
                                                                 </a>
-                                                                <a class="dropdown-item" href="manage-purchase-form.php?mode=edit&id=<?= $q->id ?>">
-                                                                    <i class="ti ti-pencil me-1"></i> Edit
-                                                                </a>
-                                                                <a class="dropdown-item text-danger" href="manage-purchase-list.php?action=delete&id=<?= $q->id ?>" onclick="return confirm('Are you sure you want to delete this purchase bill?');">
-                                                                    <i class="ti ti-trash me-1"></i> Delete
-                                                                </a>
+                                                                <?php if (!$isPaid) { ?>
+                                                                    <a class="dropdown-item" href="manage-purchase-form.php?mode=edit&id=<?= $q->id ?>">
+                                                                        <i class="ti ti-pencil me-1"></i> Edit
+                                                                    </a>
+                                                                    <a class="dropdown-item text-danger" href="manage-purchase-list.php?action=delete&id=<?= $q->id ?>" onclick="return confirm('Are you sure you want to delete this purchase bill?');">
+                                                                        <i class="ti ti-trash me-1"></i> Delete
+                                                                    </a>
+                                                                <?php } ?>
                                                             </div>
                                                         </div>
                                                     </td>

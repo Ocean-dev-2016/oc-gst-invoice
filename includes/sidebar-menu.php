@@ -81,6 +81,14 @@ $sidebarMenu = [
         'key' => 'manage_ledger'
     ],
     [
+        'type' => 'item',
+        'label' => 'Templates',
+        'icon' => 'ti ti-template',
+        'url' => 'manage-invoice-template.php',
+        'alt_urls' => ['manage-template-form.php'],
+        'key' => 'manage_invoice_template'
+    ],
+    [
         'type' => 'group',
         'label' => 'Manage Regions',
         'icon' => 'ti ti-map-pin',
