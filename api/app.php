@@ -55,7 +55,7 @@ function getApiInput()
  * Extract pagination parameters from GET or POST payload
  * Returns [$page, $limit, $offset, $isPaginated]
  */
-function getApiPaginationParams($input = [], $defaultLimit = 1)
+function getApiPaginationParams($input = [], $defaultLimit = 10)
 {
     // Check page parameter: accept 'page' or 'current_page'
     $rawPage = $_GET['page'] ?? ($input['page'] ?? ($_GET['current_page'] ?? ($input['current_page'] ?? 1)));
@@ -739,7 +739,7 @@ if ($action === 'customer-list') {
 
     $orderBy = "ORDER BY p.id DESC";
 
-    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 10);
 
     // Get total filtered count for pagination
     $countQry = "SELECT COUNT(p.id) AS cnt FROM tbl_party p WHERE p.company_id = {$cId} {$statusCond} {$partyStatusCond} {$searchCond}";
@@ -1449,7 +1449,7 @@ if ($action === 'quotation-list') {
 
     $orderBy = "ORDER BY q.id DESC";
 
-    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 10);
 
     // Total filtered records count for pagination
     $countQry = "SELECT COUNT(q.id) AS cnt FROM tbl_quotation q WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$searchCond}";
@@ -2622,7 +2622,7 @@ if ($action === 'product-list') {
 
     $orderBy = "ORDER BY p.id DESC";
 
-    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 10);
 
     // Count total products matching filters
     $countQry = "SELECT COUNT(p.id) AS cnt FROM tbl_product p WHERE p.company_id = {$cId}{$statusCond}{$searchCond}";
@@ -3097,7 +3097,7 @@ if ($action === 'invoice-list') {
 
     $orderBy = "ORDER BY q.id DESC";
 
-    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 10);
 
     // Count total filtered invoices for pagination
     $countQry = "SELECT COUNT(q.id) AS cnt FROM tbl_invoice q WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$dateCond} {$searchCond}";
@@ -4501,7 +4501,7 @@ if ($action === 'purchase-list') {
 
     $orderBy = "ORDER BY q.id DESC";
 
-    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 1);
+    list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 10);
 
     // Count total filtered purchases for pagination
     $countQry = "SELECT COUNT(q.id) AS cnt FROM tbl_purchase q WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$partyCond} {$dateCond} {$searchCond}";
