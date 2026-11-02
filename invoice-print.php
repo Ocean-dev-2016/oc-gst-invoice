@@ -7,7 +7,9 @@ if (empty($_SESSION['aid'])) {
     exit;
 }
 
+require_once __DIR__ . '/includes/template-auto-migrate.php';
 require_once __DIR__ . '/includes/invoice-data-loader.php';
+require_once __DIR__ . '/includes/invoice-footer-renderer.php';
 
 // ==========================================
 // DYNAMIC_TEMPLATE_ROUTER: Load Company Template
@@ -16,12 +18,12 @@ $templateIdToUse = 1;
 if (!empty($_GET['preview_template'])) {
     // 1. Explicit preview parameter from template selection
     $templateIdToUse = intval($_GET['preview_template']);
-} elseif (!empty($company->invoice_template_id)) {
-    // 2. Company's currently ACTIVE template
-    $templateIdToUse = intval($company->invoice_template_id);
-} elseif (!empty($q->template_id)) {
-    // 3. Invoice specific template fallback
+} elseif (!empty($q->template_id) && intval($q->template_id) > 0) {
+    // 2. Invoice specific template selection
     $templateIdToUse = intval($q->template_id);
+} elseif (!empty($company->invoice_template_id)) {
+    // 3. Company's currently ACTIVE template
+    $templateIdToUse = intval($company->invoice_template_id);
 }
 
 // Fetch template file from DB
@@ -37,39 +39,67 @@ if (!empty($tplObj) && !empty($tplObj[0]->file_path)) {
 // Fallback: If template file not found or default, continue below with original layout
 
 // Helper: Convert numbers to Indian Rupees in words
-if (!function_exists('getIndianCurrencyWords')) { function getIndianCurrencyWords(float $number) {
-    $decimal = round($number - ($no = floor($number)), 2) * 100;
-    $hundred = null;
-    $digits_length = strlen($no);
-    $i = 0;
-    $str = array();
-    $words = array(
-        0 => '', 1 => 'One', 2 => 'Two', 3 => 'Three', 4 => 'Four', 5 => 'Five',
-        6 => 'Six', 7 => 'Seven', 8 => 'Eight', 9 => 'Nine', 10 => 'Ten',
-        11 => 'Eleven', 12 => 'Twelve', 13 => 'Thirteen', 14 => 'Fourteen', 15 => 'Fifteen',
-        16 => 'Sixteen', 17 => 'Seventeen', 18 => 'Eighteen', 19 => 'Nineteen', 20 => 'Twenty',
-        30 => 'Thirty', 40 => 'Forty', 50 => 'Fifty', 60 => 'Sixty', 70 => 'Seventy',
-        80 => 'Eighty', 90 => 'Ninety'
-    );
-    $digits = array('', 'Hundred', 'Thousand', 'Lakh', 'Crore');
-    while ($i < $digits_length) {
-        $divider = ($i == 2) ? 10 : 100;
-        $number = floor($no % $divider);
-        $no = floor($no / $divider);
-        $i += ($divider == 10) ? 1 : 2;
-        if ($number) {
-            $plural = (($counter = count($str)) && $number > 9) ? '' : '';
-            $hundred = ($counter == 1 && $str[0]) ? ' and ' : '';
-            $str[] = ($number < 21) ? $words[$number] . ' ' . $digits[$counter] . $plural . ' ' . $hundred
-                : $words[floor($number / 10) * 10] . ' ' . $words[$number % 10] . ' ' . $digits[$counter] . $plural . ' ' . $hundred;
-        } else {
-            $str[] = null;
+if (!function_exists('getIndianCurrencyWords')) {
+    function getIndianCurrencyWords(float $number)
+    {
+        $decimal = round($number - ($no = floor($number)), 2) * 100;
+        $hundred = null;
+        $digits_length = strlen($no);
+        $i = 0;
+        $str = array();
+        $words = array(
+            0 => '',
+            1 => 'One',
+            2 => 'Two',
+            3 => 'Three',
+            4 => 'Four',
+            5 => 'Five',
+            6 => 'Six',
+            7 => 'Seven',
+            8 => 'Eight',
+            9 => 'Nine',
+            10 => 'Ten',
+            11 => 'Eleven',
+            12 => 'Twelve',
+            13 => 'Thirteen',
+            14 => 'Fourteen',
+            15 => 'Fifteen',
+            16 => 'Sixteen',
+            17 => 'Seventeen',
+            18 => 'Eighteen',
+            19 => 'Nineteen',
+            20 => 'Twenty',
+            30 => 'Thirty',
+            40 => 'Forty',
+            50 => 'Fifty',
+            60 => 'Sixty',
+            70 => 'Seventy',
+            80 => 'Eighty',
+            90 => 'Ninety'
+        );
+        $digits = array('', 'Hundred', 'Thousand', 'Lakh', 'Crore');
+        while ($i < $digits_length) {
+            $divider = ($i == 2) ? 10 : 100;
+            $number = floor($no % $divider);
+            $no = floor($no / $divider);
+            $i += ($divider == 10) ? 1 : 2;
+            if ($number) {
+                $plural = (($counter = count($str)) && $number > 9) ? '' : '';
+                $hundred = ($counter == 1 && $str[0]) ? ' and ' : '';
+                $str[] = ($number < 21) ? $words[$number] . ' ' . $digits[$counter] . $plural . ' ' . $hundred
+                    : $words[floor($number / 10) * 10] . ' ' . $words[$number % 10] . ' ' . $digits[$counter] . $plural . ' ' . $hundred;
+            } else {
+                $str[] = null;
+            }
         }
+        $Rupees = implode('', array_reverse(array_filter($str)));
+        $paise = "";
+        if ((int)$decimal > 0) {
+            $d = (int)$decimal;
+            $paise = " and " . ($d < 21 ? ($words[$d] ?? "") : (($words[(int)floor($d / 10) * 10] ?? "") . " " . ($words[$d % 10] ?? ""))) . " Paise";
+        }
+        return ($Rupees ? $Rupees . 'Rupees ' : '') . $paise . " Only";
     }
-    $Rupees = implode('', array_reverse(array_filter($str)));
-    $paise = ""; if ((int)$decimal > 0) { $d = (int)$decimal; $paise = " and " . ($d < 21 ? ($words[$d] ?? "") : (($words[(int)floor($d / 10) * 10] ?? "") . " " . ($words[$d % 10] ?? ""))) . " Paise"; }
-    return ($Rupees ? $Rupees . 'Rupees ' : '') . $paise . " Only";
-}
 }
 
 $isCompanyGst = (!empty($company) && isset($company->gst_applicable)) ? ((int)$company->gst_applicable === 1) : true;
@@ -91,6 +121,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -100,13 +131,14 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?= ADMIN_URL ?>assets/vendor/fonts/tabler-icons.css" />
-    
+
     <style>
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
+
         body {
             font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: #f3f4f6;
@@ -116,7 +148,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
         }
-        
+
         /* Floating Top Bar (Hidden during Print) */
         .top-action-bar {
             position: sticky;
@@ -130,10 +162,12 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             justify-content: flex-end;
             align-items: center;
         }
+
         .action-btns {
             display: flex;
             gap: 10px;
         }
+
         .btn {
             display: inline-flex;
             align-items: center;
@@ -147,25 +181,31 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             border: 1px solid transparent;
             transition: all 0.2s ease;
         }
+
         .btn-primary {
             background-color: #7367f0;
             color: #ffffff;
         }
+
         .btn-primary:hover {
             background-color: #5e50ee;
         }
+
         .btn-success {
             background-color: #28c76f;
             color: #ffffff;
         }
+
         .btn-success:hover {
             background-color: #1f9d57;
         }
+
         .btn-secondary {
             background-color: #f1f5f9;
             color: #475569;
             border-color: #cbd5e1;
         }
+
         .btn-secondary:hover {
             background-color: #e2e8f0;
         }
@@ -176,12 +216,15 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             margin: 24px auto 40px;
             padding: 0 15px;
         }
+
         .invoice-card {
             background: #ffffff;
             border: 1px solid #e5e7eb;
             border-radius: 10px;
             padding: 36px 40px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            min-height: unset;
+            display: flex; flex-direction: column;
         }
 
         /* Header Layout */
@@ -192,6 +235,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             padding-bottom: 20px;
             margin-bottom: 24px;
         }
+
         .company-brand h2 {
             font-size: 24px;
             font-weight: 700;
@@ -199,14 +243,17 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             margin-bottom: 4px;
             letter-spacing: -0.5px;
         }
+
         .company-brand p {
             color: #64748b;
             font-size: 12.5px;
             margin-bottom: 2px;
         }
+
         .invoice-title-block {
             text-align: right;
         }
+
         .invoice-badge-title {
             font-size: 26px;
             font-weight: 800;
@@ -215,11 +262,13 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             text-transform: uppercase;
             margin-bottom: 6px;
         }
+
         .meta-line {
             font-size: 13px;
             color: #475569;
             margin-bottom: 3px;
         }
+
         .meta-line strong {
             color: #1e293b;
         }
@@ -231,12 +280,14 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             gap: 24px;
             margin-bottom: 28px;
         }
+
         .party-box {
             background: #f8fafc;
             border: 1px solid #e2e8f0;
             border-radius: 8px;
             padding: 16px;
         }
+
         .party-box-title {
             font-size: 11.5px;
             text-transform: uppercase;
@@ -247,12 +298,14 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             border-bottom: 1px solid #e2e8f0;
             padding-bottom: 4px;
         }
+
         .party-name {
             font-size: 15px;
             font-weight: 700;
             color: #0f172a;
             margin-bottom: 4px;
         }
+
         .party-desc {
             font-size: 12.5px;
             color: #475569;
@@ -265,6 +318,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             border-collapse: collapse;
             margin-bottom: 20px;
         }
+
         .items-table th {
             background-color: #f1f5f9;
             color: #334155;
@@ -276,6 +330,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             padding: 10px 8px;
             text-align: center;
         }
+
         .items-table td {
             border: 1px solid #e2e8f0;
             padding: 10px 8px;
@@ -283,12 +338,22 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             color: #1e293b;
             vertical-align: middle;
         }
+
         .items-table tbody tr:nth-child(even) {
             background-color: #fafbfd;
         }
-        .text-start { text-align: left !important; }
-        .text-center { text-align: center !important; }
-        .text-end { text-align: right !important; }
+
+        .text-start {
+            text-align: left !important;
+        }
+
+        .text-center {
+            text-align: center !important;
+        }
+
+        .text-end {
+            text-align: right !important;
+        }
 
         /* Summary Section */
         .summary-wrapper {
@@ -298,6 +363,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             margin-top: 15px;
             gap: 20px;
         }
+
         .amount-words-box {
             flex: 1;
             background: #f8fafc;
@@ -305,6 +371,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             border-radius: 8px;
             padding: 14px 16px;
         }
+
         .amount-words-title {
             font-size: 11px;
             font-weight: 700;
@@ -312,6 +379,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             color: #64748b;
             margin-bottom: 4px;
         }
+
         .amount-words-text {
             font-size: 13px;
             font-weight: 600;
@@ -322,20 +390,24 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             width: 330px;
             border-collapse: collapse;
         }
+
         .calculation-table td {
             padding: 6px 12px;
             font-size: 13px;
         }
+
         .calc-label {
             color: #64748b;
             font-weight: 500;
             text-align: left;
         }
+
         .calc-val {
             text-align: right;
             font-weight: 600;
             color: #1e293b;
         }
+
         .calc-total-row td {
             border-top: 2px solid #cbd5e1;
             border-bottom: 2px solid #cbd5e1;
@@ -355,25 +427,29 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             padding-top: 20px;
             border-top: 1px dashed #cbd5e1;
         }
+
         .terms-box {
             max-width: 480px;
             font-size: 11.5px;
             color: #64748b;
         }
+
         .terms-box h4 {
             font-size: 12px;
             font-weight: 700;
             color: #334155;
-            margin-bottom: 4px;
             text-transform: uppercase;
         }
+
         .signature-box {
             text-align: center;
             width: 220px;
         }
+
         .sign-line {
             height: 55px;
         }
+
         .sign-name {
             font-size: 12.5px;
             font-weight: 700;
@@ -381,6 +457,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             border-top: 1px solid #94a3b8;
             padding-top: 6px;
         }
+
         .sign-title {
             font-size: 11px;
             color: #64748b;
@@ -392,41 +469,74 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                 background: #ffffff !important;
                 color: #000000 !important;
             }
-            .no-print, .top-action-bar {
+
+            .no-print,
+            .top-action-bar {
                 display: none !important;
             }
+
             .invoice-wrapper {
                 max-width: 100% !important;
                 margin: 0 !important;
                 padding: 0 !important;
             }
+
             .invoice-card {
                 border: none !important;
                 box-shadow: none !important;
                 padding: 0 !important;
             }
+
             @page {
                 size: A4 portrait;
                 margin: 10mm 12mm 10mm 12mm;
             }
         }
+
         @media screen and (max-width: 768px) {
-            .top-action-bar { padding: 10px 15px; justify-content: center; }
-            .action-btns { width: 100%; justify-content: center; flex-wrap: wrap; }
-            .invoice-card { margin: 10px; padding: 15px; }
-            .invoice-header { flex-direction: column; gap: 15px; }
-            .header-right { text-align: left; }
-            .parties-row { flex-direction: column; gap: 15px; }
-            .party-box { width: 100% !important; }
+            .top-action-bar {
+                padding: 10px 15px;
+                justify-content: center;
+            }
+
+            .action-btns {
+                width: 100%;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+
+            .invoice-card {
+                margin: 10px;
+                padding: 15px;
+            }
+
+            .invoice-header {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .header-right {
+                text-align: left;
+            }
+
+            .parties-row {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .party-box {
+                width: 100% !important;
+            }
         }
     </style>
 </head>
+
 <body>
 
     <!-- Floating Top Action Bar -->
     <div class="top-action-bar no-print">
         <div class="action-btns">
-            <button onclick="window.print()" class="btn btn-primary"><i class="ti ti-printer"></i> Print</button>
+            <button onclick="saveAndShowPDF()" class="btn btn-primary"><i class="ti ti-printer"></i> Print</button>
             <button onclick="downloadPDF()" id="btnDownloadPdf" class="btn btn-success"><i class="ti ti-download"></i> Save as PDF</button>
             <button onclick="window.close()" class="btn btn-secondary"><i class="ti ti-x"></i> Cancel</button>
         </div>
@@ -435,7 +545,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
     <!-- Invoice Content Area -->
     <div class="invoice-wrapper">
         <div class="invoice-card">
-            
+
             <!-- Invoice Header -->
             <div class="invoice-header">
                 <div class="company-brand">
@@ -458,7 +568,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                     <div class="invoice-badge-title">TAX INVOICE</div>
                     <div class="meta-line"><strong>Invoice No:</strong> <?= htmlspecialchars($q->invoice_no) ?></div>
                     <div class="meta-line"><strong>Date:</strong> <?= !empty($q->invoice_date) ? date('d-m-Y', strtotime($q->invoice_date)) : '-' ?></div>
-                    <?php if (!empty($q->due_date)) { 
+                    <?php if (!empty($q->due_date)) {
                         $isOverdue = ($q->payment_status === 'Pending' && $q->due_date < date('Y-m-d'));
                     ?>
                         <div class="meta-line">
@@ -469,7 +579,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                         </div>
                     <?php } ?>
                     <div class="meta-line">
-                        <strong>Status:</strong> 
+                        <strong>Status:</strong>
                         <span style="font-weight: 700; color: <?= ($q->payment_status === 'Paid') ? '#10b981' : '#f59e0b' ?>">
                             <?= htmlspecialchars($q->payment_status ?? 'Pending') ?>
                         </span>
@@ -533,7 +643,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                     </tr>
                 </thead>
                 <tbody>
-                    <?php 
+                    <?php
                     $sr = 1;
                     if (!empty($items)) {
                         foreach ($items as $item) {
@@ -548,36 +658,36 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
 
                             $discLabel = '-';
                             if ($discVal > 0) {
-                                $discLabel = ($discType === 'fixed') 
-                                    ? '₹' . number_format($discVal, 2) 
+                                $discLabel = ($discType === 'fixed')
+                                    ? '₹' . number_format($discVal, 2)
                                     : $discVal . '% (₹' . number_format($discAmt, 2) . ')';
                             }
                     ?>
-                        <tr>
-                            <td class="text-center"><?= $sr++ ?></td>
-                            <td class="text-start">
-                                <strong><?= htmlspecialchars($item->description) ?></strong>
-                                <?php if (!empty($item->sku)) { ?>
-                                    <br><small style="color: #64748b;">SKU: <?= htmlspecialchars($item->sku) ?></small>
+                            <tr>
+                                <td class="text-center"><?= $sr++ ?></td>
+                                <td class="text-start">
+                                    <strong><?= htmlspecialchars($item->description) ?></strong>
+                                    <?php if (!empty($item->sku)) { ?>
+                                        <br><small style="color: #64748b;">SKU: <?= htmlspecialchars($item->sku) ?></small>
+                                    <?php } ?>
+                                </td>
+                                <td class="text-center"><?= !empty($item->hsn_code) ? htmlspecialchars($item->hsn_code) : '-' ?></td>
+                                <td class="text-end">₹<?= number_format($rate, 2) ?></td>
+                                <td class="text-center"><?= number_format($qty, 2) ?></td>
+                                <?php if ($hasDiscount) { ?>
+                                    <td class="text-center"><?= $discLabel ?></td>
                                 <?php } ?>
-                            </td>
-                            <td class="text-center"><?= !empty($item->hsn_code) ? htmlspecialchars($item->hsn_code) : '-' ?></td>
-                            <td class="text-end">₹<?= number_format($rate, 2) ?></td>
-                            <td class="text-center"><?= number_format($qty, 2) ?></td>
-                            <?php if ($hasDiscount) { ?>
-                                <td class="text-center"><?= $discLabel ?></td>
-                            <?php } ?>
-                            <td class="text-end">₹<?= number_format($netAmt, 2) ?></td>
-                            <?php if ($isGst) { ?>
-                                <td class="text-center"><?= $gstPct ?>%</td>
-                            <?php } ?>
-                            <td class="text-end"><strong>₹<?= number_format($totalAmt, 2) ?></strong></td>
-                        </tr>
-                    <?php 
+                                <td class="text-end">₹<?= number_format($netAmt, 2) ?></td>
+                                <?php if ($isGst) { ?>
+                                    <td class="text-center"><?= $gstPct ?>%</td>
+                                <?php } ?>
+                                <td class="text-end"><strong>₹<?= number_format($totalAmt, 2) ?></strong></td>
+                            </tr>
+                        <?php
                         }
-                    } else { 
+                    } else {
                         $colSpan = 6 + ($hasDiscount ? 1 : 0) + ($isGst ? 1 : 0);
-                    ?>
+                        ?>
                         <tr>
                             <td colspan="<?= $colSpan ?>" class="text-center" style="padding: 24px; color: #94a3b8;">
                                 No items found in this quotation.
@@ -624,79 +734,15 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                 </table>
             </div>
 
-            <!-- Footer & Signatures -->
-            <div class="invoice-footer">
-                <div class="terms-box">
-                    <h4>Terms & Conditions</h4>
-                    <div>1. Payment is due within the stipulated time from the date of issue.</div>
-                    <div>2. Goods once sold will not be taken back without prior consent.</div>
-                    <div>3. Payment is due as per agreed terms.</div>
-                </div>
-
-                <div class="signature-box">
-                    <div class="sign-line"></div>
-                    <div class="sign-name"><?= !empty($company->company_name) ? htmlspecialchars($company->company_name) : 'Authorized Signatory' ?></div>
-                    <div class="sign-title">Authorized Signatory</div>
-                </div>
+            <!-- Standard Footer pinned to bottom -->
+            <div class="invoice-footer-pin" style="margin-top: auto; flex-shrink: 0;">
+                <?php renderStandardInvoiceFooter($company, $q, '#7367f0'); ?>
             </div>
 
         </div>
     </div>
 
-        <!-- html2pdf.js for direct client-side PDF download -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script>
-        function downloadPDF() {
-            var btn = document.getElementById('btnDownloadPdf');
-            var originalText = btn ? btn.innerHTML : '';
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="ti ti-loader"></i> Downloading...';
-            }
-
-            var element = document.querySelector('.invoice-card');
-            var fileName = <?= json_encode(preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->invoice_no ?? 'invoice') . '.pdf') ?>;
-
-            var opt = {
-                margin: [5, 8, 5, 8], // top, left, bottom, right in mm
-                filename: fileName,
-                image: {
-                    type: 'jpeg',
-                    quality: 0.98
-                },
-                html2canvas: {
-                    scale: 2,
-                    useCORS: true,
-                    logging: false
-                },
-                jsPDF: {
-                    unit: 'mm',
-                    format: 'a4',
-                    orientation: 'portrait'
-                }
-            };
-
-            html2pdf().set(opt).from(element).save().then(function() {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-            }).catch(function(err) {
-                console.error('PDF error:', err);
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-                window.print();
-            });
-        }
-
-        window.addEventListener('load', function() {
-            var urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('download') === '1') {
-                setTimeout(downloadPDF, 600);
-            }
-        });
-    </script>
+    <?php require_once __DIR__ . '/includes/invoice-pdf-script.php'; ?>
 </body>
+
 </html>

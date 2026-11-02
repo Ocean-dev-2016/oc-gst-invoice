@@ -10,8 +10,7 @@ function renderStandardInvoiceFooter($company, $q, $themeColor = '#1e293b') {
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
-            margin-top: 30px;
-            padding-top: 20px;
+            margin-top: 15px; padding-top: 12px;
             gap: 30px;
             border-top: 1px dashed #e2e8f0;
             page-break-inside: avoid;
@@ -36,10 +35,11 @@ function renderStandardInvoiceFooter($company, $q, $themeColor = '#1e293b') {
         .std-sign-col {
             width: 220px;
             flex-shrink: 0;
-            text-align: right;
+            text-align: center;
             display: flex;
             flex-direction: column;
-            align-items: flex-end;
+            align-items: center;
+            justify-content: center;
         }
         .std-sign-preview {
             max-height: 50px;

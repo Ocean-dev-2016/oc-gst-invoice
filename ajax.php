@@ -463,6 +463,16 @@ if (isset($_POST['action']) && $_POST['action'] == 'convert_quotation_to_invoice
         exit;
     }
 
+    // Only allow invoice generation if quotation status is 'Accepted'
+    $quotStatus = $quot->quotation_status ?? 'Draft';
+    if ($quotStatus !== 'Accepted') {
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Quotation invoice cannot be generated. Quotation status must be "Accepted" first (current status: ' . $quotStatus . ').'
+        ]);
+        exit;
+    }
+
     // Check stock availability for all products in this quotation BEFORE creating invoice
     $qItemsCheck = $ai_db->aiGetQueryObj("SELECT * FROM tbl_quotation_items WHERE quotation_id='$quotation_id'");
     $outOfStockErrors = [];
@@ -700,6 +710,23 @@ if (isset($_POST['action']) && $_POST['action'] === 'set_company_invoice_templat
 
     $update = $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id='$templateId' WHERE id='$companyId'");
     if ($update) {
+        // Also update existing invoices of this company so they use the new template
+        $ai_db->aiQuery("UPDATE tbl_invoice SET template_id='$templateId' WHERE company_id='$companyId'");
+
+        // Invalidate/delete old generated PDFs for this company so new template PDFs are freshly generated
+        $invList = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice WHERE company_id='$companyId'");
+        if (!empty($invList)) {
+            foreach ($invList as $invItem) {
+                $safeNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $invItem->invoice_no ?? '');
+                if (!empty($safeNo)) {
+                    $pdfFile = __DIR__ . '/uploads/invoices/invoice_' . $safeNo . '.pdf';
+                    if (file_exists($pdfFile)) {
+                        @unlink($pdfFile);
+                    }
+                }
+            }
+        }
+
         echo json_encode([
             'status' => true,
             'message' => 'Default template updated to "' . $tplCheck[0]->template_name . '" successfully!',
@@ -708,6 +735,33 @@ if (isset($_POST['action']) && $_POST['action'] === 'set_company_invoice_templat
         ]);
     } else {
         echo json_encode(['status' => false, 'message' => 'Database error while updating template.']);
+    }
+    exit;
+}
+
+if ($_POST['action'] == 'toggle_template_premium') {
+    $templateId = intval($_POST['template_id'] ?? 0);
+    $isPremium = intval($_POST['is_premium'] ?? 0) === 1 ? 1 : 0;
+
+    if ($templateId <= 0) {
+        echo json_encode(['status' => false, 'message' => 'Invalid Template ID.']);
+        exit;
+    }
+
+    $chkCol = @$ai_db->aiGetQueryObj("SHOW COLUMNS FROM `tbl_invoice_templates` LIKE 'is_premium'");
+    if (empty($chkCol)) {
+        @$ai_db->aiQuery("ALTER TABLE `tbl_invoice_templates` ADD COLUMN `is_premium` TINYINT(1) NOT NULL DEFAULT 0 AFTER `preview_image`");
+    }
+
+    $upd = $ai_db->aiQuery("UPDATE tbl_invoice_templates SET is_premium='$isPremium' WHERE id='$templateId'");
+    if ($upd) {
+        echo json_encode([
+            'status' => true,
+            'message' => $isPremium ? 'Template marked as PRO / Premium!' : 'Template marked as Free / Standard.',
+            'is_premium' => $isPremium
+        ]);
+    } else {
+        echo json_encode(['status' => false, 'message' => 'Failed to update template status.']);
     }
     exit;
 }

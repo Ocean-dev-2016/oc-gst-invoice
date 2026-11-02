@@ -88,8 +88,9 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
         .btn-secondary { background-color: #fff; color: #171717; }
 
         .invoice-card {
-            max-width: 840px; margin: 30px auto; background: #ffffff;
+            max-width: 840px; min-height: unset; margin: 30px auto; background: #ffffff;
             padding: 45px 50px; border: 1px solid #e5e5e5;
+            display: flex; flex-direction: column;
         }
         .minimal-header {
             display: flex; justify-content: space-between; align-items: flex-start;
@@ -155,7 +156,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
 
     <div class="top-action-bar">
         <div class="action-btns">
-            <button onclick="window.print()" class="btn btn-primary"><i class="ti ti-printer"></i> Print</button>
+            <button onclick="saveAndShowPDF()" class="btn btn-primary"><i class="ti ti-printer"></i> Print</button>
             <button onclick="downloadPDF()" id="btnDownloadPdf" class="btn btn-success"><i class="ti ti-download"></i> Save as PDF</button>
             <button onclick="window.close()" class="btn btn-secondary"><i class="ti ti-x"></i> Cancel</button>
         </div>
@@ -206,65 +207,17 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
             </div>
         </div>
 
-        <?php renderInvoiceProductTableAndTotals($items, $q, $isGst, $hasCgstSgst, $hasIgst, $amountInWords, '#171717'); ?>
+        <!-- Items Table (grows to fill space) -->
+        <div style="flex: 1 0 auto;">
+            <?php renderInvoiceProductTableAndTotals($items, $q, $isGst, $hasCgstSgst, $hasIgst, $amountInWords, '#171717'); ?>
+        </div>
 
-        <?php renderStandardInvoiceFooter($company, $q, '#171717'); ?>
+        <!-- Footer pinned to bottom -->
+        <div class="invoice-footer-pin" style="margin-top: auto; flex-shrink: 0;">
+            <?php renderStandardInvoiceFooter($company, $q, '#171717'); ?>
+        </div>
     </div>
 
-    <!-- html2pdf.js for direct client-side PDF download -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script>
-        function downloadPDF() {
-            var btn = document.getElementById('btnDownloadPdf');
-            var originalText = btn ? btn.innerHTML : '';
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="ti ti-loader"></i> Downloading...';
-            }
-
-            var element = document.querySelector('.invoice-card');
-            var fileName = <?= json_encode(preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->invoice_no ?? 'invoice') . '.pdf') ?>;
-
-            var opt = {
-                margin: [5, 8, 5, 8], // top, left, bottom, right in mm
-                filename: fileName,
-                image: {
-                    type: 'jpeg',
-                    quality: 0.98
-                },
-                html2canvas: {
-                    scale: 2,
-                    useCORS: true,
-                    logging: false
-                },
-                jsPDF: {
-                    unit: 'mm',
-                    format: 'a4',
-                    orientation: 'portrait'
-                }
-            };
-
-            html2pdf().set(opt).from(element).save().then(function() {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-            }).catch(function(err) {
-                console.error('PDF error:', err);
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-                window.print();
-            });
-        }
-
-        window.addEventListener('load', function() {
-            var urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('download') === '1') {
-                setTimeout(downloadPDF, 600);
-            }
-        });
-    </script>
+    <?php require_once dirname(dirname(__DIR__)) . '/includes/invoice-pdf-script.php'; ?>
 </body>
 </html>

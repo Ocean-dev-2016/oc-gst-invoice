@@ -564,6 +564,18 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
             echo '<div class="log-item log-info">ℹ `tbl_invoice` table exists.</div>';
         }
 
+        if (tableExists('tbl_invoice')) {
+            if (!columnExists('tbl_invoice', 'pdf_url')) {
+                runMigrationQuery(
+                    "ALTER TABLE `tbl_invoice` ADD COLUMN `pdf_url` VARCHAR(255) NULL DEFAULT '' AFTER `status`",
+                    "Added `pdf_url` column to `tbl_invoice` successfully.",
+                    "Failed to add `pdf_url` to `tbl_invoice`"
+                );
+            } else {
+                echo '<div class="log-item log-info">ℹ `tbl_invoice`.`pdf_url` column already exists.</div>';
+            }
+        }
+
         if (!tableExists('tbl_invoice_items')) {
             $createInvoiceItemsSql = "CREATE TABLE IF NOT EXISTS `tbl_invoice_items` (
         `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -642,7 +654,7 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
             }
         }
 
-        // 6. tbl_quotation -> converted_invoice_id column check
+        // 6. tbl_quotation -> converted_invoice_id & quotation_status column check
         if (tableExists('tbl_quotation')) {
             if (!columnExists('tbl_quotation', 'converted_invoice_id')) {
                 runMigrationQuery(
@@ -653,9 +665,41 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
             } else {
                 echo '<div class="log-item log-info">ℹ `tbl_quotation`.`converted_invoice_id` column already exists.</div>';
             }
+
+            if (!columnExists('tbl_quotation', 'quotation_status')) {
+                runMigrationQuery(
+                    "ALTER TABLE `tbl_quotation` ADD COLUMN `quotation_status` ENUM('Draft','Accepted','Rejected') NOT NULL DEFAULT 'Draft' AFTER `converted_invoice_id`",
+                    "Added `quotation_status` column to `tbl_quotation` table successfully.",
+                    "Failed to add `quotation_status` to `tbl_quotation`"
+                );
+            } else {
+                echo '<div class="log-item log-info">ℹ `tbl_quotation`.`quotation_status` column already exists.</div>';
+            }
+
+            if (!columnExists('tbl_quotation', 'pdf_url')) {
+                runMigrationQuery(
+                    "ALTER TABLE `tbl_quotation` ADD COLUMN `pdf_url` VARCHAR(255) NULL DEFAULT '' AFTER `quotation_status`",
+                    "Added `pdf_url` column to `tbl_quotation` successfully.",
+                    "Failed to add `pdf_url` to `tbl_quotation`"
+                );
+            } else {
+                echo '<div class="log-item log-info">ℹ `tbl_quotation`.`pdf_url` column already exists.</div>';
+            }
         }
 
         // 7. Purchase Module Tables (`tbl_purchase`, `tbl_purchase_items`, `tbl_purchase_payments`)
+        if (tableExists('tbl_purchase')) {
+            if (!columnExists('tbl_purchase', 'pdf_url')) {
+                runMigrationQuery(
+                    "ALTER TABLE `tbl_purchase` ADD COLUMN `pdf_url` VARCHAR(255) NULL DEFAULT '' AFTER `status`",
+                    "Added `pdf_url` column to `tbl_purchase` successfully.",
+                    "Failed to add `pdf_url` to `tbl_purchase`"
+                );
+            } else {
+                echo '<div class="log-item log-info">ℹ `tbl_purchase`.`pdf_url` column already exists.</div>';
+            }
+        }
+
         if (!tableExists('tbl_purchase')) {
             $createPurchaseSql = "CREATE TABLE `tbl_purchase` (
         `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -832,6 +876,19 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
                 );
             } else {
                 echo '<div class="log-item log-info">ℹ `tbl_invoice`.`template_id` already exists.</div>';
+            }
+        }
+
+        // Add template_id to tbl_quotation
+        if (tableExists('tbl_quotation')) {
+            if (!columnExists('tbl_quotation', 'template_id')) {
+                runMigrationQuery(
+                    "ALTER TABLE `tbl_quotation` ADD COLUMN `template_id` INT(11) NOT NULL DEFAULT 1 AFTER `company_id`",
+                    "Added `template_id` to `tbl_quotation` successfully.",
+                    "Failed to add `template_id` to `tbl_quotation`"
+                );
+            } else {
+                echo '<div class="log-item log-info">ℹ `tbl_quotation`.`template_id` already exists.</div>';
             }
         }
 

@@ -56,7 +56,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_payment_status') {
                 }
             }
             echo json_encode([
-                'status' => true, 
+                'status' => true,
                 'message' => 'Payment status updated to ' . $newPayStatus,
                 'party_outstanding' => $newPartyBal
             ]);
@@ -72,7 +72,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_payment_status') {
 
 // Handle AJAX Record Payment (Add installment / partial payment)
 if (isset($_POST['action']) && $_POST['action'] === 'record_payment') {
-    if (ob_get_level()) { ob_clean(); }
+    if (ob_get_level()) {
+        ob_clean();
+    }
     header('Content-Type: application/json; charset=utf-8');
 
     $invoiceId = intval($_POST['invoice_id'] ?? 0);
@@ -159,7 +161,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'record_payment') {
 
 // Handle AJAX Fetch Payment History for an Invoice
 if (isset($_GET['action']) && $_GET['action'] === 'get_payment_history') {
-    if (ob_get_level()) { ob_clean(); }
+    if (ob_get_level()) {
+        ob_clean();
+    }
     header('Content-Type: application/json; charset=utf-8');
 
     $invoiceId = intval($_GET['invoice_id'] ?? 0);
@@ -211,7 +215,7 @@ if (isset($_GET['toggle']) && isset($_GET['id'])) {
     $toStatus = $_GET['to'] ?? '';
     if ($toggleId > 0 && in_array($toStatus, ['active', 'deactive'], true)) {
         $qRow = $ai_db->aiGetQueryObj("SELECT party_id, payment_status FROM tbl_invoice WHERE id='$toggleId' LIMIT 1");
-        
+
         // Rule 2: If payment status is Paid, status CANNOT be changed (locked)
         if (!empty($qRow) && ($qRow[0]->payment_status ?? '') === 'Paid') {
             $ai_core->aiGoPage($pageUrl . '?msg=paid_locked');
@@ -237,7 +241,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'delete') {
     $del_id = intval($_GET['id'] ?? 0);
     if ($del_id > 0) {
         $qRow = $ai_db->aiGetQueryObj("SELECT party_id, payment_status FROM tbl_invoice WHERE id='$del_id' LIMIT 1");
-        
+
         // Block delete if invoice payment is Paid
         if (!empty($qRow) && ($qRow[0]->payment_status ?? '') === 'Paid') {
             $ai_core->aiGoPage($pageUrl . '?msg=paid_locked');
@@ -282,10 +286,11 @@ if ($filter_payment === 'Pending') {
     $pay_where = " AND q.payment_status IN ('Pending','Partially Paid') AND q.due_date IS NOT NULL AND q.due_date < '{$todayDate}'";
 }
 
-$qry = "SELECT q.*, c.company_name, s.state_name 
+$qry = "SELECT q.*, c.company_name, s.state_name, qu.quotation_no 
         FROM tbl_invoice q 
         LEFT JOIN tbl_company c ON q.company_id = c.id 
-        LEFT JOIN tbl_state s ON q.state_id = s.id
+        LEFT JOIN tbl_state s ON q.state_id = s.id 
+        LEFT JOIN tbl_quotation qu ON q.quotation_id = qu.id 
         WHERE 1=1
         $company_where
         $pay_where
@@ -389,24 +394,31 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                     <tbody>
                                         <?php if ($invoices) {
                                             $i = 1;
-                                            foreach ($invoices as $q) { 
+                                            foreach ($invoices as $q) {
                                                 $payStatus = !empty($q->payment_status) ? $q->payment_status : 'Pending';
                                                 $badgeStyle = ($payStatus === 'Paid') ? 'background-color:#dcfce7; color:#15803d; border-color:#86efac;' : 'background-color:#fef3c7; color:#b45309; border-color:#fcd34d;';
                                                 $isDeactive = (strtolower(trim($q->status ?? '')) === 'deactive');
                                                 $isPaid = ($payStatus === 'Paid');
-                                            ?>
+                                        ?>
                                                 <tr>
                                                     <td><?= $i++ ?></td>
 
-                                                    <!-- Invoice No -->
+                                                    <!-- Invoice No & Quotation No -->
                                                     <td class="text-start">
                                                         <span class="badge bg-label-dark font-monospace text-wrap" style="font-size: 13px;"><?= htmlspecialchars($q->invoice_no) ?></span>
+                                                        <?php if (!empty($q->quotation_no)) { ?>
+                                                            <div class="mt-1" title="Generated from Quotation">
+                                                                <span class="badge bg-label-info font-monospace text-wrap" style="font-size: 11px;">
+                                                                    <i class="ti ti-file-description me-1"></i><?= htmlspecialchars($q->quotation_no) ?>
+                                                                </span>
+                                                            </div>
+                                                        <?php } ?>
                                                     </td>
 
                                                     <!-- Date -->
                                                     <td class="text-nowrap" style="font-size: 13.5px;">
                                                         <div><i class="ti ti-calendar me-1"></i><?= !empty($q->invoice_date) ? date('d/m/Y', strtotime($q->invoice_date)) : '-' ?></div>
-                                                        <?php if (!empty($q->due_date)) { 
+                                                        <?php if (!empty($q->due_date)) {
                                                             $isOverdue = ($payStatus === 'Pending' && $q->due_date < date('Y-m-d'));
                                                         ?>
                                                             <div class="mt-1" title="Due Date">
@@ -442,9 +454,9 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                     <!-- Grand Total & Paid Breakdown -->
                                                     <td class="text-start" style="font-size: 13.5px;">
                                                         <div class="fw-bold text-success text-nowrap" style="font-size: 14.5px;">₹<?= number_format($q->grand_total, 2) ?></div>
-                                                        <?php 
-                                                            $pAmt = floatval($q->paid_amount ?? 0); 
-                                                            $dueAmt = max(0.0, floatval($q->grand_total) - $pAmt);
+                                                        <?php
+                                                        $pAmt = floatval($q->paid_amount ?? 0);
+                                                        $dueAmt = max(0.0, floatval($q->grand_total) - $pAmt);
                                                         ?>
                                                         <div class="text-muted text-nowrap" style="font-size: 12px;">
                                                             Paid: <span class="fw-semibold text-primary">₹<?= number_format($pAmt, 2) ?></span>
@@ -474,24 +486,24 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                             <?php } ?>
 
                                                             <?php if (!$isDeactive && $payStatus !== 'Paid') { ?>
-                                                                <button type="button" 
-                                                                        class="btn btn-xs btn-primary waves-effect waves-light mt-1 btn-record-payment" 
-                                                                        data-id="<?= $q->id ?>" 
-                                                                        data-no="<?= htmlspecialchars($q->invoice_no) ?>"
-                                                                        data-party="<?= htmlspecialchars($q->party_name) ?>"
-                                                                        data-total="<?= number_format($q->grand_total, 2, '.', '') ?>"
-                                                                        data-paid="<?= number_format($pAmt, 2, '.', '') ?>"
-                                                                        data-due="<?= number_format($dueAmt, 2, '.', '') ?>"
-                                                                        style="font-size: 11px; padding: 2px 8px; border-radius: 4px;">
+                                                                <button type="button"
+                                                                    class="btn btn-xs btn-primary waves-effect waves-light mt-1 btn-record-payment"
+                                                                    data-id="<?= $q->id ?>"
+                                                                    data-no="<?= htmlspecialchars($q->invoice_no) ?>"
+                                                                    data-party="<?= htmlspecialchars($q->party_name) ?>"
+                                                                    data-total="<?= number_format($q->grand_total, 2, '.', '') ?>"
+                                                                    data-paid="<?= number_format($pAmt, 2, '.', '') ?>"
+                                                                    data-due="<?= number_format($dueAmt, 2, '.', '') ?>"
+                                                                    style="font-size: 11px; padding: 2px 8px; border-radius: 4px;">
                                                                     <i class="ti ti-plus me-1"></i> Pay
                                                                 </button>
                                                             <?php } ?>
 
                                                             <?php if ($pAmt > 0) { ?>
-                                                                <a href="javascript:void(0);" 
-                                                                   class="text-muted small btn-view-history" 
-                                                                   data-id="<?= $q->id ?>"
-                                                                   style="font-size: 11px; text-decoration: underline;">
+                                                                <a href="javascript:void(0);"
+                                                                    class="text-muted small btn-view-history"
+                                                                    data-id="<?= $q->id ?>"
+                                                                    style="font-size: 11px; text-decoration: underline;">
                                                                     <i class="ti ti-history me-1"></i> History
                                                                 </a>
                                                             <?php } ?>
@@ -514,11 +526,18 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                                 <i class="ti ti-dots-vertical fs-4"></i>
                                                             </button>
                                                             <div class="dropdown-menu dropdown-menu-end">
-                                                                <a class="dropdown-item" href="invoice-print.php?id=<?= $q->id ?>" target="_blank">
+                                                                <?php
+                                                                $safeInvNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->invoice_no ?? ('invoice_' . $q->id));
+                                                                $pdfRelPath = 'uploads/invoices/invoice_' . $safeInvNo . '.pdf';
+                                                                $pdfDiskPath = __DIR__ . '/' . $pdfRelPath;
+                                                                if (file_exists($pdfDiskPath)) {
+                                                                    $viewUrl = $pdfRelPath;
+                                                                } else {
+                                                                    $viewUrl = 'invoice-print.php?id=' . $q->id . '&store_and_show=1';
+                                                                }
+                                                                ?>
+                                                                <a class="dropdown-item" href="<?= $viewUrl ?>" target="_blank">
                                                                     <i class="ti ti-printer me-1"></i> Print / View
-                                                                </a>
-                                                                <a class="dropdown-item" href="invoice-print.php?id=<?= $q->id ?>&download=1" target="_blank">
-                                                                    <i class="ti ti-download me-1"></i> Download PDF
                                                                 </a>
                                                                 <?php if ($isPaid) { ?>
                                                                     <a class="dropdown-item text-muted disabled" href="javascript:void(0);" title="Cannot edit: Invoice payment is Paid" style="cursor:not-allowed; opacity: 0.6;">
@@ -536,7 +555,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            <?php }
+                                        <?php }
                                         } ?>
                                     </tbody>
                                 </table>
@@ -669,7 +688,9 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                 </tr>
                             </thead>
                             <tbody id="hist_table_body">
-                                <tr><td colspan="6" class="text-muted py-3">Loading history...</td></tr>
+                                <tr>
+                                    <td colspan="6" class="text-muted py-3">Loading history...</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -794,7 +815,10 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                     url: 'manage-invoice-list.php',
                     type: 'GET',
                     dataType: 'json',
-                    data: { action: 'get_payment_history', invoice_id: invId },
+                    data: {
+                        action: 'get_payment_history',
+                        invoice_id: invId
+                    },
                     success: function(res) {
                         if (res.status) {
                             $('#hist_inv_no').text(res.invoice.invoice_no);
@@ -814,7 +838,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                         '<td><span class="badge bg-label-info">' + (item.payment_mode || 'Cash') + '</span></td>' +
                                         '<td>' + (item.reference_no || '-') + '</td>' +
                                         '<td>' + (item.notes || '-') + '</td>' +
-                                    '</tr>';
+                                        '</tr>';
                                 });
                                 tbody.html(html);
                             } else {
@@ -832,4 +856,5 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
         });
     </script>
 </body>
+
 </html>
