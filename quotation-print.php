@@ -8,15 +8,19 @@ if (empty($_SESSION['aid'])) {
 }
 
 $docType = 'quotation';
+require_once __DIR__ . '/includes/template-auto-migrate.php';
 require_once __DIR__ . '/includes/invoice-data-loader.php';
+require_once __DIR__ . '/includes/invoice-footer-renderer.php';
 
 // ==========================================
-// DYNAMIC_TEMPLATE_ROUTER: Load Company Template
+// DYNAMIC_TEMPLATE_ROUTER: Load Template (Quotation Specific / Company Default)
 // ==========================================
 $templateIdToUse = 1;
 if (!empty($_GET['preview_template'])) {
     $templateIdToUse = intval($_GET['preview_template']);
-} elseif (!empty($company->invoice_template_id)) {
+} elseif (!empty($q->template_id) && intval($q->template_id) > 0) {
+    $templateIdToUse = intval($q->template_id);
+} elseif (!empty($company->invoice_template_id) && intval($company->invoice_template_id) > 0) {
     $templateIdToUse = intval($company->invoice_template_id);
 }
 
@@ -229,6 +233,8 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             border-radius: 10px;
             padding: 36px 40px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            min-height: unset;
+            display: flex; flex-direction: column;
         }
 
         /* Header Layout */
@@ -471,9 +477,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             <button onclick="downloadPDF()" id="btnDownloadPdf" class="btn btn-success">
                 <i class="ti ti-download"></i> Download PDF
             </button>
-            <button onclick="window.print()" class="btn btn-primary">
-                <i class="ti ti-printer"></i> Print / Save as PDF
-            </button>
+            <button onclick="saveAndShowPDF()" class="btn btn-primary"><i class="ti ti-printer"></i> Print</button>
             <a href="manage-quotation-form.php?mode=edit&id=<?= $q->id ?>" class="btn btn-secondary">
                 <i class="ti ti-pencil"></i> Edit Quotation
             </a>
@@ -675,71 +679,14 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                 </table>
             </div>
 
-            <!-- Footer & Signatures -->
-            <div class="invoice-footer">
-                <div class="terms-box">
-                    <h4>Terms & Conditions</h4>
-                    <div>1. Quotation is valid for 30 days from the date of issue.</div>
-                    <div>2. Goods once sold will not be taken back without prior consent.</div>
-                    <div>3. Payment is due as per agreed terms.</div>
-                </div>
-
-                <div class="signature-box">
-                    <div class="sign-line"></div>
-                    <div class="sign-name"><?= !empty($company->company_name) ? htmlspecialchars($company->company_name) : 'Authorized Signatory' ?></div>
-                    <div class="sign-title">Authorized Signatory</div>
-                </div>
+            <!-- Standard Footer pinned to bottom -->
+            <div class="invoice-footer-pin" style="margin-top: auto; flex-shrink: 0;">
+                <?php renderStandardInvoiceFooter($company, $q, '#7367f0'); ?>
             </div>
 
         </div>
     </div>
 
-    <!-- html2pdf.js for direct client-side PDF download -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script>
-        function downloadPDF() {
-            var btn = document.getElementById('btnDownloadPdf');
-            var originalText = btn ? btn.innerHTML : '';
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="ti ti-loader"></i> Generating PDF...';
-            }
-
-            var element = document.querySelector('.invoice-card');
-            var fileName = <?= json_encode(preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->quotation_no) . '.pdf') ?>;
-
-            var opt = {
-                margin:       [10, 10, 10, 10], // top, left, bottom, right in mm
-                filename:     fileName,
-                image:        { type: 'jpeg', quality: 0.98 },
-                html2canvas:  { scale: 2, useCORS: true, logging: false },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-
-            html2pdf().set(opt).from(element).save().then(function() {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-            }).catch(function(err) {
-                console.error('PDF error:', err);
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
-                // Fallback to print
-                window.print();
-            });
-        }
-
-        window.addEventListener('load', function() {
-            var urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('download') === '1') {
-                setTimeout(downloadPDF, 500);
-            } else if (urlParams.get('print') === '1') {
-                window.print();
-            }
-        });
-    </script>
+    <?php require_once __DIR__ . '/includes/invoice-pdf-script.php'; ?>
 </body>
 </html>

@@ -36,19 +36,19 @@ function renderInvoiceProductTableAndTotals($items, $q, $isGst, $hasCgstSgst, $h
             table-layout: auto;
         }
         .ref-items-table th {
-            background-color: #f0f7ff; color: #1e293b; padding: 10px 8px;
+            background-color: #f0f7ff; color: #1e293b; padding: 8px 5px;
             font-size: 11px; font-weight: 700; text-transform: uppercase;
             letter-spacing: 0.5px; border: 1px solid #dbeafe; text-align: center;
             white-space: nowrap;
         }
         .ref-items-table td {
-            padding: 8px 8px; border: 1px solid #dbeafe; color: #1e293b;
+            padding: 6px 5px; border: 1px solid #dbeafe; color: #1e293b;
             vertical-align: middle; font-size: 12px;
             word-break: normal;
         }
         .ref-calc-box {
             display: flex; justify-content: space-between; align-items: flex-start;
-            margin-top: 15px; margin-bottom: 25px; gap: 20px;
+            margin-top: 10px; margin-bottom: 12px; gap: 20px;
         }
         .ref-words-card {
             flex: 1; min-width: 0; background: #f8fafc; border: 1px solid #e2e8f0;
@@ -76,9 +76,8 @@ function renderInvoiceProductTableAndTotals($items, $q, $isGst, $hasCgstSgst, $h
         .ref-grand-val { font-size: 16px; font-weight: 800; color: <?= $themeColor ?>; }
         .ref-table-responsive {
             width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            margin-bottom: 20px;
+            overflow: visible;
+            margin-bottom: 10px;
         }
         @media screen and (max-width: 768px) {
             .ref-calc-box {
@@ -123,17 +122,17 @@ function renderInvoiceProductTableAndTotals($items, $q, $isGst, $hasCgstSgst, $h
     <table class="ref-items-table">
         <thead>
             <tr>
-                <th style="width: 5%;">#</th>
-                <th style="text-align: left; padding-left: 14px;">ITEM DESCRIPTION</th>
-                <th style="width: 11%;">HSN/SAC</th>
-                <th style="width: 12%;">RATE</th>
-                <th style="width: 8%;">QTY</th>
-                <th style="width: 14%;">DISCOUNT</th>
-                <th style="width: 14%;">TAXABLE AMT</th>
+                <th style="width: 4%;">#</th>
+                <th style="text-align: left; padding-left: 10px;">ITEM DESCRIPTION</th>
+                <th style="width: 10%;">HSN/SAC</th>
+                <th style="width: 11%;">RATE</th>
+                <th style="width: 7%;">QTY</th>
+                <th style="width: 12%;">DISCOUNT</th>
+                <th style="width: 12%;">TAXABLE AMT</th>
                 <?php if ($isGst): ?>
-                    <th style="width: 8%;">GST</th>
+                    <th style="width: 7%;">GST</th>
                 <?php endif; ?>
-                <th style="width: 14%;">TOTAL</th>
+                <th style="width: 12%;">TOTAL</th>
             </tr>
         </thead>
         <tbody>

@@ -140,7 +140,7 @@ if ($isSamplePreview) {
         }
         $q = $purchaseRow[0];
         // Standardize invoice_no and invoice_date for unified templates
-        $q->invoice_no = $q->bill_no ?? ('PUR-' . $q->id);
+        $q->invoice_no = $q->purchase_no ?? ('PUR-' . $q->id);
         $q->invoice_date = $q->bill_date ?? ($q->created_at ?? date('Y-m-d'));
 
         $items = $ai_db->aiGetQueryObj("

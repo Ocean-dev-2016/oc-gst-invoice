@@ -69,6 +69,10 @@ if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['b
         $err_msg = "Please enter a valid Email Address!";
     } elseif (!empty($pan_no) && !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/', $pan_no)) {
         $err_msg = "PAN Number must be valid 10-character alphanumeric (e.g. ABCDE1234F)!";
+    } elseif ($company_has_gst && empty($gst_no)) {
+        $err_msg = "GST Number is required because selected company has GST applicable!";
+    } elseif ($company_has_gst && empty($gst_no)) {
+        $err_msg = "GST Number is required because selected company has GST applicable!";
     } elseif ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
         $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
@@ -314,7 +318,7 @@ if ($selected_shipping_state_id > 0) {
 
                                             <!-- GST IN No -->
                                             <div class="col-md-3" id="party_gst_wrapper" style="<?= $show_party_gst ? '' : 'display:none;' ?>">
-                                                <label class="form-label">GST IN No.</label>
+                                                <label class="form-label">GST IN No. <span class="text-danger" id="party_gst_required_star">*</span></label>
                                                 <input type="text" name="gst_no" id="party_gst_no" class="form-control text-uppercase" placeholder="Enter GSTIN (e.g. 24AAAAA0000A1Z5)" value="<?= htmlspecialchars($_POST['gst_no'] ?? $categoryData->gst_no ?? '') ?>" maxlength="15" style="text-transform: uppercase;">
                                                 <div class="form-text text-muted mt-1" style="font-size: 11px;">
                                                     Format: <span class="fw-semibold text-primary">24AAAAA0000A1Z5</span> (15 digits)
@@ -683,9 +687,12 @@ if ($selected_shipping_state_id > 0) {
 
                 if (isGstApplicable) {
                     $('#party_gst_wrapper').slideDown(200);
+                    $('#party_gst_no').prop('required', true);
+                    $('#party_gst_required_star').show();
                 } else {
                     $('#party_gst_wrapper').slideUp(200);
-                    $('#party_gst_no').val('');
+                    $('#party_gst_no').prop('required', false).val('');
+                    $('#party_gst_required_star').hide();
                 }
             }
 
@@ -753,9 +760,17 @@ if ($selected_shipping_state_id > 0) {
                     return false;
                 }
 
+                if (isGstVisible && gstNo === '') {
+                    e.preventDefault();
+                    showToastError('GST Number is required for the selected Company!');
+                    $('#party_gst_no').focus();
+                    return false;
+                }
+
                 if (isGstVisible && gstNo !== '' && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i.test(gstNo)) {
                     e.preventDefault();
                     showToastError('Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!');
+                    $('#party_gst_no').focus();
                     return false;
                 }
 

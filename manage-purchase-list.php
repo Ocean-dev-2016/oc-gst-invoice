@@ -503,11 +503,18 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                                 <i class="ti ti-dots-vertical fs-4"></i>
                                                             </button>
                                                             <div class="dropdown-menu dropdown-menu-end">
-                                                                <a class="dropdown-item" href="purchase-print.php?id=<?= $q->id ?>" target="_blank">
+                                                                <?php
+                                                                $safePurNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->purchase_no ?? ('purchase_' . $q->id));
+                                                                $pdfRelPath = 'uploads/invoices/purchase_' . $safePurNo . '.pdf';
+                                                                $pdfDiskPath = __DIR__ . '/' . $pdfRelPath;
+                                                                if (file_exists($pdfDiskPath)) {
+                                                                    $viewUrl = $pdfRelPath;
+                                                                } else {
+                                                                    $viewUrl = 'purchase-print.php?id=' . $q->id . '&store_and_show=1';
+                                                                }
+                                                                ?>
+                                                                <a class="dropdown-item" href="<?= $viewUrl ?>" target="_blank">
                                                                     <i class="ti ti-printer me-1"></i> Print / View
-                                                                </a>
-                                                                <a class="dropdown-item" href="purchase-print.php?id=<?= $q->id ?>&download=1" target="_blank">
-                                                                    <i class="ti ti-download me-1"></i> Download PDF
                                                                 </a>
                                                                 <?php if (!$isPaid) { ?>
                                                                     <a class="dropdown-item" href="manage-purchase-form.php?mode=edit&id=<?= $q->id ?>">

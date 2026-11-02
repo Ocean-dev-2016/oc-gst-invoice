@@ -1,5 +1,6 @@
 <?php
 include('includes/header.php');
+require_once __DIR__ . '/includes/template-auto-migrate.php';
 
 $page_nm = 'Quotation';
 $table = 'tbl_quotation';
@@ -51,6 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $party_id = intval($_POST['party_id'] ?? 0);
     $party_name = addslashes(trim($_POST['party_name'] ?? ''));
     $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
+    $template_id = intval($_POST['template_id'] ?? 1);
+    if ($template_id <= 0) $template_id = 1;
     $quotation_no = addslashes(trim($_POST['quotation_no'] ?? ''));
     if (empty($quotation_no) && $mode === 'add') {
         $quotation_no = generateQuotationNo($ai_db, $company_id);
@@ -63,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $quotation_date = !empty($_POST['quotation_date']) ? date('Y-m-d', strtotime($_POST['quotation_date'])) : date('Y-m-d');
     $due_date = !empty($_POST['due_date']) ? date('Y-m-d', strtotime($_POST['due_date'])) : null;
     $due_date_sql = $due_date ? "'$due_date'" : "NULL";
+    $quotation_status = in_array($_POST['quotation_status'] ?? '', ['Draft', 'Accepted', 'Rejected'], true) ? $_POST['quotation_status'] : 'Draft';
     $company_has_gst = isQuotationCompanyGstApplicable($company_id);
     $gst_type = $company_has_gst ? addslashes(trim($_POST['gst_type'] ?? 'with_gst')) : 'without_gst';
     if (!$company_has_gst) {
@@ -91,6 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
         $err_msg = "Please enter Quotation Number!";
     } elseif (!empty($due_date) && !empty($quotation_date) && $due_date < $quotation_date) {
         $err_msg = "Due Date cannot be earlier than Quotation Date!";
+    } elseif (!empty($due_date) && $due_date < date('Y-m-d') && $quotation_status === 'Accepted') {
+        $err_msg = "Cannot set status to 'Accepted' because Due Date has already expired! Please extend the Due Date or mark as 'Rejected'.";
     } elseif ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
         $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
@@ -118,11 +124,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
             }
         }
 
+        $cleanQuoNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $quotation_no);
+
+        // Auto-heal column template_id in tbl_quotation if not present
+        $chkColTpl = mysqli_query($ai_conn, "SHOW COLUMNS FROM `tbl_quotation` LIKE 'template_id'");
+        if (!$chkColTpl || mysqli_num_rows($chkColTpl) === 0) {
+            @mysqli_query($ai_conn, "ALTER TABLE `tbl_quotation` ADD COLUMN `template_id` INT(11) NOT NULL DEFAULT 1 AFTER `company_id`");
+        }
+
         if (!empty($invalidProductError)) {
             $err_msg = $invalidProductError;
         } elseif ($mode === 'add') {
             $insert_qry = "INSERT INTO tbl_quotation SET
                 company_id='$company_id',
+                template_id='$template_id',
                 party_id='$party_id',
                 party_name='$party_name',
                 gst_no='$gst_no',
@@ -141,10 +156,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 tax_amount='$tax_amount',
                 grand_total='$grand_total',
                 payment_status='$payment_status',
+                quotation_status='$quotation_status',
                 status='$status'";
 
             $ai_db->aiQuery($insert_qry);
             $quotation_id = $ai_db->aiLastInsert();
+            $formattedQuoId = str_pad($quotation_id, 2, '0', STR_PAD_LEFT);
+            $computed_pdf_url = 'uploads/invoices/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
+            $ai_db->aiQuery("UPDATE tbl_quotation SET pdf_url='$computed_pdf_url' WHERE id='$quotation_id'");
 
             // Insert Items
             if (!empty($_POST['item_description']) && is_array($_POST['item_description'])) {
@@ -186,7 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 recalculatePartyOutstanding($party_id);
             }
 
-            $ai_core->aiGoPage($redirection_url . '?msg=1');
+            $ai_core->aiGoPage($redirection_url . '?msg=1&gen_pdf_id=' . $quotation_id);
             exit;
         } elseif ($mode === 'edit' && $id > 0) {
             // Check if quotation is already converted to Invoice
@@ -197,9 +216,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
             }
             $prevPartyId = !empty($prevQ) ? intval($prevQ[0]->party_id) : 0;
             $payment_status = isset($_POST['payment_status']) ? ((trim($_POST['payment_status']) === 'Paid') ? 'Paid' : 'Pending') : (!empty($prevQ) ? $prevQ[0]->payment_status : 'Pending');
+            $formattedQuoId = str_pad($id, 2, '0', STR_PAD_LEFT);
+            $computed_pdf_url = 'uploads/invoices/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
 
             $update_qry = "UPDATE tbl_quotation SET
                 company_id='$company_id',
+                template_id='$template_id',
                 party_id='$party_id',
                 party_name='$party_name',
                 gst_no='$gst_no',
@@ -218,6 +240,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 tax_amount='$tax_amount',
                 grand_total='$grand_total',
                 payment_status='$payment_status',
+                quotation_status='$quotation_status',
+                pdf_url='$computed_pdf_url',
                 status='$status'
                 WHERE id='$id'";
 
@@ -266,7 +290,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 if ($prevPartyId > 0 && $prevPartyId !== $party_id) recalculatePartyOutstanding($prevPartyId);
             }
 
-            $ai_core->aiGoPage($redirection_url . '?msg=2');
+            // Remove old stored PDF if quotation was updated so next view generates fresh updated PDF
+            $safeOldQuoNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $quotation_no ?? ('quotation_' . $id));
+            $formattedQuoId = str_pad($id, 2, '0', STR_PAD_LEFT);
+            $targetOldPdf = __DIR__ . '/uploads/invoices/quotation_' . $formattedQuoId . '_' . $safeOldQuoNo . '.pdf';
+            if (file_exists($targetOldPdf)) {
+                @unlink($targetOldPdf);
+            }
+            // Also clean legacy name if existed
+            $legacyOldPdf = __DIR__ . '/uploads/invoices/quotation_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $quotation_no) . '.pdf';
+            if (file_exists($legacyOldPdf)) {
+                @unlink($legacyOldPdf);
+            }
+
+            $ai_core->aiGoPage($redirection_url . '?msg=2&gen_pdf_id=' . $id);
             exit;
         }
     }
@@ -301,6 +338,15 @@ if ($mode === 'edit' && $id > 0) {
 
 $selected_company_id = $_POST['company_id'] ?? $quotationData->company_id ?? ($_SESSION['company_id'] ?? 0);
 $show_quotation_gst = isQuotationCompanyGstApplicable($selected_company_id);
+
+$templates = $ai_db->aiGetQueryObj("SELECT id, template_name, preview_image, is_premium FROM tbl_invoice_templates WHERE status='active' ORDER BY id ASC");
+$companyDefaultTemplateId = 1;
+if ($selected_company_id > 0) {
+    $compTplRow = $ai_db->aiGetQueryObj("SELECT invoice_template_id FROM tbl_company WHERE id='$selected_company_id' LIMIT 1");
+    if (!empty($compTplRow) && !empty($compTplRow[0]->invoice_template_id)) {
+        $companyDefaultTemplateId = intval($compTplRow[0]->invoice_template_id);
+    }
+}
 if ($selected_company_id > 0) {
     $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND party_status='Sales' AND company_id='$selected_company_id' ORDER BY party_name ASC");
     $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price, gst_rate FROM tbl_product WHERE status='active' AND company_id='$selected_company_id' ORDER BY product_name ASC");
@@ -382,6 +428,121 @@ if ($selected_state_id > 0) {
         text-align: right;
         font-weight: 600;
     }
+
+    /* Template Radio Thumbnail Cards */
+    .template-thumb-choice {
+        position: relative;
+        cursor: pointer;
+        display: inline-block;
+        margin: 0;
+    }
+
+    .template-thumb-choice input[type="radio"] {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 3;
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #7367f0;
+    }
+
+    .template-thumb-box {
+        width: 130px;
+        height: 165px;
+        background: #ffffff;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 5px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        transition: all 0.2s ease-in-out;
+    }
+
+    .template-thumb-box img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 4px;
+        transition: transform 0.2s ease-in-out;
+    }
+
+    .template-thumb-choice:hover .template-thumb-box {
+        border-color: #7367f0;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 14px rgba(115, 103, 240, 0.2);
+    }
+
+    .template-thumb-choice:hover .template-thumb-box img {
+        transform: scale(1.03);
+    }
+
+    .template-thumb-choice input[type="radio"]:checked + .template-thumb-box {
+        border-color: #7367f0;
+        box-shadow: 0 0 0 2px #7367f0, 0 6px 14px rgba(115, 103, 240, 0.25);
+    }
+
+    .template-thumb-badge-check {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        background: #7367f0;
+        color: #fff;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        z-index: 2;
+    }
+
+    .template-thumb-choice input[type="radio"]:checked ~ .template-thumb-badge-check {
+        display: flex;
+    }
+
+    /* PRO Badge for Premium Templates */
+    .template-pro-badge {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        box-shadow: 0 2px 6px rgba(217, 119, 6, 0.4);
+        z-index: 4;
+        pointer-events: none;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+    }
+
+    .template-thumb-choice.is-disabled-pro {
+        cursor: not-allowed;
+        opacity: 0.82;
+    }
+
+    .template-thumb-choice.is-disabled-pro .template-thumb-box {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+        cursor: not-allowed;
+    }
+
+    .template-thumb-choice.is-disabled-pro:hover .template-thumb-box {
+        border-color: #f59e0b;
+        transform: none;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
+    }
 </style>
 
 <body>
@@ -398,14 +559,6 @@ if ($selected_state_id > 0) {
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h4 class="fw-bold m-0"><?= ($mode === 'edit') ? 'Edit' : 'Add' ?> Quotation</h4>
                             <div class="d-flex gap-2">
-                                <?php if ($mode === 'edit' && $id > 0) { ?>
-                                    <a href="quotation-print.php?id=<?= $id ?>&download=1" target="_blank" class="btn btn-success">
-                                        <i class="ti ti-download me-1"></i> Download PDF
-                                    </a>
-                                    <a href="quotation-print.php?id=<?= $id ?>" target="_blank" class="btn btn-info">
-                                        <i class="ti ti-printer me-1"></i> Print / PDF
-                                    </a>
-                                <?php } ?>
                                 <a href="<?= $redirection_url ?>" class="btn btn-secondary">
                                     <i class="ti ti-arrow-left me-1"></i> Back to List
                                 </a>
@@ -486,9 +639,58 @@ if ($selected_state_id > 0) {
                                     </div>
                                 </div>
 
-                                <!-- ROW 2: ADDRESS (4) | STATE (2) | CITY (2) | DATE (2) | DUE DATE (2) -->
+                                <!-- ROW: INVOICE TEMPLATE (Radio Buttons with Thumbnail Images) -->
                                 <div class="row g-3 mb-3">
-                                    <div class="col-md-4">
+                                    <div class="col-12">
+                                        <label class="form-label fw-bold text-uppercase small text-muted d-block mb-2">
+                                            <i class="ti ti-layout-grid me-1 text-primary"></i>INVOICE TEMPLATE <span class="text-danger">*</span>
+                                        </label>
+                                        <?php 
+                                        $selectedTplId = !empty($quotationData->template_id) ? intval($quotationData->template_id) : $companyDefaultTemplateId;
+                                        ?>
+                                        <div class="d-flex flex-wrap gap-3 align-items-center p-3 border rounded bg-light">
+                                            <?php if (!empty($templates)) {
+                                                foreach ($templates as $tpl) { 
+                                                    $isPrem = (!empty($tpl->is_premium) && (int)$tpl->is_premium === 1);
+                                                    $isRadioChecked = ($selectedTplId == $tpl->id && !$isPrem);
+                                                    $radioId = 'template_opt_' . $tpl->id;
+                                                    $imgSrc = !empty($tpl->preview_image) ? SITE_URL . $tpl->preview_image : SITE_URL . 'assets/img/templates/template-classic.svg';
+                                                    ?>
+                                                    <label class="template-thumb-choice <?= $isPrem ? 'is-disabled-pro' : '' ?>" for="<?= $isPrem ? '' : $radioId ?>" title="<?= htmlspecialchars($tpl->template_name) ?><?= $isPrem ? ' (PRO Template - Upgrade required)' : '' ?>">
+                                                        <?php if ($isPrem): ?>
+                                                            <div class="template-pro-badge">
+                                                                <i class="ti ti-crown"></i> PRO
+                                                            </div>
+                                                        <?php endif; ?>
+                                                        <input type="radio" name="template_id" id="<?= $radioId ?>" value="<?= $tpl->id ?>" <?= $isRadioChecked ? 'checked' : '' ?> <?= $isPrem ? 'disabled' : 'required' ?> <?= $isPrem ? 'style="pointer-events:none; cursor:not-allowed;"' : '' ?>>
+                                                        <div class="template-thumb-box">
+                                                            <img src="<?= $imgSrc ?>" alt="<?= htmlspecialchars($tpl->template_name) ?>">
+                                                        </div>
+                                                        <?php if (!$isPrem): ?>
+                                                            <div class="template-thumb-badge-check">
+                                                                <i class="ti ti-check"></i>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    </label>
+                                                <?php } 
+                                            } else { ?>
+                                                <label class="template-thumb-choice" for="template_opt_1">
+                                                    <input type="radio" name="template_id" id="template_opt_1" value="1" checked required>
+                                                    <div class="template-thumb-box">
+                                                        <img src="<?= SITE_URL ?>assets/img/templates/template-classic.svg" alt="Classic Template">
+                                                    </div>
+                                                    <div class="template-thumb-badge-check">
+                                                        <i class="ti ti-check"></i>
+                                                    </div>
+                                                </label>
+                                            <?php } ?>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- ROW 2: ADDRESS (3) | STATE (2) | CITY (2) | DATE (2) | DUE DATE (1.5) | STATUS (1.5) -->
+                                <div class="row g-3 mb-3">
+                                    <div class="col-md-3">
                                         <label class="form-label fw-bold text-uppercase small text-muted">ADDRESS</label>
                                         <textarea name="address" id="address" class="form-control" rows="1" placeholder="Enter address"><?= htmlspecialchars($quotationData->address ?? '') ?></textarea>
                                     </div>
@@ -522,9 +724,25 @@ if ($selected_state_id > 0) {
                                         <input type="date" name="quotation_date" id="quotation_date" class="form-control" value="<?= htmlspecialchars($quotationData->quotation_date ?? date('Y-m-d')) ?>">
                                     </div>
 
-                                    <div class="col-md-2">
+                                    <div class="col-md-1">
                                         <label class="form-label fw-bold text-uppercase small text-muted">DUE DATE</label>
                                         <input type="date" name="due_date" id="due_date" class="form-control" min="<?= htmlspecialchars($quotationData->quotation_date ?? date('Y-m-d')) ?>" value="<?= htmlspecialchars(!empty($quotationData->due_date) ? $quotationData->due_date : date('Y-m-d')) ?>">
+                                    </div>
+
+                                    <div class="col-md-2">
+                                        <label class="form-label fw-bold text-uppercase small text-muted">STATUS</label>
+                                        <?php 
+                                        $currQStatus = $quotationData->quotation_status ?? 'Draft';
+                                        $isFormExpired = (!empty($quotationData->due_date) && date('Y-m-d', strtotime($quotationData->due_date)) < date('Y-m-d'));
+                                        if ($isFormExpired && $currQStatus !== 'Accepted') {
+                                            $currQStatus = 'Rejected';
+                                        }
+                                        ?>
+                                        <select name="quotation_status" id="quotation_status" class="form-select">
+                                            <option value="Draft" id="opt_status_draft" <?= ($currQStatus === 'Draft') ? 'selected' : '' ?>>Draft</option>
+                                            <option value="Accepted" id="opt_status_accepted" <?= ($currQStatus === 'Accepted') ? 'selected' : '' ?> <?= $isFormExpired ? 'disabled style="display:none;"' : '' ?>>Accepted</option>
+                                            <option value="Rejected" id="opt_status_rejected" <?= ($currQStatus === 'Rejected') ? 'selected' : '' ?>>Rejected</option>
+                                        </select>
                                     </div>
 
                                     <input type="hidden" name="gst_type" id="gst_type" value="<?= $show_quotation_gst ? 'with_gst' : 'without_gst' ?>">
@@ -1243,6 +1461,19 @@ if ($selected_state_id > 0) {
                 $('#grand_total').val(grandTotal.toFixed(2));
             }
 
+            function checkDueDateStatusConstraint() {
+                var dueDateVal = $('#due_date').val();
+                var today = new Date().toISOString().split('T')[0];
+                if (dueDateVal && dueDateVal < today) {
+                    $('#opt_status_accepted').prop('disabled', true).hide();
+                    if ($('#quotation_status').val() === 'Accepted') {
+                        $('#quotation_status').val('Rejected');
+                    }
+                } else {
+                    $('#opt_status_accepted').prop('disabled', false).show();
+                }
+            }
+
             // Synchronize Quotation Date and Due Date (Due date cannot be less than quotation date)
             $('#quotation_date').on('change', function() {
                 var qDate = $(this).val();
@@ -1253,6 +1484,7 @@ if ($selected_state_id > 0) {
                         $('#due_date').val(qDate);
                     }
                 }
+                checkDueDateStatusConstraint();
             });
 
             $('#due_date').on('change', function() {
@@ -1262,7 +1494,9 @@ if ($selected_state_id > 0) {
                     alert('Due Date cannot be earlier than Quotation Date (' + qDate + ')!');
                     $(this).val(qDate);
                 }
+                checkDueDateStatusConstraint();
             });
+            checkDueDateStatusConstraint();
 
             function escapeHtml(text) {
                 return text ? String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';

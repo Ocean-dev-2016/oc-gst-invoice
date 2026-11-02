@@ -86,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id'])) {
         $company_id = intval($_SESSION['company_id']);
     }
+    $template_id = intval($_POST['template_id'] ?? 1);
     $party_id = intval($_POST['party_id'] ?? 0);
     $party_name = addslashes(trim($_POST['party_name'] ?? ''));
     $gst_no = addslashes(trim($_POST['gst_no'] ?? ''));
@@ -184,9 +185,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
         if (!empty($insufficientStockErrors)) {
             $err_msg = "Cannot save invoice! Insufficient stock for: " . implode(", ", $insufficientStockErrors) . ". Please check product stock or adjust quantities.";
         } else {
-            if ($mode === 'add') {
+            $cleanInvNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $invoice_no);
+            $computed_pdf_url = 'uploads/invoices/invoice_' . $cleanInvNo . '.pdf';
+
+            $chkColTpl = mysqli_query($ai_conn, "SHOW COLUMNS FROM `tbl_invoice` LIKE 'template_id'");
+        if (!$chkColTpl || mysqli_num_rows($chkColTpl) === 0) {
+            @mysqli_query($ai_conn, "ALTER TABLE `tbl_invoice` ADD COLUMN `template_id` INT(11) NOT NULL DEFAULT 1 AFTER `company_id`");
+        }
+
+        if ($mode === 'add') {
             $insert_qry = "INSERT INTO tbl_invoice SET
                 company_id='$company_id',
+                template_id='$template_id',
                 party_id='$party_id',
                 party_name='$party_name',
                 gst_no='$gst_no',
@@ -206,6 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 grand_total='$grand_total',
                 paid_amount='$paid_amount',
                 payment_status='$payment_status',
+                pdf_url='$computed_pdf_url',
                 status='$status'";
 
             $ai_db->aiQuery($insert_qry);
@@ -265,6 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
 
             $update_qry = "UPDATE tbl_invoice SET
                 company_id='$company_id',
+                template_id='$template_id',
                 party_id='$party_id',
                 party_name='$party_name',
                 gst_no='$gst_no',
@@ -284,6 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 grand_total='$grand_total',
                 paid_amount='$paid_amount',
                 payment_status='$payment_status',
+                pdf_url='$computed_pdf_url',
                 status='$status'
                 WHERE id='$id'";
 
@@ -342,6 +355,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 if ($prevPartyId > 0 && $prevPartyId !== $party_id) recalculatePartyOutstanding($prevPartyId);
             }
 
+            // Remove old stored PDF if invoice was updated so next view generates fresh updated PDF
+            $safeOldNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $invoice_no ?? ('invoice_' . $id));
+            $oldPdfPath = __DIR__ . '/uploads/invoices/invoice_' . $safeOldNo . '.pdf';
+            if (file_exists($oldPdfPath)) {
+                @unlink($oldPdfPath);
+            }
+
             $ai_core->aiGoPage($redirection_url . '?msg=2');
             exit;
         }
@@ -384,6 +404,15 @@ if ($mode === 'edit' && $id > 0) {
 
 $selected_company_id = $_POST['company_id'] ?? $invoiceData->company_id ?? ($_SESSION['company_id'] ?? 0);
 $show_invoice_gst = isInvoiceCompanyGstApplicable($selected_company_id);
+
+$templates = $ai_db->aiGetQueryObj("SELECT id, template_name, preview_image, is_premium FROM tbl_invoice_templates WHERE status='active' ORDER BY id ASC");
+$companyDefaultTemplateId = 1;
+if ($selected_company_id > 0) {
+    $compTplRow = $ai_db->aiGetQueryObj("SELECT invoice_template_id FROM tbl_company WHERE id='$selected_company_id' LIMIT 1");
+    if (!empty($compTplRow) && !empty($compTplRow[0]->invoice_template_id)) {
+        $companyDefaultTemplateId = intval($compTplRow[0]->invoice_template_id);
+    }
+}
 if ($selected_company_id > 0) {
     $parties = $ai_db->aiGetQueryObj("SELECT id, party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE status='active' AND party_status='Sales' AND company_id='$selected_company_id' ORDER BY party_name ASC");
     $products = $ai_db->aiGetQueryObj("SELECT id, product_name, hsn_code, sales_price, gst_rate, stock, min_stock_alert, track_stock FROM tbl_product WHERE status='active' AND company_id='$selected_company_id' ORDER BY product_name ASC");
@@ -456,6 +485,121 @@ if ($selected_state_id > 0) {
     text-align: right;
     font-weight: 600;
 }
+
+/* Template Radio Thumbnail Cards */
+.template-thumb-choice {
+    position: relative;
+    cursor: pointer;
+    display: inline-block;
+    margin: 0;
+}
+
+.template-thumb-choice input[type="radio"] {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 3;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #7367f0;
+}
+
+.template-thumb-box {
+    width: 130px;
+    height: 165px;
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    transition: all 0.2s ease-in-out;
+}
+
+.template-thumb-box img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+    transition: transform 0.2s ease-in-out;
+}
+
+.template-thumb-choice:hover .template-thumb-box {
+    border-color: #7367f0;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(115, 103, 240, 0.2);
+}
+
+.template-thumb-choice:hover .template-thumb-box img {
+    transform: scale(1.03);
+}
+
+.template-thumb-choice input[type="radio"]:checked + .template-thumb-box {
+    border-color: #7367f0;
+    box-shadow: 0 0 0 2px #7367f0, 0 6px 14px rgba(115, 103, 240, 0.25);
+}
+
+.template-thumb-badge-check {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: #7367f0;
+    color: #fff;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    z-index: 2;
+}
+
+.template-thumb-choice input[type="radio"]:checked ~ .template-thumb-badge-check {
+    display: flex;
+}
+
+/* PRO Badge for Premium Templates */
+.template-pro-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(217, 119, 6, 0.4);
+    z-index: 4;
+    pointer-events: none;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.template-thumb-choice.is-disabled-pro {
+    cursor: not-allowed;
+    opacity: 0.82;
+}
+
+.template-thumb-choice.is-disabled-pro .template-thumb-box {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    cursor: not-allowed;
+}
+
+.template-thumb-choice.is-disabled-pro:hover .template-thumb-box {
+    border-color: #f59e0b;
+    transform: none;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
+}
 </style>
 
 <body>
@@ -472,14 +616,6 @@ if ($selected_state_id > 0) {
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h4 class="fw-bold m-0"><?= ($mode === 'edit') ? 'Edit' : 'Add' ?> Invoice</h4>
                             <div class="d-flex gap-2">
-                                <?php if ($mode === 'edit' && $id > 0) { ?>
-                                    <a href="invoice-print.php?id=<?= $id ?>&download=1" target="_blank" class="btn btn-success">
-                                        <i class="ti ti-download me-1"></i> Download PDF
-                                    </a>
-                                    <a href="invoice-print.php?id=<?= $id ?>" target="_blank" class="btn btn-info">
-                                        <i class="ti ti-printer me-1"></i> Print / PDF
-                                    </a>
-                                <?php } ?>
                                 <a href="<?= $redirection_url ?>" class="btn btn-secondary">
                                     <i class="ti ti-arrow-left me-1"></i> Back to List
                                 </a>
@@ -557,6 +693,55 @@ if ($selected_state_id > 0) {
                                             <option value="No" <?= (($invoiceData->rca ?? 'No') === 'No') ? 'selected' : '' ?>>No</option>
                                             <option value="Yes" <?= (($invoiceData->rca ?? '') === 'Yes') ? 'selected' : '' ?>>Yes</option>
                                         </select>
+                                    </div>
+                                </div>
+
+                                <!-- ROW: INVOICE TEMPLATE (Radio Buttons with Thumbnail Images) -->
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12">
+                                        <label class="form-label fw-bold text-uppercase small text-muted d-block mb-2">
+                                            <i class="ti ti-layout-grid me-1 text-primary"></i>INVOICE TEMPLATE <span class="text-danger">*</span>
+                                        </label>
+                                        <?php 
+                                        $selectedTplId = !empty($invoiceData->template_id) ? intval($invoiceData->template_id) : $companyDefaultTemplateId;
+                                        ?>
+                                        <div class="d-flex flex-wrap gap-3 align-items-center p-3 border rounded bg-light">
+                                            <?php if (!empty($templates)) {
+                                                foreach ($templates as $tpl) { 
+                                                    $isPrem = (!empty($tpl->is_premium) && (int)$tpl->is_premium === 1);
+                                                    $isRadioChecked = ($selectedTplId == $tpl->id && !$isPrem);
+                                                    $radioId = 'template_opt_' . $tpl->id;
+                                                    $imgSrc = !empty($tpl->preview_image) ? SITE_URL . $tpl->preview_image : SITE_URL . 'assets/img/templates/template-classic.svg';
+                                                    ?>
+                                                    <label class="template-thumb-choice <?= $isPrem ? 'is-disabled-pro' : '' ?>" for="<?= $isPrem ? '' : $radioId ?>" title="<?= htmlspecialchars($tpl->template_name) ?><?= $isPrem ? ' (PRO Template - Upgrade required)' : '' ?>">
+                                                        <?php if ($isPrem): ?>
+                                                            <div class="template-pro-badge">
+                                                                <i class="ti ti-crown"></i> PRO
+                                                            </div>
+                                                        <?php endif; ?>
+                                                        <input type="radio" name="template_id" id="<?= $radioId ?>" value="<?= $tpl->id ?>" <?= $isRadioChecked ? 'checked' : '' ?> <?= $isPrem ? 'disabled' : 'required' ?> <?= $isPrem ? 'style="pointer-events:none; cursor:not-allowed;"' : '' ?>>
+                                                        <div class="template-thumb-box">
+                                                            <img src="<?= $imgSrc ?>" alt="<?= htmlspecialchars($tpl->template_name) ?>">
+                                                        </div>
+                                                        <?php if (!$isPrem): ?>
+                                                            <div class="template-thumb-badge-check">
+                                                                <i class="ti ti-check"></i>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    </label>
+                                                <?php } 
+                                            } else { ?>
+                                                <label class="template-thumb-choice" for="template_opt_1">
+                                                    <input type="radio" name="template_id" id="template_opt_1" value="1" checked required>
+                                                    <div class="template-thumb-box">
+                                                        <img src="<?= SITE_URL ?>assets/img/templates/template-classic.svg" alt="Classic Template">
+                                                    </div>
+                                                    <div class="template-thumb-badge-check">
+                                                        <i class="ti ti-check"></i>
+                                                    </div>
+                                                </label>
+                                            <?php } ?>
+                                        </div>
                                     </div>
                                 </div>
 
