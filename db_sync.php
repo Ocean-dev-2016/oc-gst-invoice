@@ -361,16 +361,14 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
             echo '<div class="log-item log-warn">⚠ Table `tbl_party` does not exist!</div>';
         }
 
-        // 2. tbl_quotation -> payment_status & due_date columns
+        // 2. tbl_quotation -> due_date column & remove legacy payment_status
         if (tableExists('tbl_quotation')) {
-            if (!columnExists('tbl_quotation', 'payment_status')) {
+            if (columnExists('tbl_quotation', 'payment_status')) {
                 runMigrationQuery(
-                    "ALTER TABLE `tbl_quotation` ADD COLUMN `payment_status` ENUM('Pending','Paid') NOT NULL DEFAULT 'Pending' AFTER `grand_total`",
-                    "Added `payment_status` column to `tbl_quotation` table successfully.",
-                    "Failed to add `payment_status` column to `tbl_quotation`"
+                    "ALTER TABLE `tbl_quotation` DROP COLUMN `payment_status`",
+                    "Dropped legacy `payment_status` column from `tbl_quotation` successfully.",
+                    "Failed to drop `payment_status` column from `tbl_quotation`"
                 );
-            } else {
-                echo '<div class="log-item log-info">ℹ `tbl_quotation`.`payment_status` column already exists.</div>';
             }
 
             if (!columnExists('tbl_quotation', 'due_date')) {
@@ -658,7 +656,7 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
         if (tableExists('tbl_quotation')) {
             if (!columnExists('tbl_quotation', 'converted_invoice_id')) {
                 runMigrationQuery(
-                    "ALTER TABLE `tbl_quotation` ADD COLUMN `converted_invoice_id` INT(11) NOT NULL DEFAULT 0 AFTER `payment_status`",
+                    "ALTER TABLE `tbl_quotation` ADD COLUMN `converted_invoice_id` INT(11) NOT NULL DEFAULT 0 AFTER `grand_total`",
                     "Added `converted_invoice_id` column to `tbl_quotation` table successfully.",
                     "Failed to add `converted_invoice_id` to `tbl_quotation`"
                 );

@@ -133,13 +133,20 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
         @media print {
             @page {
                 size: A4 portrait;
-                margin: 8mm 10mm;
+                margin: 0 !important;
             }
             .top-action-bar { display: none !important; }
             body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
             .invoice-card {
                 border: none !important; margin: 0 auto !important;
                 width: 100% !important; max-width: 100% !important; padding: 20px 25px !important;
+                min-height: 297mm !important; height: 297mm !important;
+                display: flex !important; flex-direction: column !important;
+            }
+            .invoice-footer-pin {
+                margin-top: auto !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
             }
         }
         @media screen and (max-width: 768px) {

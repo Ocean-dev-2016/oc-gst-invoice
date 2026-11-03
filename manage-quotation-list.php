@@ -1,60 +1,6 @@
 <?php
 require_once __DIR__ . '/root/config.php';
 
-// Handle AJAX Payment Status Update before any HTML output
-if (isset($_POST['action']) && $_POST['action'] === 'update_payment_status') {
-    if (ob_get_level()) {
-        ob_clean();
-    }
-    header('Content-Type: application/json; charset=utf-8');
-
-
-    $quotId = intval($_POST['id'] ?? 0);
-    $newPayStatus = ($_POST['payment_status'] === 'Paid') ? 'Paid' : 'Pending';
-
-    if ($quotId > 0) {
-        // Fetch current status and party_id before updating
-        $qRow = $ai_db->aiGetQueryObj("SELECT party_id, status FROM tbl_quotation WHERE id='$quotId' LIMIT 1");
-        if (empty($qRow)) {
-            echo json_encode(['status' => false, 'message' => 'Quotation not found.']);
-            exit;
-        }
-
-        // Rule 1: Payment status can ONLY be changed if quotation is Active
-        if ($qRow[0]->status !== 'active') {
-            echo json_encode(['status' => false, 'message' => 'Cannot change payment status of a Deactive quotation. Please activate it first.']);
-            exit;
-        }
-
-        $partyId = intval($qRow[0]->party_id ?? 0);
-
-        $updQry = "UPDATE tbl_quotation SET payment_status='$newPayStatus' WHERE id='$quotId'";
-        if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id'])) {
-            $compFilter = intval($_SESSION['company_id']);
-            $updQry .= " AND company_id='$compFilter'";
-        }
-        $updated = mysqli_query($ai_conn, $updQry);
-        if ($updated) {
-            // Recalculate party's outstanding balance automatically
-            $newPartyBal = 0.00;
-            if ($partyId > 0 && function_exists('recalculatePartyOutstanding')) {
-                $newPartyBal = recalculatePartyOutstanding($partyId);
-            }
-            echo json_encode([
-                'status' => true, 
-                'message' => 'Payment status updated to ' . $newPayStatus,
-                'party_outstanding' => $newPartyBal
-            ]);
-            exit;
-        } else {
-            echo json_encode(['status' => false, 'message' => 'Database error: ' . mysqli_error($ai_conn)]);
-            exit;
-        }
-    }
-    echo json_encode(['status' => false, 'message' => 'Invalid Quotation ID.']);
-    exit;
-}
-
 // Handle AJAX Quotation Workflow Status (Draft, Accepted, Rejected) Update
 if (isset($_POST['action']) && $_POST['action'] === 'update_quotation_status') {
     if (ob_get_level()) {
@@ -102,7 +48,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_quotation_status') {
         $updated = mysqli_query($ai_conn, $updQry);
         if ($updated) {
             echo json_encode([
-                'status' => true, 
+                'status' => true,
                 'message' => 'Quotation status updated to ' . $newStatus,
                 'new_status' => $newStatus
             ]);
@@ -128,13 +74,7 @@ if (isset($_GET['toggle']) && isset($_GET['id'])) {
     $toggleId = intval($_GET['id'] ?? 0);
     $toStatus = $_GET['to'] ?? '';
     if ($toggleId > 0 && in_array($toStatus, ['active', 'deactive'], true)) {
-        $qRow = $ai_db->aiGetQueryObj("SELECT party_id, payment_status FROM tbl_quotation WHERE id='$toggleId' LIMIT 1");
-        
-        // Rule 2: If payment status is Paid, status CANNOT be changed (locked)
-        if (!empty($qRow) && ($qRow[0]->payment_status ?? '') === 'Paid') {
-            $ai_core->aiGoPage($pageUrl . '?msg=paid_locked');
-            exit;
-        }
+        $qRow = $ai_db->aiGetQueryObj("SELECT party_id FROM tbl_quotation WHERE id='$toggleId' LIMIT 1");
 
         $partyId = !empty($qRow) ? intval($qRow[0]->party_id) : 0;
 
@@ -192,15 +132,13 @@ if (in_array($filter_status, ['Draft', 'Accepted', 'Rejected'], true)) {
     $status_where = " AND q.quotation_status = '{$filter_status}'";
 }
 
-$filter_payment = $_GET['payment_status'] ?? 'all';
-$pay_where = "";
+$filter_due_status = $_GET['due_status'] ?? 'all';
+$due_where = "";
 $todayDate = date('Y-m-d');
-if ($filter_payment === 'Pending') {
-    $pay_where = " AND q.payment_status = 'Pending'";
-} elseif ($filter_payment === 'Paid') {
-    $pay_where = " AND q.payment_status = 'Paid'";
-} elseif ($filter_payment === 'Overdue') {
-    $pay_where = " AND q.payment_status = 'Pending' AND q.due_date IS NOT NULL AND q.due_date < '{$todayDate}'";
+if ($filter_due_status === 'Active' || $filter_due_status === 'active') {
+    $due_where = " AND (q.due_date IS NULL OR q.due_date = '' OR q.due_date = '0000-00-00' OR q.due_date >= '{$todayDate}')";
+} elseif ($filter_due_status === 'Expired' || $filter_due_status === 'expired' || $filter_due_status === 'Overdue') {
+    $due_where = " AND q.due_date IS NOT NULL AND q.due_date != '' AND q.due_date != '0000-00-00' AND q.due_date < '{$todayDate}'";
 }
 
 $qry = "SELECT q.*, c.company_name 
@@ -208,21 +146,19 @@ $qry = "SELECT q.*, c.company_name
         LEFT JOIN tbl_company c ON q.company_id = c.id 
         WHERE 1=1
         $company_where
-        $pay_where
+        $due_where
         $status_where
         ORDER BY q.id DESC";
 $quotations = $ai_db->aiGetQueryObj($qry);
 
-// Metrics for Top Summary Cards (Total, Paid, Unpaid) matching user UI design
+// Metrics for Top Summary Cards
 $metricsQry = "SELECT 
     COUNT(id) AS total_count,
     COALESCE(SUM(grand_total), 0) AS total_amt,
-    COUNT(CASE WHEN payment_status = 'Paid' THEN 1 END) AS paid_count,
-    COALESCE(SUM(CASE WHEN payment_status = 'Paid' THEN grand_total ELSE 0 END), 0) AS paid_amt,
-    COUNT(CASE WHEN payment_status = 'Pending' THEN 1 END) AS unpaid_count,
-    COALESCE(SUM(CASE WHEN payment_status = 'Pending' THEN grand_total ELSE 0 END), 0) AS unpaid_amt,
-    COUNT(CASE WHEN payment_status = 'Pending' AND due_date IS NOT NULL AND due_date < '{$todayDate}' THEN 1 END) AS overdue_count,
-    COALESCE(SUM(CASE WHEN payment_status = 'Pending' AND due_date IS NOT NULL AND due_date < '{$todayDate}' THEN grand_total ELSE 0 END), 0) AS overdue_amt
+    COUNT(CASE WHEN (due_date IS NULL OR due_date = '' OR due_date = '0000-00-00' OR due_date >= '{$todayDate}') THEN 1 END) AS active_count,
+    COALESCE(SUM(CASE WHEN (due_date IS NULL OR due_date = '' OR due_date = '0000-00-00' OR due_date >= '{$todayDate}') THEN grand_total ELSE 0 END), 0) AS active_amt,
+    COUNT(CASE WHEN due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '{$todayDate}' THEN 1 END) AS expired_count,
+    COALESCE(SUM(CASE WHEN due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '{$todayDate}' THEN grand_total ELSE 0 END), 0) AS expired_amt
 FROM tbl_quotation q
 WHERE 1=1 {$company_where}";
 $metricsRes = $ai_db->aiGetQueryObj($metricsQry);
@@ -230,12 +166,12 @@ $m = !empty($metricsRes) ? $metricsRes[0] : null;
 
 $statTotalCount = intval($m->total_count ?? 0);
 $statTotalAmt = floatval($m->total_amt ?? 0);
-$statPaidCount = intval($m->paid_count ?? 0);
-$statPaidAmt = floatval($m->paid_amt ?? 0);
-$statUnpaidCount = intval($m->unpaid_count ?? 0);
-$statUnpaidAmt = floatval($m->unpaid_amt ?? 0);
-$statOverdueCount = intval($m->overdue_count ?? 0);
-$statOverdueAmt = floatval($m->overdue_amt ?? 0);
+$statPaidCount = intval($m->active_count ?? 0);
+$statPaidAmt = floatval($m->active_amt ?? 0);
+$statUnpaidCount = intval($m->expired_count ?? 0);
+$statUnpaidAmt = floatval($m->expired_amt ?? 0);
+$statOverdueCount = intval($m->expired_count ?? 0);
+$statOverdueAmt = floatval($m->expired_amt ?? 0);
 ?>
 
 <body>
@@ -289,7 +225,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="d-flex align-items-center">
                                         <label for="filterQuotationStatus" class="me-2 text-muted fw-medium text-nowrap" style="font-size: 0.9rem;">Status:</label>
-                                        <select id="filterQuotationStatus" class="form-select form-select-sm me-2" style="width: auto; min-width: 135px; border-color: #dbdade; color: #5d596c; font-size: 0.875rem; height: 47px; border-radius: 10px;" onchange="window.location.href='manage-quotation-list.php?quotation_status=' + this.value + '&payment_status=<?= urlencode($filter_payment) ?>';">
+                                        <select id="filterQuotationStatus" class="form-select form-select-sm me-2" style="width: auto; min-width: 135px; border-color: #dbdade; color: #5d596c; font-size: 0.875rem; height: 47px; border-radius: 10px;" onchange="window.location.href='manage-quotation-list.php?quotation_status=' + this.value + '&due_status=<?= urlencode($filter_due_status) ?>';">
                                             <option value="all" <?= ($filter_status === 'all') ? 'selected' : '' ?>>All Status</option>
                                             <option value="Draft" <?= ($filter_status === 'Draft') ? 'selected' : '' ?>>Draft</option>
                                             <option value="Accepted" <?= ($filter_status === 'Accepted') ? 'selected' : '' ?>>Accepted</option>
@@ -297,12 +233,11 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                         </select>
                                     </div>
                                     <div class="d-flex align-items-center">
-                                        <label for="filterPaymentStatus" class="me-2 text-muted fw-medium text-nowrap" style="font-size: 0.9rem;">Payment:</label>
-                                        <select id="filterPaymentStatus" class="form-select form-select-sm" style="width: auto; min-width: 145px; border-color: #dbdade; color: #5d596c; font-size: 0.875rem; height: 47px; border-radius: 10px;" onchange="window.location.href='manage-quotation-list.php?quotation_status=<?= urlencode($filter_status) ?>&payment_status=' + this.value;">
-                                            <option value="all" <?= ($filter_payment === 'all') ? 'selected' : '' ?>>All Payments</option>
-                                            <option value="Pending" <?= ($filter_payment === 'Pending') ? 'selected' : '' ?>>Pending</option>
-                                            <option value="Overdue" <?= ($filter_payment === 'Overdue') ? 'selected' : '' ?>>Overdue</option>
-                                            <option value="Paid" <?= ($filter_payment === 'Paid') ? 'selected' : '' ?>>Paid</option>
+                                        <label for="filterPaymentStatus" class="me-2 text-muted fw-medium text-nowrap" style="font-size: 0.9rem;">Status:</label>
+                                        <select id="filterPaymentStatus" class="form-select form-select-sm" style="width: auto; min-width: 145px; border-color: #dbdade; color: #5d596c; font-size: 0.875rem; height: 47px; border-radius: 10px;" onchange="window.location.href='manage-quotation-list.php?quotation_status=<?= urlencode($filter_status) ?>&due_status=' + this.value;">
+                                            <option value="all" <?= ($filter_due_status === 'all') ? 'selected' : '' ?>>All Status</option>
+                                            <option value="Active" <?= ($filter_due_status === 'Active') ? 'selected' : '' ?>>Active</option>
+                                            <option value="Expired" <?= ($filter_due_status === 'Expired' || $filter_due_status === 'Overdue') ? 'selected' : '' ?>>Expired</option>
                                         </select>
                                     </div>
                                     <a href="manage-quotation-form.php?mode=add" class="btn btn-primary btn-lg">
@@ -320,6 +255,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                             <th>Quotation No</th>
                                             <th>Date</th>
                                             <th>Due Date</th>
+                                            <th>Quotation Status</th>
                                             <th>Status</th>
                                             <th>Grand Total</th>
                                             <th style="width:100px;">Action</th>
@@ -327,19 +263,17 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                     </thead>
                                     <tbody>
                                         <?php if ($quotations) {
-                                            foreach ($quotations as $q) { 
-                                                $payStatus = !empty($q->payment_status) ? $q->payment_status : 'Pending';
+                                            foreach ($quotations as $q) {
                                                 $isConverted = (!empty($q->converted_invoice_id) && intval($q->converted_invoice_id) > 0);
-                                                $displayStatus = $isConverted ? 'Created' : $payStatus;
                                                 $qDateStr = !empty($q->quotation_date) ? date('d-m-Y', strtotime($q->quotation_date)) : '-';
-                                            ?>
+                                        ?>
                                                 <tr>
                                                     <!-- 1. Print / View Icon -->
                                                     <td>
                                                         <?php
                                                         $formattedId = str_pad($q->id, 2, '0', STR_PAD_LEFT);
                                                         $safeQuoNoIcon = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->quotation_no ?? ('quotation_' . $q->id));
-                                                        $iconPdfRel = !empty($q->pdf_url) ? $q->pdf_url : ('uploads/invoices/quotation_' . $formattedId . '_' . $safeQuoNoIcon . '.pdf');
+                                                        $iconPdfRel = !empty($q->pdf_url) ? $q->pdf_url : ('uploads/quotation/quotation_' . $formattedId . '_' . $safeQuoNoIcon . '.pdf');
                                                         $iconPdfDisk = __DIR__ . '/' . $iconPdfRel;
                                                         $iconViewUrl = file_exists($iconPdfDisk) ? ($iconPdfRel) : ('quotation-print.php?id=' . $q->id . '&store_and_show=1');
                                                         ?>
@@ -412,24 +346,24 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                             ?>
                                                             <?php if ($isConverted) { ?>
                                                                 <span class="badge <?= $badgeClass ?>"><?= htmlspecialchars($quoStatus) ?></span>
-                                                                <a href="manage-invoice-form.php?mode=edit&id=<?= $q->converted_invoice_id ?>" 
-                                                                   class="badge bg-label-primary px-2 py-1 fw-bold text-decoration-none"
-                                                                   title="View Converted Invoice">
+                                                                <a href="manage-invoice-form.php?mode=edit&id=<?= $q->converted_invoice_id ?>"
+                                                                    class="badge bg-label-primary px-2 py-1 fw-bold text-decoration-none"
+                                                                    title="View Converted Invoice">
                                                                     <i class="ti ti-check me-1"></i> INV #<?= $q->converted_invoice_id ?>
                                                                 </a>
                                                             <?php } elseif ($isExpired) { ?>
-                                                                <select class="form-select form-select-sm quotation-status-dropdown fw-bold text-center" 
-                                                                        data-id="<?= $q->id ?>" 
-                                                                        data-expired="1"
-                                                                        style="width: 105px; font-size: 12px; padding: 4px 8px; border-radius: 6px; cursor: pointer; background-color:#fee2e2; color:#b91c1c; border-color:#fca5a5;">
+                                                                <select class="form-select form-select-sm quotation-status-dropdown fw-bold text-center"
+                                                                    data-id="<?= $q->id ?>"
+                                                                    data-expired="1"
+                                                                    style="width: 105px; font-size: 12px; padding: 4px 8px; border-radius: 6px; cursor: pointer; background-color:#fee2e2; color:#b91c1c; border-color:#fca5a5;">
                                                                     <option value="Rejected" selected>Rejected</option>
                                                                 </select>
                                                             <?php } else { ?>
-                                                                <select class="form-select form-select-sm quotation-status-dropdown fw-bold text-center" 
-                                                                        data-id="<?= $q->id ?>" 
-                                                                        data-expired="0"
-                                                                        style="width: 105px; font-size: 12px; padding: 4px 8px; border-radius: 6px; cursor: pointer;
-                                                                        <?php 
+                                                                <select class="form-select form-select-sm quotation-status-dropdown fw-bold text-center"
+                                                                    data-id="<?= $q->id ?>"
+                                                                    data-expired="0"
+                                                                    style="width: 105px; font-size: 12px; padding: 4px 8px; border-radius: 6px; cursor: pointer;
+                                                                        <?php
                                                                         if ($quoStatus === 'Accepted') echo 'background-color:#dcfce7; color:#15803d; border-color:#86efac;';
                                                                         elseif ($quoStatus === 'Rejected') echo 'background-color:#fee2e2; color:#b91c1c; border-color:#fca5a5;';
                                                                         else echo 'background-color:#f1f5f9; color:#475569; border-color:#cbd5e1;';
@@ -439,17 +373,30 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                                     <option value="Rejected" <?= ($quoStatus === 'Rejected') ? 'selected' : '' ?>>Rejected</option>
                                                                 </select>
 
-                                                                <button type="button" 
-                                                                        class="btn btn-success btn-sm btn-convert-invoice fw-bold px-2 py-1" 
-                                                                        id="btn-convert-<?= $q->id ?>"
-                                                                        style="background-color: #00a859 !important; border-color: #00a859 !important; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 4px; <?= ($quoStatus === 'Accepted') ? '' : 'display: none !important;' ?>"
-                                                                        data-id="<?= $q->id ?>" 
-                                                                        data-no="<?= htmlspecialchars($q->quotation_no) ?>" 
-                                                                        title="Generate Tax Invoice">
+                                                                <button type="button"
+                                                                    class="btn btn-success btn-sm btn-convert-invoice fw-bold px-2 py-1"
+                                                                    id="btn-convert-<?= $q->id ?>"
+                                                                    style="background-color: #00a859 !important; border-color: #00a859 !important; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 4px; <?= ($quoStatus === 'Accepted') ? '' : 'display: none !important;' ?>"
+                                                                    data-id="<?= $q->id ?>"
+                                                                    data-no="<?= htmlspecialchars($q->quotation_no) ?>"
+                                                                    title="Generate Tax Invoice">
                                                                     GENERATE INVOICE
                                                                 </button>
                                                             <?php } ?>
                                                         </div>
+                                                    </td>
+
+                                                    <!-- Status (Active / Expired) -->
+                                                    <td>
+                                                        <?php if ($isExpired) { ?>
+                                                            <span class="badge bg-label-danger px-2 py-1 fw-bold" style="font-size: 12px;">
+                                                                <i class="ti ti-clock-off me-1"></i> Expired
+                                                            </span>
+                                                        <?php } else { ?>
+                                                            <span class="badge bg-label-success px-2 py-1 fw-bold" style="font-size: 12px;">
+                                                                <i class="ti ti-check me-1"></i> Active
+                                                            </span>
+                                                        <?php } ?>
                                                     </td>
 
                                                     <!-- 6. Grand Total -->
@@ -467,7 +414,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                                 <?php
                                                                 $formattedIdDrop = str_pad($q->id, 2, '0', STR_PAD_LEFT);
                                                                 $safeQuoNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->quotation_no ?? ('quotation_' . $q->id));
-                                                                $pdfRelPath = !empty($q->pdf_url) ? $q->pdf_url : ('uploads/invoices/quotation_' . $formattedIdDrop . '_' . $safeQuoNo . '.pdf');
+                                                                $pdfRelPath = !empty($q->pdf_url) ? $q->pdf_url : ('uploads/quotation/quotation_' . $formattedIdDrop . '_' . $safeQuoNo . '.pdf');
                                                                 $pdfDiskPath = __DIR__ . '/' . $pdfRelPath;
                                                                 if (file_exists($pdfDiskPath)) {
                                                                     $viewUrl = $pdfRelPath;
@@ -500,7 +447,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            <?php }
+                                        <?php }
                                         } ?>
                                     </tbody>
                                 </table>
@@ -530,95 +477,9 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                 responsive: false,
                 autoWidth: false,
                 columnDefs: [{
-                    targets: [0, 5, 7],
+                    targets: [0, 5, 6, 8],
                     orderable: false
                 }]
-            });
-
-            // AJAX Handler for Payment Status Change
-            $(document).on('change', '.payment-status-dropdown', function() {
-                var $select = $(this);
-                var quotationId = $select.data('id');
-                var newStatus = $select.val();
-                var previousStatus = (newStatus === 'Paid') ? 'Pending' : 'Paid';
-
-                $select.prop('disabled', true);
-
-                $.ajax({
-                    url: 'manage-quotation-list.php',
-                    type: 'POST',
-                    dataType: 'json',
-                    data: {
-                        action: 'update_payment_status',
-                        id: quotationId,
-                        payment_status: newStatus
-                    },
-                    success: function(res) {
-                        $select.prop('disabled', false);
-                        if (res.status) {
-                            if (newStatus === 'Paid') {
-                                $select.css({
-                                    'background-color': '#dcfce7',
-                                    'color': '#15803d',
-                                    'border-color': '#86efac'
-                                });
-                            } else {
-                                $select.css({
-                                    'background-color': '#fef3c7',
-                                    'color': '#b45309',
-                                    'border-color': '#fcd34d'
-                                });
-                            }
-
-                            // Show alert message
-                            if (typeof Swal !== 'undefined') {
-                                Swal.fire({
-                                    icon: 'success',
-                                    title: 'Status Updated!',
-                                    text: 'Payment status changed to ' + newStatus + ' successfully.',
-                                    timer: 2000,
-                                    timerProgressBar: true,
-                                    showConfirmButton: false,
-                                    toast: true,
-                                    position: 'top-end'
-                                });
-                            } else {
-                                alert('Payment status changed to ' + newStatus + ' successfully.');
-                            }
-                        } else {
-                            $select.val(previousStatus);
-                            if (typeof Swal !== 'undefined') {
-                                Swal.fire({
-                                    icon: 'error',
-                                    title: 'Update Failed',
-                                    text: res.message || 'Error updating payment status.',
-                                    timer: 3000,
-                                    toast: true,
-                                    position: 'top-end'
-                                });
-                            } else {
-                                alert(res.message || 'Error updating payment status.');
-                            }
-                        }
-                    },
-                    error: function(xhr) {
-                        $select.prop('disabled', false);
-                        $select.val(previousStatus);
-                        var errMsg = 'Server error occurred while updating payment status.';
-                        if (typeof Swal !== 'undefined') {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Error',
-                                text: errMsg,
-                                timer: 3000,
-                                toast: true,
-                                position: 'top-end'
-                            });
-                        } else {
-                            alert(errMsg);
-                        }
-                    }
-                });
             });
 
             // AJAX Handler for Quotation Status Change (Draft, Accepted, Rejected)
@@ -770,13 +631,14 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
     </script>
 
     <!-- Silent background PDF generation iframe if redirected after Add or Edit -->
-    <?php if (!empty($_GET['gen_pdf_id']) && intval($_GET['gen_pdf_id']) > 0) { 
+    <?php if (!empty($_GET['gen_pdf_id']) && intval($_GET['gen_pdf_id']) > 0) {
         $genId = intval($_GET['gen_pdf_id']);
     ?>
-    <iframe id="pdfGenFrame" src="quotation-print.php?id=<?= $genId ?>&silent_gen=1" style="position:fixed; top:-9999px; left:-9999px; width:1024px; height:1400px; border:0; visibility:hidden; pointer-events:none;"></iframe>
-    <script>
-        console.log('Background PDF generation started for Quotation ID: <?= $genId ?>');
-    </script>
+        <iframe id="pdfGenFrame" src="quotation-print.php?id=<?= $genId ?>&silent_gen=1" style="position:fixed; top:-9999px; left:-9999px; width:1024px; height:1400px; border:0; visibility:hidden; pointer-events:none;"></iframe>
+        <script>
+            console.log('Background PDF generation started for Quotation ID: <?= $genId ?>');
+        </script>
     <?php } ?>
 </body>
+
 </html>

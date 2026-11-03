@@ -123,8 +123,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     } elseif ($company_has_gst && !empty($gst_no) && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i', $gst_no)) {
         $err_msg = "Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5)!";
     } else {
-        $cleanPurNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $purchase_no);
-        $computed_pdf_url = 'uploads/invoices/purchase_' . $cleanPurNo . '.pdf';
+        $cleanPurNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $purchase_no);
+        $computed_pdf_url = ($mode === 'edit' && $id > 0) ? 'uploads/purchase/purchase_' . $id . '_' . $cleanPurNo . '.pdf' : 'uploads/purchase/purchase_' . $cleanPurNo . '.pdf';
 
         $chkColTpl = mysqli_query($ai_conn, "SHOW COLUMNS FROM `tbl_purchase` LIKE 'template_id'");
         if (!$chkColTpl || mysqli_num_rows($chkColTpl) === 0) {
@@ -204,6 +204,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
             if ($party_id > 0 && function_exists('recalculatePartyOutstanding')) {
                 recalculatePartyOutstanding($party_id);
             }
+
+            // Common server-side PDF generator (identical format for Web & API)
+            require_once __DIR__ . '/includes/server-pdf-generator.php';
+            generateDocumentPdfServerSide($newPurchaseId, 'purchase');
+            $cleanPurNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $purchase_no);
+            $computed_pdf_url = 'uploads/purchase/purchase_' . $newPurchaseId . '_' . $cleanPurNo . '.pdf';
+            $ai_db->aiQuery("UPDATE tbl_purchase SET pdf_url='$computed_pdf_url' WHERE id='$newPurchaseId'");
 
             $ai_core->aiGoPage($redirection_url . '?msg=1');
             exit;
@@ -295,10 +302,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
 
             // Remove old stored PDF if purchase bill was updated so next view generates fresh updated PDF
             $safeOldPurNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $purchase_no ?? ('purchase_' . $id));
-            $oldPurPdfPath = __DIR__ . '/uploads/invoices/purchase_' . $safeOldPurNo . '.pdf';
+            $oldPurPdfPath = __DIR__ . '/uploads/purchase/purchase_' . $safeOldPurNo . '.pdf';
             if (file_exists($oldPurPdfPath)) {
                 @unlink($oldPurPdfPath);
             }
+
+            // Common server-side PDF generator (identical format for Web & API)
+            require_once __DIR__ . '/includes/server-pdf-generator.php';
+            generateDocumentPdfServerSide($id, 'purchase');
 
             $ai_core->aiGoPage($redirection_url . '?msg=2');
             exit;

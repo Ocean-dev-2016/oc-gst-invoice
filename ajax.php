@@ -543,7 +543,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'convert_quotation_to_invoice
         '{$quot->igst_amount}',
         '{$quot->tax_amount}',
         '{$quot->grand_total}',
-        '{$quot->payment_status}',
+        'Pending',
         'active',
         NOW()
     )";

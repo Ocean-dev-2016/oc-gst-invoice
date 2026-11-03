@@ -79,7 +79,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $igst_amount = $company_has_gst ? floatval($_POST['igst_amount'] ?? 0) : 0.00;
     $tax_amount = $company_has_gst ? floatval($_POST['tax_amount'] ?? 0) : 0.00;
     $grand_total = $company_has_gst ? floatval($_POST['grand_total'] ?? 0) : $total_amount;
-    $payment_status = (isset($_POST['payment_status']) && $_POST['payment_status'] === 'Paid') ? 'Paid' : 'Pending';
     $status = $_POST['status'] ?? 'active';
 
     // Get State Name
@@ -155,14 +154,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 igst_amount='$igst_amount',
                 tax_amount='$tax_amount',
                 grand_total='$grand_total',
-                payment_status='$payment_status',
                 quotation_status='$quotation_status',
                 status='$status'";
 
             $ai_db->aiQuery($insert_qry);
             $quotation_id = $ai_db->aiLastInsert();
             $formattedQuoId = str_pad($quotation_id, 2, '0', STR_PAD_LEFT);
-            $computed_pdf_url = 'uploads/invoices/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
+            $computed_pdf_url = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
             $ai_db->aiQuery("UPDATE tbl_quotation SET pdf_url='$computed_pdf_url' WHERE id='$quotation_id'");
 
             // Insert Items
@@ -205,19 +203,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 recalculatePartyOutstanding($party_id);
             }
 
-            $ai_core->aiGoPage($redirection_url . '?msg=1&gen_pdf_id=' . $quotation_id);
+            // Common server-side PDF generator (identical format for Web & API)
+            require_once __DIR__ . '/includes/server-pdf-generator.php';
+            generateDocumentPdfServerSide($quotation_id, 'quotation');
+
+            $ai_core->aiGoPage($redirection_url . '?msg=1');
             exit;
         } elseif ($mode === 'edit' && $id > 0) {
             // Check if quotation is already converted to Invoice
-            $prevQ = $ai_db->aiGetQueryObj("SELECT party_id, converted_invoice_id, payment_status FROM tbl_quotation WHERE id='$id' LIMIT 1");
+            $prevQ = $ai_db->aiGetQueryObj("SELECT party_id, converted_invoice_id FROM tbl_quotation WHERE id='$id' LIMIT 1");
             if (!empty($prevQ) && !empty($prevQ[0]->converted_invoice_id) && intval($prevQ[0]->converted_invoice_id) > 0) {
                 $ai_core->aiGoPage($redirection_url . '?msg=converted_locked');
                 exit;
             }
             $prevPartyId = !empty($prevQ) ? intval($prevQ[0]->party_id) : 0;
-            $payment_status = isset($_POST['payment_status']) ? ((trim($_POST['payment_status']) === 'Paid') ? 'Paid' : 'Pending') : (!empty($prevQ) ? $prevQ[0]->payment_status : 'Pending');
             $formattedQuoId = str_pad($id, 2, '0', STR_PAD_LEFT);
-            $computed_pdf_url = 'uploads/invoices/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
+            $computed_pdf_url = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
 
             $update_qry = "UPDATE tbl_quotation SET
                 company_id='$company_id',
@@ -239,7 +240,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 igst_amount='$igst_amount',
                 tax_amount='$tax_amount',
                 grand_total='$grand_total',
-                payment_status='$payment_status',
                 quotation_status='$quotation_status',
                 pdf_url='$computed_pdf_url',
                 status='$status'
@@ -293,17 +293,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
             // Remove old stored PDF if quotation was updated so next view generates fresh updated PDF
             $safeOldQuoNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $quotation_no ?? ('quotation_' . $id));
             $formattedQuoId = str_pad($id, 2, '0', STR_PAD_LEFT);
-            $targetOldPdf = __DIR__ . '/uploads/invoices/quotation_' . $formattedQuoId . '_' . $safeOldQuoNo . '.pdf';
+            $targetOldPdf = __DIR__ . '/uploads/quotation/quotation_' . $formattedQuoId . '_' . $safeOldQuoNo . '.pdf';
             if (file_exists($targetOldPdf)) {
                 @unlink($targetOldPdf);
             }
             // Also clean legacy name if existed
-            $legacyOldPdf = __DIR__ . '/uploads/invoices/quotation_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $quotation_no) . '.pdf';
+            $legacyOldPdf = __DIR__ . '/uploads/quotation/quotation_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $quotation_no) . '.pdf';
             if (file_exists($legacyOldPdf)) {
                 @unlink($legacyOldPdf);
             }
 
-            $ai_core->aiGoPage($redirection_url . '?msg=2&gen_pdf_id=' . $id);
+            // Common server-side PDF generator (identical format for Web & API)
+            require_once __DIR__ . '/includes/server-pdf-generator.php';
+            generateDocumentPdfServerSide($id, 'quotation');
+
+            $ai_core->aiGoPage($redirection_url . '?msg=2');
             exit;
         }
     }
@@ -459,7 +463,7 @@ if ($selected_state_id > 0) {
         align-items: center;
         justify-content: center;
         padding: 5px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
         transition: all 0.2s ease-in-out;
     }
 
@@ -481,7 +485,7 @@ if ($selected_state_id > 0) {
         transform: scale(1.03);
     }
 
-    .template-thumb-choice input[type="radio"]:checked + .template-thumb-box {
+    .template-thumb-choice input[type="radio"]:checked+.template-thumb-box {
         border-color: #7367f0;
         box-shadow: 0 0 0 2px #7367f0, 0 6px 14px rgba(115, 103, 240, 0.25);
     }
@@ -502,7 +506,7 @@ if ($selected_state_id > 0) {
         z-index: 2;
     }
 
-    .template-thumb-choice input[type="radio"]:checked ~ .template-thumb-badge-check {
+    .template-thumb-choice input[type="radio"]:checked~.template-thumb-badge-check {
         display: flex;
     }
 
@@ -645,17 +649,17 @@ if ($selected_state_id > 0) {
                                         <label class="form-label fw-bold text-uppercase small text-muted d-block mb-2">
                                             <i class="ti ti-layout-grid me-1 text-primary"></i>INVOICE TEMPLATE <span class="text-danger">*</span>
                                         </label>
-                                        <?php 
+                                        <?php
                                         $selectedTplId = !empty($quotationData->template_id) ? intval($quotationData->template_id) : $companyDefaultTemplateId;
                                         ?>
                                         <div class="d-flex flex-wrap gap-3 align-items-center p-3 border rounded bg-light">
                                             <?php if (!empty($templates)) {
-                                                foreach ($templates as $tpl) { 
+                                                foreach ($templates as $tpl) {
                                                     $isPrem = (!empty($tpl->is_premium) && (int)$tpl->is_premium === 1);
                                                     $isRadioChecked = ($selectedTplId == $tpl->id && !$isPrem);
                                                     $radioId = 'template_opt_' . $tpl->id;
                                                     $imgSrc = !empty($tpl->preview_image) ? SITE_URL . $tpl->preview_image : SITE_URL . 'assets/img/templates/template-classic.svg';
-                                                    ?>
+                                            ?>
                                                     <label class="template-thumb-choice <?= $isPrem ? 'is-disabled-pro' : '' ?>" for="<?= $isPrem ? '' : $radioId ?>" title="<?= htmlspecialchars($tpl->template_name) ?><?= $isPrem ? ' (PRO Template - Upgrade required)' : '' ?>">
                                                         <?php if ($isPrem): ?>
                                                             <div class="template-pro-badge">
@@ -672,7 +676,7 @@ if ($selected_state_id > 0) {
                                                             </div>
                                                         <?php endif; ?>
                                                     </label>
-                                                <?php } 
+                                                <?php }
                                             } else { ?>
                                                 <label class="template-thumb-choice" for="template_opt_1">
                                                     <input type="radio" name="template_id" id="template_opt_1" value="1" checked required>
@@ -731,7 +735,7 @@ if ($selected_state_id > 0) {
 
                                     <div class="col-md-2">
                                         <label class="form-label fw-bold text-uppercase small text-muted">STATUS</label>
-                                        <?php 
+                                        <?php
                                         $currQStatus = $quotationData->quotation_status ?? 'Draft';
                                         $isFormExpired = (!empty($quotationData->due_date) && date('Y-m-d', strtotime($quotationData->due_date)) < date('Y-m-d'));
                                         if ($isFormExpired && $currQStatus !== 'Accepted') {

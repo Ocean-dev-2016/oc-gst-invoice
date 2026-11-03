@@ -91,11 +91,11 @@
         } elseif ($docType === 'purchase') {
             $rawDocNo = $q->purchase_no ?? ($q->invoice_no ?? $q->id);
             $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $rawDocNo);
-            $finalPdfName = 'purchase_' . $cleanDocSlug . '.pdf';
+            $finalPdfName = 'purchase_' . ($q->id ?? 0) . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $rawDocNo) . '.pdf';
         } else {
             $rawDocNo = $q->invoice_no ?? $q->id;
             $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $rawDocNo);
-            $finalPdfName = 'invoice_' . $cleanDocSlug . '.pdf';
+            $finalPdfName = 'invoice_' . ($q->id ?? 0) . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $rawDocNo) . '.pdf';
         }
     ?>
     var invoiceFileName = <?= json_encode($finalPdfName) ?>;

@@ -505,7 +505,8 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                             <div class="dropdown-menu dropdown-menu-end">
                                                                 <?php
                                                                 $safePurNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->purchase_no ?? ('purchase_' . $q->id));
-                                                                $pdfRelPath = 'uploads/invoices/purchase_' . $safePurNo . '.pdf';
+                                                                $cleanPurSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->purchase_no ?? $q->id);
+                                                                $pdfRelPath = !empty($q->pdf_url) ? $q->pdf_url : ('uploads/purchase/purchase_' . $q->id . '_' . $cleanPurSlug . '.pdf');
                                                                 $pdfDiskPath = __DIR__ . '/' . $pdfRelPath;
                                                                 if (file_exists($pdfDiskPath)) {
                                                                     $viewUrl = $pdfRelPath;
