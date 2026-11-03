@@ -4,6 +4,14 @@ function generateDocumentPdfServerSide($docId, $docType = 'quotation') {
     $docId = intval($docId);
     if ($docId <= 0) return false;
 
+    // Check if shell execution is disabled in PHP configuration (common on shared cPanel hosting)
+    $disabledFunctions = explode(',', (string)ini_get('disable_functions'));
+    $disabledFunctions = array_map('trim', $disabledFunctions);
+    if (in_array('exec', $disabledFunctions, true) || !function_exists('exec')) {
+        // exec is disabled on this server
+        return false;
+    }
+
     // Detect Chrome/Edge binary depending on OS (Windows or Linux server)
     $chromePath = '';
     if (PHP_OS_FAMILY === 'Windows') {
@@ -36,8 +44,8 @@ function generateDocumentPdfServerSide($docId, $docType = 'quotation') {
                 break;
             }
         }
-        if (empty($chromePath)) {
-            // Try 'which' command on Linux
+        if (empty($chromePath) && function_exists('shell_exec') && !in_array('shell_exec', $disabledFunctions, true)) {
+            // Try 'which' command on Linux only if shell_exec is allowed
             $whichOutput = @shell_exec('which google-chrome 2>/dev/null || which chromium 2>/dev/null || which chromium-browser 2>/dev/null');
             if (!empty($whichOutput)) {
                 $trimmed = trim($whichOutput);
@@ -49,7 +57,7 @@ function generateDocumentPdfServerSide($docId, $docType = 'quotation') {
     }
 
     if (empty($chromePath)) {
-        error_log("PDF Generator: No Chrome/Chromium/Edge binary found on system (" . PHP_OS_FAMILY . ").");
+        // No Chrome/Chromium/Edge binary found on server (e.g. shared cPanel)
         return false;
     }
 
@@ -94,7 +102,7 @@ function generateDocumentPdfServerSide($docId, $docType = 'quotation') {
     // Run Headless Chrome to generate the PDF directly from the template
     $cmd = escapeshellarg($chromePath) . ' --headless=new --disable-gpu --no-sandbox --disable-dev-shm-usage --print-to-pdf-no-header --run-all-compositor-stages-before-draw --virtual-time-budget=3000 --print-to-pdf=' . escapeshellarg($targetFile) . ' ' . escapeshellarg($printUrl);
     
-    // Execute command
+    // Execute command safely
     $output = [];
     $returnVar = 0;
     @exec($cmd, $output, $returnVar);
