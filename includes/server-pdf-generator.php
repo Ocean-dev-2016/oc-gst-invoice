@@ -1,6 +1,7 @@
 <?php
 // Function to generate and save PDF for quotation, invoice, or purchase
-function generateDocumentPdfServerSide($docId, $docType = 'quotation') {
+function generateDocumentPdfServerSide($docId, $docType = 'quotation')
+{
     $docId = intval($docId);
     if ($docId <= 0) return false;
 
@@ -101,7 +102,7 @@ function generateDocumentPdfServerSide($docId, $docType = 'quotation') {
 
     // Run Headless Chrome to generate the PDF directly from the template
     $cmd = escapeshellarg($chromePath) . ' --headless=new --disable-gpu --no-sandbox --disable-dev-shm-usage --print-to-pdf-no-header --run-all-compositor-stages-before-draw --virtual-time-budget=3000 --print-to-pdf=' . escapeshellarg($targetFile) . ' ' . escapeshellarg($printUrl);
-    
+
     // Execute command safely
     $output = [];
     $returnVar = 0;
