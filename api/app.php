@@ -1682,7 +1682,7 @@ if ($action === 'quotation-list') {
             'active_amount_formatted' => '₹' . number_format($activeAmount, 2),
             'expired_count'           => $expiredCount,
             'expired_amount'          => $expiredAmount,
-            'expired_amount_formatted'=> '₹' . number_format($expiredAmount, 2),
+            'expired_amount_formatted' => '₹' . number_format($expiredAmount, 2),
             'total_amount'            => $allTotalAmount,
             'total_amount_formatted'  => '₹' . number_format($allTotalAmount, 2)
         ],
@@ -6622,12 +6622,6 @@ if ($action === 'invoice-template-list') {
     ]);
 }
 
-/**
- * 2. Set Default Invoice Template for Company
- * Action: invoice-template-set-default
- * Method: POST
- * Parameters: template_id (required)
- */
 if ($action === 'invoice-template-set-default') {
     if ($method !== 'POST') {
         apiResponse(405, 'Only POST method is allowed.');
@@ -6648,19 +6642,96 @@ if ($action === 'invoice-template-set-default') {
     }
 
     if (!empty($tplFind[0]->is_premium) && (int)$tplFind[0]->is_premium === 1) {
-        apiResponse(400, "Template '{$tplFind[0]->template_name}' is a Premium template and cannot be set as default.");
+        apiResponse(400, "Template '{$tplFind[0]->template_name}' is a Premium template and cannot be used.");
     }
 
-    $update = $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id={$templateId} WHERE id={$cId}");
-    if ($update) {
-        apiResponse(200, 'Default invoice template updated successfully.', [
-            'company_id'    => $cId,
-            'template_id'   => $templateId,
-            'template_name' => (string)$tplFind[0]->template_name
-        ]);
-    } else {
-        apiResponse(500, 'Failed to update template.');
+    // Check if specific document ID is provided to update that document's template
+    $invoiceId = (int)($input['invoice_id'] ?? ($_GET['invoice_id'] ?? 0));
+    $quotationId = (int)($input['quotation_id'] ?? ($_GET['quotation_id'] ?? 0));
+    $purchaseId = (int)($input['purchase_id'] ?? ($_GET['purchase_id'] ?? 0));
+
+    require_once __DIR__ . '/../includes/server-pdf-generator.php';
+
+    // 1. If invoice_id is passed
+    if ($invoiceId > 0) {
+        $invRow = $ai_db->aiGetQueryObj("SELECT id, invoice_no FROM tbl_invoice WHERE id={$invoiceId} AND company_id={$cId} LIMIT 1");
+        if (empty($invRow)) {
+            apiResponse(404, "Invoice with ID {$invoiceId} not found for your company.");
+        }
+
+        $upd = $ai_db->aiQuery("UPDATE tbl_invoice SET template_id={$templateId} WHERE id={$invoiceId} AND company_id={$cId}");
+        if ($upd) {
+            $pdfRel = generateDocumentPdfServerSide($invoiceId, 'invoice');
+            $fullPdfUrl = $pdfRel ? (rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/')) : '';
+
+            apiResponse(200, 'Invoice template updated successfully.', [
+                'company_id'    => $cId,
+                'document_type' => 'invoice',
+                'invoice_id'    => $invoiceId,
+                'invoice_no'    => $invRow[0]->invoice_no ?? '',
+                'template_id'   => $templateId,
+                'template_name' => (string)$tplFind[0]->template_name,
+                'pdf_url'       => $fullPdfUrl
+            ]);
+        } else {
+            apiResponse(500, 'Failed to update invoice template.');
+        }
     }
+
+    // 2. If quotation_id is passed
+    if ($quotationId > 0) {
+        $quoRow = $ai_db->aiGetQueryObj("SELECT id, quotation_no FROM tbl_quotation WHERE id={$quotationId} AND company_id={$cId} LIMIT 1");
+        if (empty($quoRow)) {
+            apiResponse(404, "Quotation with ID {$quotationId} not found for your company.");
+        }
+
+        $upd = $ai_db->aiQuery("UPDATE tbl_quotation SET template_id={$templateId} WHERE id={$quotationId} AND company_id={$cId}");
+        if ($upd) {
+            $pdfRel = generateDocumentPdfServerSide($quotationId, 'quotation');
+            $fullPdfUrl = $pdfRel ? (rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/')) : '';
+
+            apiResponse(200, 'Quotation template updated successfully.', [
+                'company_id'    => $cId,
+                'document_type' => 'quotation',
+                'quotation_id'  => $quotationId,
+                'quotation_no'  => $quoRow[0]->quotation_no ?? '',
+                'template_id'   => $templateId,
+                'template_name' => (string)$tplFind[0]->template_name,
+                'pdf_url'       => $fullPdfUrl
+            ]);
+        } else {
+            apiResponse(500, 'Failed to update quotation template.');
+        }
+    }
+
+    // 3. If purchase_id is passed
+    if ($purchaseId > 0) {
+        $purRow = $ai_db->aiGetQueryObj("SELECT id, purchase_no FROM tbl_purchase WHERE id={$purchaseId} AND company_id={$cId} LIMIT 1");
+        if (empty($purRow)) {
+            apiResponse(404, "Purchase bill with ID {$purchaseId} not found for your company.");
+        }
+
+        $upd = $ai_db->aiQuery("UPDATE tbl_purchase SET template_id={$templateId} WHERE id={$purchaseId} AND company_id={$cId}");
+        if ($upd) {
+            $pdfRel = generateDocumentPdfServerSide($purchaseId, 'purchase');
+            $fullPdfUrl = $pdfRel ? (rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/')) : '';
+
+            apiResponse(200, 'Purchase template updated successfully.', [
+                'company_id'    => $cId,
+                'document_type' => 'purchase',
+                'purchase_id'   => $purchaseId,
+                'purchase_no'   => $purRow[0]->purchase_no ?? '',
+                'template_id'   => $templateId,
+                'template_name' => (string)$tplFind[0]->template_name,
+                'pdf_url'       => $fullPdfUrl
+            ]);
+        } else {
+            apiResponse(500, 'Failed to update purchase template.');
+        }
+    }
+
+    // If none of invoice_id, quotation_id, or purchase_id was provided
+    apiResponse(400, 'Please provide invoice_id, quotation_id, or purchase_id along with template_id to update.');
 }
 
 apiResponse(404, 'Invalid API action.');
