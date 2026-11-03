@@ -11,17 +11,35 @@
         display: none !important;
     }
 
+    .is-generating-pdf body {
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
     .is-generating-pdf .invoice-wrapper {
         margin: 0 !important;
         padding: 0 !important;
         border: none !important;
         background: transparent !important;
+        max-width: 100% !important;
     }
 
     .is-generating-pdf .invoice-card {
         box-shadow: none !important;
         border: none !important;
         margin: 0 auto !important;
+        min-height: unset !important;
+        height: auto !important;
+    }
+
+    .is-generating-pdf .invoice-footer-pin,
+    .is-generating-pdf .std-invoice-footer,
+    .is-generating-pdf .ref-calc-box,
+    .is-generating-pdf .ref-items-table,
+    .is-generating-pdf .bottom-bar {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
 
     /* ===== Browser Print (@media print) ===== */
@@ -130,8 +148,7 @@
      * Prepares the invoice container for 1-page PDF rendering:
      * 1. Resets any forced borders/margins that cause overflow.
      * 2. Calculates exact single-page A4 height available.
-     * 3. Only inserts spacer if height is safely below page limit with a generous 150px buffer.
-     * 4. Multi-page: does NOT add spacer, lets natural layout flow so content does not get forced onto an empty page.
+     * 3. Do not artificially stretch with spacers if it risks crossing the page boundary.
      */
     function prepareCardForPdf(element) {
         var footer = element.querySelector('.invoice-footer-pin') ||
@@ -143,41 +160,15 @@
         }
 
         var spacer = element.querySelector('.pdf-footer-spacer');
-        if (!spacer) {
-            spacer = document.createElement('div');
-            spacer.className = 'pdf-footer-spacer';
-            footer.parentNode.insertBefore(spacer, footer);
+        if (spacer) {
+            spacer.style.height = '0px';
+            spacer.style.display = 'none';
         }
-
-        spacer.style.height = '0px';
-        spacer.style.display = 'block';
-        spacer.style.margin = '0';
-        spacer.style.padding = '0';
-        spacer.style.border = 'none';
 
         var originalHeight = element.style.height;
         var originalMinHeight = element.style.minHeight;
         element.style.height = 'auto';
-        element.style.minHeight = 'none';
-
-        // Ratio of A4 printable area: (297 - 2*M) / (210 - 2*M) = 1.414
-        var printW = 210 - (2 * MARGIN_PX_IN_MM);
-        var printH = 297 - (2 * MARGIN_PX_IN_MM);
-        var ratio = printH / printW;
-
-        var cardWidth = element.offsetWidth || 840;
-        var maxSinglePageHeight = Math.floor(cardWidth * ratio);
-
-        var naturalHeight = element.offsetHeight || element.scrollHeight;
-
-        // Only add spacer if content comfortably fits on a single page,
-        // with a 150px safety buffer to GUARANTEE footer never overflows into page 2!
-        if (naturalHeight < (maxSinglePageHeight - 150)) {
-            var spaceToAdd = (maxSinglePageHeight - 150) - naturalHeight;
-            if (spaceToAdd > 0) {
-                spacer.style.height = spaceToAdd + 'px';
-            }
-        }
+        element.style.minHeight = 'unset';
 
         return function() {
             if (spacer) {
