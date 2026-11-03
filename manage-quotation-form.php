@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     $sgst_amount = $company_has_gst ? floatval($_POST['sgst_amount'] ?? 0) : 0.00;
     $igst_amount = $company_has_gst ? floatval($_POST['igst_amount'] ?? 0) : 0.00;
     $tax_amount = $company_has_gst ? floatval($_POST['tax_amount'] ?? 0) : 0.00;
-    $grand_total = $company_has_gst ? floatval($_POST['grand_total'] ?? 0) : $total_amount;
+    $grand_total = $company_has_gst ? round(floatval($_POST['grand_total'] ?? 0)) : round($total_amount);
     $status = $_POST['status'] ?? 'active';
 
     // Get State Name
@@ -1461,7 +1461,7 @@ if ($selected_state_id > 0) {
                 $('#sgst_amount').val(sgst.toFixed(2));
                 $('#igst_amount').val(igst.toFixed(2));
 
-                var grandTotal = totalAmt + (isCompanyGstActive && gstType === 'with_gst' ? totalTax : 0);
+                var grandTotal = Math.round(totalAmt + (isCompanyGstActive && gstType === 'with_gst' ? totalTax : 0));
                 $('#grand_total').val(grandTotal.toFixed(2));
             }
 
