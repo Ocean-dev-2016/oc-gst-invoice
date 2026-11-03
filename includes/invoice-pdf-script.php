@@ -145,10 +145,11 @@
     }
 
     /**
-     * Prepares the invoice container for 1-page PDF rendering:
+     * Prepares the invoice container for exact 1-page PDF rendering:
      * 1. Resets any forced borders/margins that cause overflow.
-     * 2. Calculates exact single-page A4 height available.
-     * 3. Do not artificially stretch with spacers if it risks crossing the page boundary.
+     * 2. Calculates exact single-page A4 height available based on element width (A4 ratio = 1.414).
+     * 3. Dynamically adjusts footer spacer so the footer is pinned nicely to the bottom of page 1
+     *    WITHOUT leaving huge blank gaps or pushing onto page 2.
      */
     function prepareCardForPdf(element) {
         var footer = element.querySelector('.invoice-footer-pin') ||
@@ -160,15 +161,38 @@
         }
 
         var spacer = element.querySelector('.pdf-footer-spacer');
-        if (spacer) {
-            spacer.style.height = '0px';
-            spacer.style.display = 'none';
+        if (!spacer) {
+            spacer = document.createElement('div');
+            spacer.className = 'pdf-footer-spacer';
+            footer.parentNode.insertBefore(spacer, footer);
         }
+
+        spacer.style.height = '0px';
+        spacer.style.display = 'block';
+        spacer.style.margin = '0';
+        spacer.style.padding = '0';
+        spacer.style.border = 'none';
 
         var originalHeight = element.style.height;
         var originalMinHeight = element.style.minHeight;
         element.style.height = 'auto';
         element.style.minHeight = 'unset';
+
+        // Ratio of A4: 297mm / 210mm = 1.4142
+        var cardWidth = element.offsetWidth || 840;
+        var maxA4Height = Math.floor(cardWidth * 1.4142);
+
+        // Get natural height of the document content
+        var naturalHeight = element.offsetHeight || element.scrollHeight;
+
+        // If content is less than A4 height, add spacer so footer reaches the bottom of page 1
+        // Keep a 40px safety margin to prevent rounding overflow
+        if (naturalHeight > 0 && naturalHeight < (maxA4Height - 40)) {
+            var spaceToAdd = (maxA4Height - 40) - naturalHeight;
+            if (spaceToAdd > 0) {
+                spacer.style.height = spaceToAdd + 'px';
+            }
+        }
 
         return function() {
             if (spacer) {
