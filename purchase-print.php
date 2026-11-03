@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__ . '/root/config.php';
 
-// Check login
-if (empty($_SESSION['aid'])) {
+// Check login or internal system token
+$isInternalCall = (!empty($_GET['token']) && $_GET['token'] === 'system_auto_pdf');
+if (empty($_SESSION['aid']) && !$isInternalCall) {
     header('Location: index.php');
     exit;
 }
@@ -36,8 +37,9 @@ if (!empty($tplObj) && !empty($tplObj[0]->file_path)) {
 }
 require_once __DIR__ . '/root/config.php';
 
-// Check login
-if (empty($_SESSION['aid'])) {
+// Check login or internal system token
+$isInternalCall = (!empty($_GET['token']) && $_GET['token'] === 'system_auto_pdf');
+if (empty($_SESSION['aid']) && !$isInternalCall) {
     header('Location: index.php');
     exit;
 }

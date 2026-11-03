@@ -138,12 +138,19 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
         .party-card-detail { font-size: 12px; color: #475569; line-height: 1.5; }
 
         @media print {
-            @page { size: A4 portrait; margin: 8mm 10mm; }
+            @page { size: A4 portrait; margin: 0 !important; }
             .top-action-bar { display: none !important; }
-            body { background: #fff !important; margin: 0 !important; }
+            body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
             .invoice-card {
                 box-shadow: none !important; border: none !important;
                 margin: 0 !important; width: 100% !important; max-width: 100% !important;
+                min-height: 297mm !important; height: 297mm !important;
+                display: flex !important; flex-direction: column !important;
+            }
+            .invoice-footer-pin {
+                margin-top: auto !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
             }
         }
     </style>

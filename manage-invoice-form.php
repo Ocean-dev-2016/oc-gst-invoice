@@ -185,8 +185,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
         if (!empty($insufficientStockErrors)) {
             $err_msg = "Cannot save invoice! Insufficient stock for: " . implode(", ", $insufficientStockErrors) . ". Please check product stock or adjust quantities.";
         } else {
-            $cleanInvNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $invoice_no);
-            $computed_pdf_url = 'uploads/invoices/invoice_' . $cleanInvNo . '.pdf';
+            $cleanInvNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $invoice_no);
+            // In add mode, we will compute with $newInvoiceId after insert, temporary fallback
+            $computed_pdf_url = 'uploads/invoices/invoice_' . $id . '_' . $cleanInvNo . '.pdf';
 
             $chkColTpl = mysqli_query($ai_conn, "SHOW COLUMNS FROM `tbl_invoice` LIKE 'template_id'");
         if (!$chkColTpl || mysqli_num_rows($chkColTpl) === 0) {
@@ -266,6 +267,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
             if ($party_id > 0 && function_exists('recalculatePartyOutstanding')) {
                 recalculatePartyOutstanding($party_id);
             }
+
+            $real_pdf_url = 'uploads/invoices/invoice_' . $newInvoiceId . '_' . $cleanInvNo . '.pdf';
+            @$ai_db->aiQuery("UPDATE tbl_invoice SET pdf_url='" . addslashes($real_pdf_url) . "' WHERE id='$newInvoiceId'");
+
+            // Common server-side PDF generator (identical format for Web & API)
+            require_once __DIR__ . '/includes/server-pdf-generator.php';
+            generateDocumentPdfServerSide($newInvoiceId, 'invoice');
 
             $ai_core->aiGoPage($redirection_url . '?msg=1');
             exit;
@@ -361,6 +369,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
             if (file_exists($oldPdfPath)) {
                 @unlink($oldPdfPath);
             }
+
+            // Common server-side PDF generator (identical format for Web & API)
+            require_once __DIR__ . '/includes/server-pdf-generator.php';
+            generateDocumentPdfServerSide($id, 'invoice');
 
             $ai_core->aiGoPage($redirection_url . '?msg=2');
             exit;

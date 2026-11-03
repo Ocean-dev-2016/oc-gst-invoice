@@ -166,6 +166,43 @@ function authenticateCompany($input = [], $includeLocation = false)
     return $company;
 }
 
+/**
+ * Validate template_id:
+ * - Checks if template exists and is active.
+ * - If is_premium == 1, rejects with 400 error.
+ * Returns valid template_id (int).
+ */
+function validateApiTemplateId($templateIdInput, $companyDefaultId = 1)
+{
+    global $ai_db;
+    if ($templateIdInput === null || $templateIdInput === '') {
+        $finalId = (int)$companyDefaultId;
+        if ($finalId <= 0) $finalId = 1;
+        return $finalId;
+    }
+
+    $tplId = (int)$templateIdInput;
+    if ($tplId <= 0) {
+        apiResponse(400, 'Invalid template_id. Please provide a valid template ID.');
+    }
+
+    $tplRows = $ai_db->aiGetQueryObj("SELECT id, template_name, is_premium, status FROM tbl_invoice_templates WHERE id = {$tplId} LIMIT 1");
+    if (empty($tplRows)) {
+        apiResponse(400, "Invalid template_id: Template with ID {$tplId} does not exist.");
+    }
+
+    $tpl = $tplRows[0];
+    if (isset($tpl->status) && $tpl->status !== 'active') {
+        apiResponse(400, "Template '{$tpl->template_name}' is inactive and cannot be used.");
+    }
+
+    if (!empty($tpl->is_premium) && (int)$tpl->is_premium === 1) {
+        apiResponse(400, "Template '{$tpl->template_name}' is a Premium template and cannot be used.");
+    }
+
+    return $tplId;
+}
+
 $action = $_GET['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -1450,13 +1487,13 @@ if ($action === 'quotation-list') {
         $quoStatusCond = " AND q.quotation_status = '{$filterQuotationStatus}'";
     }
 
-    $filterPayment = trim($input['payment_status'] ?? ($_GET['payment_status'] ?? ''));
-    $payCond = "";
-    if (in_array($filterPayment, ['Pending', 'Paid'], true)) {
-        $payCond = " AND q.payment_status = '{$filterPayment}'";
-    } elseif ($filterPayment === 'Overdue') {
-        $todayStr = date('Y-m-d');
-        $payCond = " AND q.payment_status = 'Pending' AND q.due_date IS NOT NULL AND q.due_date < '{$todayStr}'";
+    $filterDue = trim($input['due_status'] ?? ($input['payment_status'] ?? ($_GET['due_status'] ?? ($_GET['payment_status'] ?? ''))));
+    $dueCond = "";
+    $todayStr = date('Y-m-d');
+    if ($filterDue === 'Active' || $filterDue === 'active') {
+        $dueCond = " AND (q.due_date IS NULL OR q.due_date = '' OR q.due_date = '0000-00-00' OR q.due_date >= '{$todayStr}')";
+    } elseif ($filterDue === 'Expired' || $filterDue === 'expired' || $filterDue === 'Overdue') {
+        $dueCond = " AND q.due_date IS NOT NULL AND q.due_date != '' AND q.due_date != '0000-00-00' AND q.due_date < '{$todayStr}'";
     }
 
     $filterStatus = trim($input['status'] ?? ($_GET['status'] ?? ''));
@@ -1483,7 +1520,7 @@ if ($action === 'quotation-list') {
     list($page, $limit, $offset, $isPaginated) = getApiPaginationParams($input, 10);
 
     // Total filtered records count for pagination
-    $countQry = "SELECT COUNT(q.id) AS cnt FROM tbl_quotation q WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$quoStatusCond} {$partyCond} {$searchCond}";
+    $countQry = "SELECT COUNT(q.id) AS cnt FROM tbl_quotation q WHERE q.company_id = {$cId} {$dueCond} {$statusCond} {$quoStatusCond} {$partyCond} {$searchCond}";
     $countRes = $ai_db->aiGetQueryObj($countQry);
     $totalFilteredRecords = (int)($countRes[0]->cnt ?? 0);
 
@@ -1496,16 +1533,16 @@ if ($action === 'quotation-list') {
                      LEFT JOIN tbl_party p ON q.party_id = p.id
                      LEFT JOIN tbl_state s ON q.state_id = s.id
                      LEFT JOIN tbl_city ct ON q.city_id = ct.id
-                     WHERE q.company_id = {$cId} {$payCond} {$statusCond} {$quoStatusCond} {$partyCond} {$searchCond}
+                     WHERE q.company_id = {$cId} {$dueCond} {$statusCond} {$quoStatusCond} {$partyCond} {$searchCond}
                      {$orderBy}{$limitSql}";
     $quotations = $ai_db->aiGetQueryObj($quotationQry);
 
     $summaryQry = "SELECT 
                         COUNT(id) AS total_quotations,
-                        COUNT(CASE WHEN payment_status = 'Pending' AND status = 'active' THEN 1 END) AS pending_count,
-                        COALESCE(SUM(CASE WHEN payment_status = 'Pending' AND status = 'active' THEN grand_total ELSE 0 END), 0) AS pending_amount,
-                        COUNT(CASE WHEN payment_status = 'Paid' THEN 1 END) AS paid_count,
-                        COALESCE(SUM(CASE WHEN payment_status = 'Paid' THEN grand_total ELSE 0 END), 0) AS paid_amount,
+                        COUNT(CASE WHEN (due_date IS NULL OR due_date = '' OR due_date = '0000-00-00' OR due_date >= '{$todayStr}') AND status = 'active' THEN 1 END) AS active_count,
+                        COALESCE(SUM(CASE WHEN (due_date IS NULL OR due_date = '' OR due_date = '0000-00-00' OR due_date >= '{$todayStr}') AND status = 'active' THEN grand_total ELSE 0 END), 0) AS active_amount,
+                        COUNT(CASE WHEN due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '{$todayStr}' THEN 1 END) AS expired_count,
+                        COALESCE(SUM(CASE WHEN due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '{$todayStr}' THEN grand_total ELSE 0 END), 0) AS expired_amount,
                         COALESCE(SUM(grand_total), 0) AS total_amount
                    FROM tbl_quotation
                    WHERE company_id = {$cId}";
@@ -1513,10 +1550,10 @@ if ($action === 'quotation-list') {
     $sumData = !empty($sumRes) ? $sumRes[0] : null;
 
     $totalCount = (int)($sumData->total_quotations ?? 0);
-    $pendingCount = (int)($sumData->pending_count ?? 0);
-    $pendingAmount = (float)($sumData->pending_amount ?? 0);
-    $paidCount = (int)($sumData->paid_count ?? 0);
-    $paidAmount = (float)($sumData->paid_amount ?? 0);
+    $activeCount = (int)($sumData->active_count ?? 0);
+    $activeAmount = (float)($sumData->active_amount ?? 0);
+    $expiredCount = (int)($sumData->expired_count ?? 0);
+    $expiredAmount = (float)($sumData->expired_amount ?? 0);
     $allTotalAmount = (float)($sumData->total_amount ?? 0);
 
     $includeItems = !empty($input['include_items']) || !empty($_GET['include_items']);
@@ -1574,13 +1611,13 @@ if ($action === 'quotation-list') {
             $cgst = (float)$row->cgst_amount;
             $sgst = (float)$row->sgst_amount;
             $igst = (float)$row->igst_amount;
-            $payStatus = $row->payment_status ?? 'Pending';
+            $isExpired = (!empty($row->due_date) && $row->due_date < date('Y-m-d'));
+            $isDueActive = !$isExpired;
             $isActive = ($row->status === 'active');
-            $isPaid = ($payStatus === 'Paid');
 
             $formattedQuoId = str_pad($qid, 2, '0', STR_PAD_LEFT);
             $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $row->quotation_no ?? $qid);
-            $computedPdfRel = 'uploads/invoices/quotation_' . $formattedQuoId . '_' . $cleanDocSlug . '.pdf';
+            $computedPdfRel = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanDocSlug . '.pdf';
             $pdfRel = !empty($row->pdf_url) ? $row->pdf_url : $computedPdfRel;
             $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
 
@@ -1616,12 +1653,11 @@ if ($action === 'quotation-list') {
                 'grand_total'            => $grandTotal,
                 'grand_total_formatted'  => '₹' . number_format($grandTotal, 2),
                 'quotation_status'       => $row->quotation_status ?? 'Draft',
-                'payment_status'         => $payStatus,
                 'status'                 => $row->status ?? 'active',
-                'is_overdue'             => ($payStatus === 'Pending' && !empty($row->due_date) && $row->due_date < date('Y-m-d')),
+                'is_expired'             => $isExpired,
                 'converted_invoice_id'   => (int)($row->converted_invoice_id ?? 0),
                 'is_converted'           => (!empty($row->converted_invoice_id) && (int)$row->converted_invoice_id > 0),
-                'is_locked'              => ($isPaid || (!empty($row->converted_invoice_id) && (int)$row->converted_invoice_id > 0)),
+                'is_locked'              => (!empty($row->converted_invoice_id) && (int)$row->converted_invoice_id > 0),
                 'pdf_url'                => $fullPdfUrl,
                 'created_at'             => $row->created_at ?? ''
             ];
@@ -1641,12 +1677,12 @@ if ($action === 'quotation-list') {
         'pagination'   => buildApiPaginationData($page, $limit, $totalFilteredRecords),
         'summary'      => [
             'total_quotations'        => $totalCount,
-            'pending_count'           => $pendingCount,
-            'pending_amount'          => $pendingAmount,
-            'pending_amount_formatted' => '₹' . number_format($pendingAmount, 2),
-            'paid_count'              => $paidCount,
-            'paid_amount'             => $paidAmount,
-            'paid_amount_formatted'   => '₹' . number_format($paidAmount, 2),
+            'active_count'            => $activeCount,
+            'active_amount'           => $activeAmount,
+            'active_amount_formatted' => '₹' . number_format($activeAmount, 2),
+            'expired_count'           => $expiredCount,
+            'expired_amount'          => $expiredAmount,
+            'expired_amount_formatted'=> '₹' . number_format($expiredAmount, 2),
             'total_amount'            => $allTotalAmount,
             'total_amount_formatted'  => '₹' . number_format($allTotalAmount, 2)
         ],
@@ -1752,7 +1788,6 @@ if ($action === 'quotation-add') {
         apiResponse(400, 'Please enter a valid 15-digit GST Number (e.g. 24AAAAA0000A1Z5).');
     }
 
-    $payment_status = (isset($input['payment_status']) && strtolower(trim($input['payment_status'])) === 'paid') ? 'Paid' : 'Pending';
     $status = (isset($input['status']) && strtolower(trim($input['status'])) === 'deactive') ? 'deactive' : 'active';
 
     $rawItems = $input['items'] ?? ($input['products'] ?? []);
@@ -1866,21 +1901,11 @@ if ($action === 'quotation-add') {
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
     $dbGstType = $company_has_gst ? 'with_gst' : 'without_gst';
     $cleanQuoNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $quotation_no);
-    $computed_pdf_url = 'uploads/invoices/quotation_' . $cleanQuoNo . '.pdf';
+    $computed_pdf_url = 'uploads/quotation/quotation_' . $cleanQuoNo . '.pdf';
 
-    // Validate template_id: accept from body or query params, if provided it must exist in tbl_invoice_templates
+    // Validate template_id: accept from body or query params, check premium status
     $rawAddTpl = $input['template_id'] ?? ($_GET['template_id'] ?? null);
-    if ($rawAddTpl !== null && $rawAddTpl !== '') {
-        $reqTemplateId = (int)$rawAddTpl;
-        $tplCheck = $ai_db->aiGetQueryObj("SELECT id FROM tbl_invoice_templates WHERE id = {$reqTemplateId} LIMIT 1");
-        if (empty($tplCheck)) {
-            apiResponse(400, "Invalid template_id: Template with ID {$reqTemplateId} does not exist.");
-        }
-    } else {
-        // Fall back to company default or 1
-        $reqTemplateId = (int)($company['invoice_template_id'] ?? 1);
-        if ($reqTemplateId <= 0) $reqTemplateId = 1;
-    }
+    $reqTemplateId = validateApiTemplateId($rawAddTpl, $company['invoice_template_id'] ?? 1);
     $insertQuotationQry = "INSERT INTO tbl_quotation SET
         company_id = {$company_id},
         template_id = {$reqTemplateId},
@@ -1901,7 +1926,6 @@ if ($action === 'quotation-add') {
         igst_amount = {$igst_amount},
         tax_amount = {$totalTax},
         grand_total = {$grand_total},
-        payment_status = '{$payment_status}',
         pdf_url = '{$computed_pdf_url}',
         status = '{$status}'";
 
@@ -1913,7 +1937,7 @@ if ($action === 'quotation-add') {
     $newQuotationId = (int)mysqli_insert_id($ai_conn);
     $formattedQuoId = str_pad($newQuotationId, 2, '0', STR_PAD_LEFT);
     $cleanQuoNoNew = preg_replace('/[^a-zA-Z0-9_]/', '_', $quotation_no);
-    $computed_pdf_url = 'uploads/invoices/quotation_' . $formattedQuoId . '_' . $cleanQuoNoNew . '.pdf';
+    $computed_pdf_url = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanQuoNoNew . '.pdf';
     mysqli_query($ai_conn, "UPDATE tbl_quotation SET pdf_url='{$computed_pdf_url}' WHERE id={$newQuotationId}");
 
     foreach ($processedItems as $pItem) {
@@ -1940,6 +1964,11 @@ if ($action === 'quotation-add') {
     if ($party_id > 0 && function_exists('recalculatePartyOutstanding')) {
         recalculatePartyOutstanding($party_id);
     }
+
+    // Auto generate physical PDF file on server
+    require_once __DIR__ . '/../includes/server-pdf-generator.php';
+    generateDocumentPdfServerSide($newQuotationId, 'quotation');
+
     $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
 
     apiResponse(200, 'Quotation created successfully.', [
@@ -1963,7 +1992,6 @@ if ($action === 'quotation-add') {
         'tax_amount_formatted'   => '₹' . number_format($totalTax, 2),
         'grand_total'            => round($grand_total, 2),
         'grand_total_formatted'  => '₹' . number_format($grand_total, 2),
-        'payment_status'         => $payment_status,
         'status'                 => $status,
         'items_count'            => count($processedItems),
         'pdf_url'                => $fullPdfUrl
@@ -2040,11 +2068,11 @@ if ($action === 'quotation-edit') {
 
     $formattedQuoId = str_pad($quotationId, 2, '0', STR_PAD_LEFT);
     $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->quotation_no ?? $quotationId);
-    $computedPdfRel = 'uploads/invoices/quotation_' . $formattedQuoId . '_' . $cleanDocSlug . '.pdf';
+    $computedPdfRel = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanDocSlug . '.pdf';
     $pdfRel = !empty($q->pdf_url) ? $q->pdf_url : $computedPdfRel;
     $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
 
-    $payStatus = $q->payment_status ?? 'Pending';
+    $isExpired = (!empty($q->due_date) && $q->due_date < date('Y-m-d'));
     $isConverted = (!empty($q->converted_invoice_id) && (int)$q->converted_invoice_id > 0);
 
     apiResponse(200, 'Quotation details retrieved successfully.', [
@@ -2078,11 +2106,12 @@ if ($action === 'quotation-edit') {
         'tax_amount_formatted'     => '₹' . number_format((float)($q->tax_amount ?? 0), 2),
         'grand_total'              => (float)($q->grand_total ?? 0),
         'grand_total_formatted'    => '₹' . number_format((float)($q->grand_total ?? 0), 2),
-        'payment_status'           => $payStatus,
+        'quotation_status'         => $q->quotation_status ?? 'Draft',
         'status'                   => $q->status ?? 'active',
+        'is_expired'               => $isExpired,
         'is_converted'             => $isConverted,
         'converted_invoice_id'     => (int)($q->converted_invoice_id ?? 0),
-        'is_locked'                => ($payStatus === 'Paid' || $isConverted),
+        'is_locked'                => $isConverted,
         'pdf_url'                  => $fullPdfUrl,
         'items'                    => $items,
         'created_at'               => $q->created_at ?? ''
@@ -2111,10 +2140,7 @@ if ($action === 'quotation-update') {
     $currQ = $existingQ[0];
     $prevPartyId = (int)($currQ->party_id ?? 0);
 
-    // If already paid or converted to invoice, prevent modifying critical values
-    if (($currQ->payment_status ?? '') === 'Paid') {
-        apiResponse(400, 'This quotation is marked as Paid and cannot be modified.');
-    }
+    // If already converted to invoice, prevent modifying critical values
     if (!empty($currQ->converted_invoice_id) && (int)$currQ->converted_invoice_id > 0) {
         apiResponse(400, 'This quotation has already been converted to an invoice and cannot be modified.');
     }
@@ -2299,22 +2325,11 @@ if ($action === 'quotation-update') {
     $dbGstType = $company_has_gst ? 'with_gst' : 'without_gst';
     $cleanQuoNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $quotation_no);
     $formattedQuoId = str_pad($quotationId, 2, '0', STR_PAD_LEFT);
-    $computed_pdf_url = 'uploads/invoices/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
+    $computed_pdf_url = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
 
-    // Validate template_id: accept from body or query params
+    // Validate template_id: accept from body or query params, check premium status
     $rawTplInput = $input['template_id'] ?? ($_GET['template_id'] ?? null);
-    if ($rawTplInput !== null && $rawTplInput !== '') {
-        $newTplId = (int)$rawTplInput;
-        $tplCheck = $ai_db->aiGetQueryObj("SELECT id, template_name FROM tbl_invoice_templates WHERE id = {$newTplId} LIMIT 1");
-        if (empty($tplCheck)) {
-            apiResponse(400, "Invalid template_id: Template with ID {$newTplId} does not exist.");
-        }
-        $finalTemplateId = $newTplId;
-    } else {
-        // Keep existing template_id from DB
-        $finalTemplateId = (int)($currQ->template_id ?? 1);
-        if ($finalTemplateId <= 0) $finalTemplateId = 1;
-    }
+    $finalTemplateId = validateApiTemplateId($rawTplInput, $currQ->template_id ?? 1);
     $updateQuotationQry = "UPDATE tbl_quotation SET
         template_id = {$finalTemplateId},
         party_id = {$party_id},
@@ -2334,7 +2349,6 @@ if ($action === 'quotation-update') {
         igst_amount = {$igst_amount},
         tax_amount = {$totalTax},
         grand_total = {$grand_total},
-        payment_status = '{$payment_status}',
         pdf_url = '{$computed_pdf_url}',
         status = '{$status}'
         WHERE id = {$quotationId} AND company_id = {$company_id}";
@@ -2375,6 +2389,10 @@ if ($action === 'quotation-update') {
         if ($prevPartyId > 0 && $prevPartyId !== $party_id) recalculatePartyOutstanding($prevPartyId);
     }
 
+    // Auto generate physical PDF file on server
+    require_once __DIR__ . '/../includes/server-pdf-generator.php';
+    generateDocumentPdfServerSide($quotationId, 'quotation');
+
     $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
 
     apiResponse(200, 'Quotation updated successfully.', [
@@ -2398,7 +2416,6 @@ if ($action === 'quotation-update') {
         'tax_amount_formatted'     => '₹' . number_format($totalTax, 2),
         'grand_total'              => round($grand_total, 2),
         'grand_total_formatted'    => '₹' . number_format($grand_total, 2),
-        'payment_status'           => $payment_status,
         'status'                   => $status,
         'items_count'              => ($rawItems !== null) ? count($processedItems) : count($ai_db->aiGetQueryObj("SELECT id FROM tbl_quotation_items WHERE quotation_id = {$quotationId}")),
         'pdf_url'                  => $fullPdfUrl
@@ -2419,7 +2436,7 @@ if ($action === 'quotation-delete') {
         apiResponse(400, 'Quotation id is required.');
     }
 
-    $existing = $ai_db->aiGetQueryObj("SELECT id, quotation_no, party_id, payment_status, converted_invoice_id FROM tbl_quotation WHERE id = {$quotationId} AND company_id = {$company_id} LIMIT 1");
+    $existing = $ai_db->aiGetQueryObj("SELECT id, quotation_no, party_id, converted_invoice_id FROM tbl_quotation WHERE id = {$quotationId} AND company_id = {$company_id} LIMIT 1");
     if (empty($existing)) {
         apiResponse(404, 'Quotation not found.');
     }
@@ -2661,7 +2678,7 @@ if ($action === 'quotation-convert-to-invoice') {
         {$invIgst},
         {$invTax},
         {$invGrandTotal},
-        '" . mysqli_real_escape_string($ai_conn, $quot->payment_status ?? 'Pending') . "',
+        'Pending',
         'active',
         NOW()
     )";
@@ -3412,10 +3429,16 @@ if ($action === 'invoice-list') {
                 $lastPmLabel = '';
             }
 
+            $cleanInvSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $row->invoice_no ?? $iid);
+            $computedPdfRel = 'uploads/invoices/invoice_' . $iid . '_' . $cleanInvSlug . '.pdf';
+            $pdfRel = !empty($row->pdf_url) ? $row->pdf_url : $computedPdfRel;
+            $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
+
             $itemData = [
                 'id'                     => $iid,
                 'quotation_id'           => (int)($row->quotation_id ?? 0),
                 'invoice_no'             => $row->invoice_no ?? '',
+                'template_id'            => (int)($row->template_id ?? 1),
                 'company_id'             => (int)$row->company_id,
                 'company_name'           => $row->company_name ?? ($company['company_name'] ?? ''),
                 'party_id'               => (int)$row->party_id,
@@ -3451,8 +3474,7 @@ if ($action === 'invoice-list') {
                 'status'                      => $row->status ?? 'active',
                 'is_overdue'                  => ($payStatus !== 'Paid' && !empty($row->due_date) && $row->due_date < $todayDate),
                 'is_locked'                   => $isPaid,
-                'print_url'                   => $printUrl ?? '',
-                'download_url'                => isset($printUrl) ? $printUrl . '&download=1' : '',
+                'pdf_url'                     => $fullPdfUrl,
                 'created_at'                  => $row->created_at ?? ''
             ];
 
@@ -3961,11 +3983,11 @@ if ($action === 'invoice-add') {
     $safeInvNo = mysqli_real_escape_string($ai_conn, $invoice_no);
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
-    $cleanInvNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $invoice_no);
+    $cleanInvNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $invoice_no);
     $computed_pdf_url = 'uploads/invoices/invoice_' . $cleanInvNo . '.pdf';
 
-    $reqTemplateId = (int)($input['template_id'] ?? ($company['invoice_template_id'] ?? 1));
-    if ($reqTemplateId <= 0) $reqTemplateId = 1;
+    $rawAddTpl = $input['template_id'] ?? ($_GET['template_id'] ?? null);
+    $reqTemplateId = validateApiTemplateId($rawAddTpl, $company['invoice_template_id'] ?? 1);
 
     $insertInvoiceQry = "INSERT INTO tbl_invoice SET
         template_id = {$reqTemplateId},
@@ -4026,7 +4048,14 @@ if ($action === 'invoice-add') {
     if ($party_id > 0 && function_exists('recalculatePartyOutstanding')) {
         recalculatePartyOutstanding($party_id);
     }
-    $printUrl = rtrim(ADMIN_URL, '/') . '/invoice-print.php?id=' . $newInvoiceId;
+
+    // Auto generate physical PDF file on server
+    require_once __DIR__ . '/../includes/server-pdf-generator.php';
+    generateDocumentPdfServerSide($newInvoiceId, 'invoice');
+    $computed_pdf_url = 'uploads/invoices/invoice_' . $newInvoiceId . '_' . $cleanInvNo . '.pdf';
+    mysqli_query($ai_conn, "UPDATE tbl_invoice SET pdf_url='{$computed_pdf_url}' WHERE id={$newInvoiceId}");
+
+    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
 
     apiResponse(200, 'Invoice created successfully.', [
         'id'                     => $newInvoiceId,
@@ -4053,8 +4082,7 @@ if ($action === 'invoice-add') {
         'payment_status'         => $payment_status,
         'status'                 => $status,
         'items_count'            => count($processedItems),
-        'print_url'              => $printUrl,
-        'download_url'           => $printUrl . '&download=1'
+        'pdf_url'                => $fullPdfUrl
     ]);
 }
 
@@ -4107,7 +4135,10 @@ if ($action === 'invoice-edit') {
     }
     $isPaid = ($payStatus === 'Paid');
 
-    $printUrl = rtrim(ADMIN_URL, '/') . '/invoice-print.php?id=' . $invoiceId;
+    $cleanInvSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->invoice_no ?? $invoiceId);
+    $computedPdfRel = 'uploads/invoices/invoice_' . $invoiceId . '_' . $cleanInvSlug . '.pdf';
+    $pdfRel = !empty($q->pdf_url) ? $q->pdf_url : $computedPdfRel;
+    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
 
     // Fetch items with live stock info
     $itemsRows = $ai_db->aiGetQueryObj("
@@ -4202,8 +4233,8 @@ if ($action === 'invoice-edit') {
         'status'                 => $q->status ?? 'active',
         'is_overdue'             => ($payStatus !== 'Paid' && !empty($q->due_date) && $q->due_date < $todayDate),
         'is_locked'              => $isPaid,
-        'print_url'              => $printUrl,
-        'download_url'           => $printUrl . '&download=1',
+        'template_id'            => (int)($q->template_id ?? 1),
+        'pdf_url'                => $fullPdfUrl,
         'items'                  => $itemsList,
         'payments'               => $paymentsList
     ]);
@@ -4441,13 +4472,12 @@ if ($action === 'invoice-update') {
     $safeInvNo = mysqli_real_escape_string($ai_conn, $invoice_no);
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
-    $cleanInvNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $invoice_no);
-    $computed_pdf_url = 'uploads/invoices/invoice_' . $cleanInvNo . '.pdf';
+    $cleanInvNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $invoice_no);
+    $computed_pdf_url = 'uploads/invoices/invoice_' . $invoiceId . '_' . $cleanInvNo . '.pdf';
 
-    $tplUpdateSql = "";
-    if (isset($input['template_id']) && (int)$input['template_id'] > 0) {
-        $tplUpdateSql = "template_id = " . (int)$input['template_id'] . ", ";
-    }
+    $rawTplInput = $input['template_id'] ?? ($_GET['template_id'] ?? null);
+    $finalTemplateId = validateApiTemplateId($rawTplInput, $currInv->template_id ?? 1);
+    $tplUpdateSql = "template_id = " . $finalTemplateId . ", ";
 
     $updateInvoiceQry = "UPDATE tbl_invoice SET
         {$tplUpdateSql}
@@ -4517,11 +4547,16 @@ if ($action === 'invoice-update') {
         if ($prevPartyId > 0 && $prevPartyId !== $party_id) recalculatePartyOutstanding($prevPartyId);
     }
 
-    $printUrl = rtrim(ADMIN_URL, '/') . '/invoice-print.php?id=' . $invoiceId;
+    // Auto generate physical PDF file on server
+    require_once __DIR__ . '/../includes/server-pdf-generator.php';
+    generateDocumentPdfServerSide($invoiceId, 'invoice');
+
+    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
 
     apiResponse(200, 'Invoice updated successfully.', [
         'id'                     => $invoiceId,
         'invoice_no'             => $invoice_no,
+        'template_id'            => $finalTemplateId,
         'company_id'             => $company_id,
         'party_id'               => $party_id,
         'party_name'             => $party_name,
@@ -4544,8 +4579,7 @@ if ($action === 'invoice-update') {
         'payment_status'         => $payment_status,
         'status'                 => $status,
         'items_count'            => ($rawItems !== null) ? count($processedItems) : count($ai_db->aiGetQueryObj("SELECT id FROM tbl_invoice_items WHERE invoice_id = {$invoiceId}")),
-        'print_url'              => $printUrl,
-        'download_url'           => $printUrl . '&download=1'
+        'pdf_url'                => $fullPdfUrl
     ]);
 }
 
@@ -4838,9 +4872,15 @@ if ($action === 'purchase-list') {
 
             $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $pid;
 
+            $cleanPurSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $row->purchase_no ?? $pid);
+            $computedPdfRel = 'uploads/purchase/purchase_' . $pid . '_' . $cleanPurSlug . '.pdf';
+            $pdfRel = !empty($row->pdf_url) ? $row->pdf_url : $computedPdfRel;
+            $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
+
             $itemData = [
                 'id'                      => $pid,
                 'purchase_no'             => $row->purchase_no ?? '',
+                'template_id'             => (int)($row->template_id ?? 1),
                 'company_id'              => (int)$row->company_id,
                 'company_name'            => $row->company_name ?? ($company['company_name'] ?? ''),
                 'party_id'                => (int)$row->party_id,
@@ -4876,8 +4916,7 @@ if ($action === 'purchase-list') {
                 'status'                  => $row->status ?? 'active',
                 'is_overdue'              => ($payStatus !== 'Paid' && !empty($row->due_date) && $row->due_date < $todayDate),
                 'is_locked'               => $isPaid,
-                'print_url'               => $printUrl,
-                'download_url'            => $printUrl . '&download=1',
+                'pdf_url'                 => $fullPdfUrl,
                 'created_at'              => $row->created_at ?? ''
             ];
 
@@ -5357,10 +5396,14 @@ if ($action === 'purchase-add') {
     $safePurNo = mysqli_real_escape_string($ai_conn, $purchase_no);
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
-    $cleanPurNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $purchase_no);
-    $computed_pdf_url = 'uploads/invoices/purchase_' . $cleanPurNo . '.pdf';
+    $rawAddTpl = $input['template_id'] ?? ($_GET['template_id'] ?? null);
+    $reqTemplateId = validateApiTemplateId($rawAddTpl, $company['invoice_template_id'] ?? 1);
+
+    $cleanPurNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $purchase_no);
+    $computed_pdf_url = 'uploads/purchase/purchase_' . $cleanPurNo . '.pdf';
 
     $insertPurchaseQry = "INSERT INTO tbl_purchase SET
+        template_id = {$reqTemplateId},
         company_id = {$company_id},
         party_id = {$party_id},
         party_name = '{$safePartyName}',
@@ -5418,11 +5461,19 @@ if ($action === 'purchase-add') {
     if ($party_id > 0 && function_exists('recalculatePartyOutstanding')) {
         recalculatePartyOutstanding($party_id);
     }
-    $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $newPurchaseId;
+
+    // Auto generate physical PDF file on server
+    require_once __DIR__ . '/../includes/server-pdf-generator.php';
+    generateDocumentPdfServerSide($newPurchaseId, 'purchase');
+    $computed_pdf_url = 'uploads/purchase/purchase_' . $newPurchaseId . '_' . $cleanPurNo . '.pdf';
+    mysqli_query($ai_conn, "UPDATE tbl_purchase SET pdf_url='{$computed_pdf_url}' WHERE id={$newPurchaseId}");
+
+    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
 
     apiResponse(200, 'Purchase bill created successfully.', [
         'id'                      => $newPurchaseId,
         'purchase_no'             => $purchase_no,
+        'template_id'             => $reqTemplateId,
         'company_id'              => $company_id,
         'party_id'                => $party_id,
         'party_name'              => $party_name,
@@ -5445,8 +5496,7 @@ if ($action === 'purchase-add') {
         'payment_status'          => $payment_status,
         'status'                  => $status,
         'items_count'             => count($processedItems),
-        'print_url'               => $printUrl,
-        'download_url'            => $printUrl . '&download=1'
+        'pdf_url'                 => $fullPdfUrl
     ]);
 }
 
@@ -5499,7 +5549,10 @@ if ($action === 'purchase-edit') {
     }
     $isPaid = ($payStatus === 'Paid');
 
-    $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $purchaseId;
+    $cleanPurSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->purchase_no ?? $purchaseId);
+    $computedPdfRel = 'uploads/purchase/purchase_' . $purchaseId . '_' . $cleanPurSlug . '.pdf';
+    $pdfRel = !empty($q->pdf_url) ? $q->pdf_url : $computedPdfRel;
+    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
 
     // Fetch items with product information
     $itemsRows = $ai_db->aiGetQueryObj("
@@ -5591,8 +5644,8 @@ if ($action === 'purchase-edit') {
         'status'                  => $q->status ?? 'active',
         'is_overdue'              => ($payStatus !== 'Paid' && !empty($q->due_date) && $q->due_date < $todayDate),
         'is_locked'               => $isPaid,
-        'print_url'               => $printUrl,
-        'download_url'            => $printUrl . '&download=1',
+        'template_id'             => (int)($q->template_id ?? 1),
+        'pdf_url'                 => $fullPdfUrl,
         'items'                   => $itemsList,
         'payments'                => $paymentsList
     ]);
@@ -5793,10 +5846,15 @@ if ($action === 'purchase-update') {
     $safePurNo = mysqli_real_escape_string($ai_conn, $purchase_no);
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
-    $cleanPurNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $purchase_no);
-    $computed_pdf_url = 'uploads/invoices/purchase_' . $cleanPurNo . '.pdf';
+    $cleanPurNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $purchase_no);
+    $computed_pdf_url = 'uploads/purchase/purchase_' . $cleanPurNo . '.pdf';
+
+    $rawTplInput = $input['template_id'] ?? ($_GET['template_id'] ?? null);
+    $finalTemplateId = validateApiTemplateId($rawTplInput, $currPur->template_id ?? 1);
+    $tplUpdateSql = "template_id = " . $finalTemplateId . ", ";
 
     $updatePurchaseQry = "UPDATE tbl_purchase SET
+        {$tplUpdateSql}
         party_id = {$party_id},
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
@@ -5863,11 +5921,18 @@ if ($action === 'purchase-update') {
         if ($prevPartyId > 0 && $prevPartyId !== $party_id) recalculatePartyOutstanding($prevPartyId);
     }
 
-    $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $purchaseId;
+    // Auto generate physical PDF file on server
+    require_once __DIR__ . '/../includes/server-pdf-generator.php';
+    generateDocumentPdfServerSide($purchaseId, 'purchase');
+    $computed_pdf_url = 'uploads/purchase/purchase_' . $purchaseId . '_' . $cleanPurNo . '.pdf';
+    mysqli_query($ai_conn, "UPDATE tbl_purchase SET pdf_url='{$computed_pdf_url}' WHERE id={$purchaseId}");
+
+    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
 
     apiResponse(200, 'Purchase bill updated successfully.', [
         'id'                      => $purchaseId,
         'purchase_no'             => $purchase_no,
+        'template_id'             => $finalTemplateId,
         'company_id'              => $company_id,
         'party_id'                => $party_id,
         'party_name'              => $party_name,
@@ -5890,8 +5955,7 @@ if ($action === 'purchase-update') {
         'payment_status'          => $payment_status,
         'status'                  => $status,
         'items_count'             => ($rawItems !== null) ? count($processedItems) : count($ai_db->aiGetQueryObj("SELECT id FROM tbl_purchase_items WHERE purchase_id = {$purchaseId}")),
-        'print_url'               => $printUrl,
-        'download_url'            => $printUrl . '&download=1'
+        'pdf_url'                 => $fullPdfUrl
     ]);
 }
 
@@ -6544,6 +6608,7 @@ if ($action === 'invoice-template-list') {
             'template_name' => (string)$tpl->template_name,
             'template_slug' => (string)$tpl->template_slug,
             'preview_image' => $previewImg,
+            'is_premium'    => (!empty($tpl->is_premium) && (int)$tpl->is_premium === 1),
             'is_selected'   => ((int)$tpl->id === $currentTplId),
             'preview_url'   => $previewUrl
         ];
@@ -6577,9 +6642,13 @@ if ($action === 'invoice-template-set-default') {
         apiResponse(400, 'template_id is required.');
     }
 
-    $tplFind = $ai_db->aiGetQueryObj("SELECT id, template_name FROM tbl_invoice_templates WHERE id={$templateId} AND status='active' LIMIT 1");
+    $tplFind = $ai_db->aiGetQueryObj("SELECT id, template_name, is_premium FROM tbl_invoice_templates WHERE id={$templateId} AND status='active' LIMIT 1");
     if (empty($tplFind)) {
         apiResponse(404, 'Template not found or inactive.');
+    }
+
+    if (!empty($tplFind[0]->is_premium) && (int)$tplFind[0]->is_premium === 1) {
+        apiResponse(400, "Template '{$tplFind[0]->template_name}' is a Premium template and cannot be set as default.");
     }
 
     $update = $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id={$templateId} WHERE id={$cId}");

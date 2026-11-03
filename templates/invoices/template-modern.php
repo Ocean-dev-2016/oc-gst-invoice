@@ -162,7 +162,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
         @media print {
             @page {
                 size: A4 portrait;
-                margin: 8mm 10mm;
+                margin: 0 !important;
             }
             .top-action-bar { display: none !important; }
             body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
@@ -170,9 +170,18 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                 border: none !important; box-shadow: none !important;
                 margin: 0 auto !important; width: 100% !important; max-width: 100% !important;
                 border-radius: 0 !important;
+                min-height: 297mm !important; height: 297mm !important;
+                display: flex !important; flex-direction: column !important;
+            }
+            .modern-content {
+                display: flex !important; flex-direction: column !important; flex: 1 0 auto !important;
+            }
+            .invoice-footer-pin {
+                margin-top: auto !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
             }
             .modern-banner { padding: 24px 28px !important; }
-            .modern-content { padding: 20px 28px !important; }
             .parties-row { gap: 15px !important; margin-bottom: 16px !important; }
             .party-card { padding: 12px 15px !important; }
         }

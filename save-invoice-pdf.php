@@ -38,7 +38,8 @@ if ($docType === 'quotation') {
     $pRow = $ai_db->aiGetQueryObj("SELECT id, purchase_no as doc_no, company_id FROM tbl_purchase WHERE id='$invoiceId' LIMIT 1");
     if (!empty($pRow)) {
         $inv = $pRow[0];
-        $cleanDocNo = 'purchase_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $inv->doc_no ?? 'purchase_' . $inv->id);
+        $cleanNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $inv->doc_no ?? $inv->id);
+        $cleanDocNo = 'purchase_' . $inv->id . '_' . $cleanNo;
     }
 }
 
@@ -47,7 +48,8 @@ if (empty($inv)) {
     $invRow = $ai_db->aiGetQueryObj("SELECT id, invoice_no as doc_no, company_id FROM tbl_invoice WHERE id='$invoiceId' LIMIT 1");
     if (!empty($invRow)) {
         $inv = $invRow[0];
-        $cleanDocNo = 'invoice_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $inv->doc_no ?? 'invoice_' . $inv->id);
+        $cleanNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $inv->doc_no ?? $inv->id);
+        $cleanDocNo = 'invoice_' . $inv->id . '_' . $cleanNo;
     }
 }
 
@@ -66,8 +68,15 @@ if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id
     }
 }
 
-// Target folder: uploads/invoices/
-$uploadDir = __DIR__ . '/uploads/invoices/';
+// Target folder based on docType
+$targetSubFolder = 'invoices';
+if ($docType === 'quotation') {
+    $targetSubFolder = 'quotation';
+} elseif ($docType === 'purchase') {
+    $targetSubFolder = 'purchase';
+}
+
+$uploadDir = __DIR__ . '/uploads/' . $targetSubFolder . '/';
 if (!is_dir($uploadDir)) {
     @mkdir($uploadDir, 0777, true);
 }
@@ -75,7 +84,7 @@ if (!is_dir($uploadDir)) {
 // Prepare file name
 $fileName = $cleanDocNo . '.pdf';
 $targetFilePath = $uploadDir . $fileName;
-$relativeUrl = 'uploads/invoices/' . $fileName;
+$relativeUrl = 'uploads/' . $targetSubFolder . '/' . $fileName;
 
 $saved = false;
 

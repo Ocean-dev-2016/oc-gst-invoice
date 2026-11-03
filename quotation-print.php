@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__ . '/root/config.php';
 
-// Check login
-if (empty($_SESSION['aid'])) {
+// Check login or internal system token
+$isInternalCall = (!empty($_GET['token']) && $_GET['token'] === 'system_auto_pdf');
+if (empty($_SESSION['aid']) && !$isInternalCall) {
     header('Location: index.php');
     exit;
 }
@@ -36,8 +37,9 @@ if (!empty($tplObj) && !empty($tplObj[0]->file_path)) {
 }
 require_once __DIR__ . '/root/config.php';
 
-// Check login
-if (empty($_SESSION['aid'])) {
+// Check login or internal system token
+$isInternalCall = (!empty($_GET['token']) && $_GET['token'] === 'system_auto_pdf');
+if (empty($_SESSION['aid']) && !$isInternalCall) {
     header('Location: index.php');
     exit;
 }
@@ -514,21 +516,23 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                     <div class="meta-line"><strong>Quotation No:</strong> <?= htmlspecialchars($q->quotation_no) ?></div>
                     <div class="meta-line"><strong>Date:</strong> <?= !empty($q->quotation_date) ? date('d-m-Y', strtotime($q->quotation_date)) : '-' ?></div>
                     <?php if (!empty($q->due_date)) { 
-                        $isOverdue = ($q->payment_status === 'Pending' && $q->due_date < date('Y-m-d'));
+                        $isOverdue = ($q->due_date < date('Y-m-d'));
                     ?>
                         <div class="meta-line">
                             <strong>Due Date:</strong> <?= date('d-m-Y', strtotime($q->due_date)) ?>
                             <?php if ($isOverdue) { ?>
-                                <span style="background-color: #fee2e2; color: #dc2626; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 700; margin-left: 4px;">Overdue</span>
+                                <span style="background-color: #fee2e2; color: #dc2626; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 700; margin-left: 4px;">Expired</span>
                             <?php } ?>
                         </div>
                     <?php } ?>
+                    <?php if (!empty($q->quotation_status)) { ?>
                     <div class="meta-line">
                         <strong>Status:</strong> 
-                        <span style="font-weight: 700; color: <?= ($q->payment_status === 'Paid') ? '#10b981' : '#f59e0b' ?>">
-                            <?= htmlspecialchars($q->payment_status ?? 'Pending') ?>
+                        <span style="font-weight: 700; color: <?= ($q->quotation_status === 'Accepted') ? '#10b981' : (($q->quotation_status === 'Rejected') ? '#ef4444' : '#6b7280') ?>">
+                            <?= htmlspecialchars($q->quotation_status) ?>
                         </span>
                     </div>
+                    <?php } ?>
                 </div>
             </div>
 

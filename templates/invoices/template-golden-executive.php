@@ -157,7 +157,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
 
         .invoice-card {
             max-width: 860px;
-            min-height: unset;
+            min-height: 1120px;
             margin: 0 auto;
             background: #ffffff;
             box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
@@ -410,7 +410,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
         @media print {
             @page {
                 size: A4 portrait;
-                margin: 8mm 10mm;
+                margin: 0 !important;
             }
 
             .top-action-bar {
@@ -428,10 +428,11 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                 margin: 0 auto !important;
                 width: 100% !important;
                 max-width: 100% !important;
-                /* Reset forced height — let content flow naturally in print */
-                min-height: unset !important;
-                height: auto !important;
-                display: block !important;
+                min-height: 297mm !important;
+                height: 297mm !important;
+                display: flex !important;
+                flex-direction: column !important;
+                padding: 0 !important;
             }
 
             /* Footer stays with content — never breaks to next page */
@@ -440,7 +441,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                 break-before: avoid !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
-                margin-top: 20px !important;
+                margin-top: auto !important;
             }
 
             .bottom-bar {

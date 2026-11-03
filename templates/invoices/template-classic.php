@@ -1,8 +1,9 @@
 <?php
 require_once dirname(dirname(__DIR__)) . '/root/config.php';
 
-// Check login
-if (empty($_SESSION['aid'])) {
+// Check login or internal system token
+$isInternalCall = (!empty($_GET['token']) && $_GET['token'] === 'system_auto_pdf');
+if (empty($_SESSION['aid']) && !$isInternalCall) {
     header('Location: index.php');
     exit;
 }
@@ -458,11 +459,21 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                 border: none !important;
                 box-shadow: none !important;
                 padding: 0 !important;
+                min-height: 297mm !important;
+                height: 297mm !important;
+                display: flex !important;
+                flex-direction: column !important;
+            }
+
+            .invoice-footer-pin {
+                margin-top: auto !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
             }
 
             @page {
                 size: A4 portrait;
-                margin: 10mm 12mm 10mm 12mm;
+                margin: 0 !important;
             }
         }
         @media screen and (max-width: 768px) {
@@ -520,21 +531,34 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                     <div class="meta-line"><strong><?= $docNumberLabel ?>:</strong> <?= htmlspecialchars($q->invoice_no) ?></div>
                     <div class="meta-line"><strong>Date:</strong> <?= !empty($q->invoice_date) ? date('d-m-Y', strtotime($q->invoice_date)) : '-' ?></div>
                     <?php if (!empty($q->due_date)) {
-                        $isOverdue = ($q->payment_status === 'Pending' && $q->due_date < date('Y-m-d'));
+                        $isOverdue = ($docType === 'quotation') 
+                            ? ($q->due_date < date('Y-m-d'))
+                            : (($q->payment_status ?? 'Pending') === 'Pending' && $q->due_date < date('Y-m-d'));
                     ?>
                         <div class="meta-line">
                             <strong>Due Date:</strong> <?= date('d-m-Y', strtotime($q->due_date)) ?>
                             <?php if ($isOverdue) { ?>
-                                <span style="background-color: #fee2e2; color: #dc2626; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 700; margin-left: 4px;">Overdue</span>
+                                <span style="background-color: #fee2e2; color: #dc2626; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 700; margin-left: 4px;"><?= ($docType === 'quotation') ? 'Expired' : 'Overdue' ?></span>
                             <?php } ?>
                         </div>
                     <?php } ?>
-                    <div class="meta-line">
-                        <strong>Status:</strong>
-                        <span style="font-weight: 700; color: <?= ($q->payment_status === 'Paid') ? '#10b981' : '#f59e0b' ?>">
-                            <?= htmlspecialchars($q->payment_status ?? 'Pending') ?>
-                        </span>
-                    </div>
+                    <?php if ($docType === 'quotation') { 
+                        if (!empty($q->quotation_status)) { ?>
+                        <div class="meta-line">
+                            <strong>Status:</strong>
+                            <span style="font-weight: 700; color: <?= ($q->quotation_status === 'Accepted') ? '#10b981' : (($q->quotation_status === 'Rejected') ? '#ef4444' : '#6b7280') ?>">
+                                <?= htmlspecialchars($q->quotation_status) ?>
+                            </span>
+                        </div>
+                    <?php } 
+                    } else { ?>
+                        <div class="meta-line">
+                            <strong>Status:</strong>
+                            <span style="font-weight: 700; color: <?= (($q->payment_status ?? '') === 'Paid') ? '#10b981' : '#f59e0b' ?>">
+                                <?= htmlspecialchars($q->payment_status ?? 'Pending') ?>
+                            </span>
+                        </div>
+                    <?php } ?>
                 </div>
             </div>
 
