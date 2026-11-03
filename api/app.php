@@ -1618,8 +1618,12 @@ if ($action === 'quotation-list') {
             $formattedQuoId = str_pad($qid, 2, '0', STR_PAD_LEFT);
             $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $row->quotation_no ?? $qid);
             $computedPdfRel = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanDocSlug . '.pdf';
-            $pdfRel = !empty($row->pdf_url) ? $row->pdf_url : $computedPdfRel;
-            $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
+            $diskPdfPath = __DIR__ . '/../' . $computedPdfRel;
+            if (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500) {
+                $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computedPdfRel, '/');
+            } else {
+                $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=quotation&id=' . $qid;
+            }
 
             $itemData = [
                 'id'                     => $qid,
@@ -1967,9 +1971,13 @@ if ($action === 'quotation-add') {
 
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
-    generateDocumentPdfServerSide($newQuotationId, 'quotation');
-
-    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    $pdfSaved = generateDocumentPdfServerSide($newQuotationId, 'quotation');
+    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    } else {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=quotation&id=' . $newQuotationId;
+    }
 
     apiResponse(200, 'Quotation created successfully.', [
         'id'                     => $newQuotationId,
@@ -2069,8 +2077,12 @@ if ($action === 'quotation-edit') {
     $formattedQuoId = str_pad($quotationId, 2, '0', STR_PAD_LEFT);
     $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->quotation_no ?? $quotationId);
     $computedPdfRel = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanDocSlug . '.pdf';
-    $pdfRel = !empty($q->pdf_url) ? $q->pdf_url : $computedPdfRel;
-    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
+    $diskPdfPath = __DIR__ . '/../' . $computedPdfRel;
+    if (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500) {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computedPdfRel, '/');
+    } else {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=quotation&id=' . $quotationId;
+    }
 
     $isExpired = (!empty($q->due_date) && $q->due_date < date('Y-m-d'));
     $isConverted = (!empty($q->converted_invoice_id) && (int)$q->converted_invoice_id > 0);
@@ -2391,9 +2403,13 @@ if ($action === 'quotation-update') {
 
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
-    generateDocumentPdfServerSide($quotationId, 'quotation');
-
-    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    $pdfSaved = generateDocumentPdfServerSide($quotationId, 'quotation');
+    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    } else {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=quotation&id=' . $quotationId;
+    }
 
     apiResponse(200, 'Quotation updated successfully.', [
         'id'                       => $quotationId,
@@ -3431,8 +3447,12 @@ if ($action === 'invoice-list') {
 
             $cleanInvSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $row->invoice_no ?? $iid);
             $computedPdfRel = 'uploads/invoices/invoice_' . $iid . '_' . $cleanInvSlug . '.pdf';
-            $pdfRel = !empty($row->pdf_url) ? $row->pdf_url : $computedPdfRel;
-            $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
+            $diskPdfPath = __DIR__ . '/../' . $computedPdfRel;
+            if (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500) {
+                $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computedPdfRel, '/');
+            } else {
+                $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=invoice&id=' . $iid;
+            }
 
             $itemData = [
                 'id'                     => $iid,
@@ -4051,11 +4071,16 @@ if ($action === 'invoice-add') {
 
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
-    generateDocumentPdfServerSide($newInvoiceId, 'invoice');
+    $pdfSaved = generateDocumentPdfServerSide($newInvoiceId, 'invoice');
     $computed_pdf_url = 'uploads/invoices/invoice_' . $newInvoiceId . '_' . $cleanInvNo . '.pdf';
     mysqli_query($ai_conn, "UPDATE tbl_invoice SET pdf_url='{$computed_pdf_url}' WHERE id={$newInvoiceId}");
 
-    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    } else {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=invoice&id=' . $newInvoiceId;
+    }
 
     apiResponse(200, 'Invoice created successfully.', [
         'id'                     => $newInvoiceId,
@@ -4137,8 +4162,12 @@ if ($action === 'invoice-edit') {
 
     $cleanInvSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->invoice_no ?? $invoiceId);
     $computedPdfRel = 'uploads/invoices/invoice_' . $invoiceId . '_' . $cleanInvSlug . '.pdf';
-    $pdfRel = !empty($q->pdf_url) ? $q->pdf_url : $computedPdfRel;
-    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
+    $diskPdfPath = __DIR__ . '/../' . $computedPdfRel;
+    if (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500) {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computedPdfRel, '/');
+    } else {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=invoice&id=' . $invoiceId;
+    }
 
     // Fetch items with live stock info
     $itemsRows = $ai_db->aiGetQueryObj("
@@ -4549,9 +4578,13 @@ if ($action === 'invoice-update') {
 
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
-    generateDocumentPdfServerSide($invoiceId, 'invoice');
-
-    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    $pdfSaved = generateDocumentPdfServerSide($invoiceId, 'invoice');
+    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    } else {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=invoice&id=' . $invoiceId;
+    }
 
     apiResponse(200, 'Invoice updated successfully.', [
         'id'                     => $invoiceId,
@@ -5464,11 +5497,16 @@ if ($action === 'purchase-add') {
 
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
-    generateDocumentPdfServerSide($newPurchaseId, 'purchase');
+    $pdfSaved = generateDocumentPdfServerSide($newPurchaseId, 'purchase');
     $computed_pdf_url = 'uploads/purchase/purchase_' . $newPurchaseId . '_' . $cleanPurNo . '.pdf';
     mysqli_query($ai_conn, "UPDATE tbl_purchase SET pdf_url='{$computed_pdf_url}' WHERE id={$newPurchaseId}");
 
-    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    } else {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=purchase&id=' . $newPurchaseId;
+    }
 
     apiResponse(200, 'Purchase bill created successfully.', [
         'id'                      => $newPurchaseId,
@@ -5923,11 +5961,16 @@ if ($action === 'purchase-update') {
 
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
-    generateDocumentPdfServerSide($purchaseId, 'purchase');
+    $pdfSaved = generateDocumentPdfServerSide($purchaseId, 'purchase');
     $computed_pdf_url = 'uploads/purchase/purchase_' . $purchaseId . '_' . $cleanPurNo . '.pdf';
     mysqli_query($ai_conn, "UPDATE tbl_purchase SET pdf_url='{$computed_pdf_url}' WHERE id={$purchaseId}");
 
-    $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+    } else {
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=purchase&id=' . $purchaseId;
+    }
 
     apiResponse(200, 'Purchase bill updated successfully.', [
         'id'                      => $purchaseId,
