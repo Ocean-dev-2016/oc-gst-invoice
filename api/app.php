@@ -912,12 +912,12 @@ if ($action === 'customer-list') {
                 'shipping_pincode'       => $pty->shipping_pincode ?? '',
                 'party_status'           => $pty->party_status ?? 'Sales',
                 'business_type'          => $pty->business_type ?? 'Individual',
-                'opening_balance'        => (float)($pty->opening_balance ?? 0),
+                'opening_balance'        => round((float)($pty->opening_balance ?? 0)),
                 'balance_type'           => $pty->balance_type ?? 'Debit',
-                'outstanding'            => $outstandingVal,
-                'outstanding_formatted'  => '₹' . number_format($outstandingVal, 2),
-                'overdue_amount'         => $overdueVal,
-                'overdue_formatted'      => '₹' . number_format($overdueVal, 2),
+                'outstanding'            => round($outstandingVal),
+                'outstanding_formatted'  => '₹' . number_format(round($outstandingVal), 0),
+                'overdue_amount'         => round($overdueVal),
+                'overdue_formatted'      => '₹' . number_format(round($overdueVal), 0),
                 'overdue_invoices_count' => $overdueCount,
                 'has_overdue'            => ($overdueVal > 0),
                 'remark'                 => $pty->remark ?? '',
@@ -937,17 +937,17 @@ if ($action === 'customer-list') {
             'total_customers_formatted'   => (string)$totalCustomers,
             'total_customers_sub_text'    => '+12 month',
             'all_time_customers'          => $allTimeCustomers,
-            'receivable_amount'           => $receivableAmt,
-            'receivable_amount_formatted' => '₹' . number_format($receivableAmt, 2),
+            'receivable_amount'           => round($receivableAmt),
+            'receivable_amount_formatted' => '₹' . number_format(round($receivableAmt), 0),
             'receivable_clients_count'    => $receivableClients,
             'receivable_sub_text'         => $receivableClients . ' clients',
-            'overdue_amount'              => $totalOverdueAmt,
-            'overdue_amount_formatted'    => '₹' . number_format($totalOverdueAmt, 2),
+            'overdue_amount'              => round($totalOverdueAmt),
+            'overdue_amount_formatted'    => '₹' . number_format(round($totalOverdueAmt), 0),
             'overdue_clients_count'       => $overduePartiesCount,
             'overdue_sub_text'            => $overduePartiesCount . ' clients overdue'
         ],
-        'receivable'   => $receivableAmt,
-        'overdue'      => $totalOverdueAmt,
+        'receivable'   => round($receivableAmt),
+        'overdue'      => round($totalOverdueAmt),
         'customers'    => $list
     ]);
 }
@@ -1539,22 +1539,22 @@ if ($action === 'quotation-list') {
 
     $summaryQry = "SELECT 
                         COUNT(id) AS total_quotations,
-                        COUNT(CASE WHEN (due_date IS NULL OR due_date = '' OR due_date = '0000-00-00' OR due_date >= '{$todayStr}') AND status = 'active' THEN 1 END) AS active_count,
-                        COALESCE(SUM(CASE WHEN (due_date IS NULL OR due_date = '' OR due_date = '0000-00-00' OR due_date >= '{$todayStr}') AND status = 'active' THEN grand_total ELSE 0 END), 0) AS active_amount,
-                        COUNT(CASE WHEN due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '{$todayStr}' THEN 1 END) AS expired_count,
-                        COALESCE(SUM(CASE WHEN due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '{$todayStr}' THEN grand_total ELSE 0 END), 0) AS expired_amount,
-                        COALESCE(SUM(grand_total), 0) AS total_amount
+                        COALESCE(SUM(grand_total), 0) AS total_amount,
+                        COUNT(CASE WHEN quotation_status = 'Accepted' THEN 1 END) AS accepted_count,
+                        COALESCE(SUM(CASE WHEN quotation_status = 'Accepted' THEN grand_total ELSE 0 END), 0) AS accepted_amount,
+                        COUNT(CASE WHEN quotation_status = 'Rejected' THEN 1 END) AS rejected_count,
+                        COALESCE(SUM(CASE WHEN quotation_status = 'Rejected' THEN grand_total ELSE 0 END), 0) AS rejected_amount
                    FROM tbl_quotation
                    WHERE company_id = {$cId}";
     $sumRes = $ai_db->aiGetQueryObj($summaryQry);
     $sumData = !empty($sumRes) ? $sumRes[0] : null;
 
     $totalCount = (int)($sumData->total_quotations ?? 0);
-    $activeCount = (int)($sumData->active_count ?? 0);
-    $activeAmount = (float)($sumData->active_amount ?? 0);
-    $expiredCount = (int)($sumData->expired_count ?? 0);
-    $expiredAmount = (float)($sumData->expired_amount ?? 0);
     $allTotalAmount = (float)($sumData->total_amount ?? 0);
+    $acceptedCount = (int)($sumData->accepted_count ?? 0);
+    $acceptedAmount = (float)($sumData->accepted_amount ?? 0);
+    $rejectedCount = (int)($sumData->rejected_count ?? 0);
+    $rejectedAmount = (float)($sumData->rejected_amount ?? 0);
 
     $includeItems = !empty($input['include_items']) || !empty($_GET['include_items']);
 
@@ -1643,15 +1643,15 @@ if ($action === 'quotation-list') {
                 'due_date'               => $row->due_date ?? null,
                 'due_date_formatted'     => !empty($row->due_date) ? date('d-m-Y', strtotime($row->due_date)) : '',
                 'gst_type'               => $row->gst_type ?? 'with_gst',
-                'taxable_amount'         => $totalTaxable,
-                'taxable_formatted'      => '₹' . number_format($totalTaxable, 2),
-                'cgst_amount'            => $cgst,
-                'sgst_amount'            => $sgst,
-                'igst_amount'            => $igst,
-                'tax_amount'             => $taxAmount,
-                'tax_amount_formatted'   => '₹' . number_format($taxAmount, 2),
-                'grand_total'            => $grandTotal,
-                'grand_total_formatted'  => '₹' . number_format($grandTotal, 2),
+                'taxable_amount'         => round($totalTaxable),
+                'taxable_formatted'      => '₹' . number_format(round($totalTaxable), 0),
+                'cgst_amount'            => round($cgst),
+                'sgst_amount'            => round($sgst),
+                'igst_amount'            => round($igst),
+                'tax_amount'             => round($taxAmount),
+                'tax_amount_formatted'   => '₹' . number_format(round($taxAmount), 0),
+                'grand_total'            => round($grandTotal),
+                'grand_total_formatted'  => '₹' . number_format(round($grandTotal), 0),
                 'quotation_status'       => $row->quotation_status ?? 'Draft',
                 'status'                 => $row->status ?? 'active',
                 'is_expired'             => $isExpired,
@@ -1676,15 +1676,15 @@ if ($action === 'quotation-list') {
         'total'        => count($list),
         'pagination'   => buildApiPaginationData($page, $limit, $totalFilteredRecords),
         'summary'      => [
-            'total_quotations'        => $totalCount,
-            'active_count'            => $activeCount,
-            'active_amount'           => $activeAmount,
-            'active_amount_formatted' => '₹' . number_format($activeAmount, 2),
-            'expired_count'           => $expiredCount,
-            'expired_amount'          => $expiredAmount,
-            'expired_amount_formatted' => '₹' . number_format($expiredAmount, 2),
-            'total_amount'            => $allTotalAmount,
-            'total_amount_formatted'  => '₹' . number_format($allTotalAmount, 2)
+            'total_quotations'          => $totalCount,
+            'total_amount'              => round($allTotalAmount),
+            'total_amount_formatted'    => '₹' . number_format(round($allTotalAmount), 0),
+            'accepted_count'            => $acceptedCount,
+            'accepted_amount'           => round($acceptedAmount),
+            'accepted_amount_formatted' => '₹' . number_format(round($acceptedAmount), 0),
+            'rejected_count'            => $rejectedCount,
+            'rejected_amount'           => round($rejectedAmount),
+            'rejected_amount_formatted' => '₹' . number_format(round($rejectedAmount), 0)
         ],
         'quotations'   => $list
     ]);
@@ -1890,7 +1890,7 @@ if ($action === 'quotation-add') {
         }
     }
 
-    $grand_total = $totalTaxable + $totalTax;
+    $grand_total = round($totalTaxable + $totalTax);
 
     $safePartyName = mysqli_real_escape_string($ai_conn, $party_name);
     $safeGstNo = mysqli_real_escape_string($ai_conn, $gst_no);
@@ -2315,7 +2315,7 @@ if ($action === 'quotation-update') {
         }
     }
 
-    $grand_total = $totalTaxable + $totalTax;
+    $grand_total = round($totalTaxable + $totalTax);
 
     $safePartyName = mysqli_real_escape_string($ai_conn, $party_name);
     $safeGstNo = mysqli_real_escape_string($ai_conn, $gst_no);
@@ -2893,18 +2893,18 @@ if ($action === 'product-list') {
                 'sku'                 => $product->sku ?? '',
                 'hsn_code'            => $product->hsn_code ?? '',
                 'gst_rate'            => ((int)($company['gst_applicable'] ?? 0) === 1) ? (float)($product->gst_rate ?? 18) : false,
-                'purchase_price'      => (float)$product->purchase_price,
-                'purchase_formatted'  => '₹' . number_format((float)$product->purchase_price, 2),
-                'sales_price'         => (float)$product->sales_price,
-                'sales_formatted'     => '₹' . number_format((float)$product->sales_price, 2),
+                'purchase_price'      => round((float)$product->purchase_price),
+                'purchase_formatted'  => '₹' . number_format(round((float)$product->purchase_price), 0),
+                'sales_price'         => round((float)$product->sales_price),
+                'sales_formatted'     => '₹' . number_format(round((float)$product->sales_price), 0),
                 'stock'               => $curStock,
                 'min_stock_alert'     => $minAlert,
                 'track_stock'         => $isTracked ? 1 : 0,
                 'stock_status'        => $stockStatus,
                 'needs_restock'       => $needsRestock,
                 'sold_count'          => $soldQty,
-                'sold_amount'         => $soldAmt,
-                'sold_amount_formatted' => '₹' . number_format($soldAmt, 2),
+                'sold_amount'         => round($soldAmt),
+                'sold_amount_formatted' => '₹' . number_format(round($soldAmt), 0),
                 'status'              => $product->status ?? 'active',
                 'created_at'          => $product->created_at ?? ''
             ];
@@ -2921,8 +2921,8 @@ if ($action === 'product-list') {
             'total_active_products'        => $totalActiveProducts,
             'total_deactive_products'      => $totalDeactiveProducts,
             'total_sold_count'             => $totalSoldQty,
-            'total_sold_amount'            => $totalSoldAmount,
-            'total_sold_amount_formatted'  => '₹' . number_format($totalSoldAmount, 2),
+            'total_sold_amount'            => round($totalSoldAmount),
+            'total_sold_amount_formatted'  => '₹' . number_format(round($totalSoldAmount), 0),
             'restock_needed_count'         => $restockNeededCount,
             'out_of_stock_count'           => $outOfStockCount,
             'low_stock_count'              => $lowStockCount
@@ -3456,19 +3456,19 @@ if ($action === 'invoice-list') {
                 'invoice_date_formatted' => !empty($row->invoice_date) ? date('d-m-Y', strtotime($row->invoice_date)) : '',
                 'due_date'               => $row->due_date ?? null,
                 'due_date_formatted'     => !empty($row->due_date) ? date('d-m-Y', strtotime($row->due_date)) : '',
-                'taxable_amount'         => $totalTaxable,
-                'taxable_formatted'      => formatCurrency($totalTaxable),
-                'cgst_amount'            => $cgst,
-                'sgst_amount'            => $sgst,
-                'igst_amount'            => $igst,
-                'tax_amount'             => $taxAmount,
-                'tax_amount_formatted'   => formatCurrency($taxAmount),
-                'grand_total'            => $grandTotal,
-                'grand_total_formatted'  => formatCurrency($grandTotal),
-                'paid_amount'            => $paidAmt,
-                'paid_amount_formatted'  => formatCurrency($paidAmt),
-                'pending_amount'         => $pendingAmt,
-                'pending_amount_formatted' => formatCurrency($pendingAmt),
+                'taxable_amount'         => round($totalTaxable),
+                'taxable_formatted'      => formatCurrency(round($totalTaxable)),
+                'cgst_amount'            => round($cgst),
+                'sgst_amount'            => round($sgst),
+                'igst_amount'            => round($igst),
+                'tax_amount'             => round($taxAmount),
+                'tax_amount_formatted'   => formatCurrency(round($taxAmount)),
+                'grand_total'            => round($grandTotal),
+                'grand_total_formatted'  => formatCurrency(round($grandTotal)),
+                'paid_amount'            => round($paidAmt),
+                'paid_amount_formatted'  => formatCurrency(round($paidAmt)),
+                'pending_amount'         => round($pendingAmt),
+                'pending_amount_formatted' => formatCurrency(round($pendingAmt)),
                 'payment_status'              => $payStatus,
                 'last_payment_mode_label'     => $lastPmLabel,
                 'status'                      => $row->status ?? 'active',
@@ -3494,12 +3494,12 @@ if ($action === 'invoice-list') {
         'total_invoices'               => $statTotalCount,
         'paid_invoices'                => $statPaidCount,
         'unpaid_invoices'              => $statUnpaidCount,
-        'total_invoice_amount'         => $totInvoiceAmount,
-        'total_invoice_amount_formatted' => formatCurrency($totInvoiceAmount),
-        'paid_invoice_amount'          => $paidInvoiceAmount,
-        'paid_invoice_amount_formatted' => formatCurrency($paidInvoiceAmount),
-        'pending_invoice_amount'       => $pendingInvoiceAmount,
-        'pending_invoice_amount_formatted' => formatCurrency($pendingInvoiceAmount),
+        'total_invoice_amount'         => round($totInvoiceAmount),
+        'total_invoice_amount_formatted' => formatCurrency(round($totInvoiceAmount)),
+        'paid_invoice_amount'          => round($paidInvoiceAmount),
+        'paid_invoice_amount_formatted' => formatCurrency(round($paidInvoiceAmount)),
+        'pending_invoice_amount'       => round($pendingInvoiceAmount),
+        'pending_invoice_amount_formatted' => formatCurrency(round($pendingInvoiceAmount)),
         'invoices'                     => $list
     ]);
 }
@@ -3975,7 +3975,7 @@ if ($action === 'invoice-add') {
         }
     }
 
-    $grand_total = $totalTaxable + $totalTax;
+    $grand_total = round($totalTaxable + $totalTax);
     $paid_amount = ($payment_status === 'Paid') ? $grand_total : 0.00;
 
     $safePartyName = mysqli_real_escape_string($ai_conn, $party_name);
@@ -4463,7 +4463,7 @@ if ($action === 'invoice-update') {
         }
     }
 
-    $grand_total = $totalTaxable + $totalTax;
+    $grand_total = round($totalTaxable + $totalTax);
     $curPaidAmount = floatval($currInv->paid_amount ?? 0);
     $paid_amount = ($payment_status === 'Paid') ? $grand_total : $curPaidAmount;
 
@@ -4898,19 +4898,19 @@ if ($action === 'purchase-list') {
                 'purchase_date_formatted' => !empty($row->purchase_date) ? date('d-m-Y', strtotime($row->purchase_date)) : '',
                 'due_date'                => $row->due_date ?? null,
                 'due_date_formatted'      => !empty($row->due_date) ? date('d-m-Y', strtotime($row->due_date)) : '',
-                'taxable_amount'          => $totalTaxable,
-                'taxable_formatted'       => formatCurrency($totalTaxable),
-                'cgst_amount'             => $cgst,
-                'sgst_amount'             => $sgst,
-                'igst_amount'             => $igst,
-                'tax_amount'              => $taxAmount,
-                'tax_amount_formatted'    => formatCurrency($taxAmount),
-                'grand_total'             => $grandTotal,
-                'grand_total_formatted'   => formatCurrency($grandTotal),
-                'paid_amount'             => $paidAmt,
-                'paid_amount_formatted'   => formatCurrency($paidAmt),
-                'pending_amount'          => $pendingAmt,
-                'pending_amount_formatted' => formatCurrency($pendingAmt),
+                'taxable_amount'          => round($totalTaxable),
+                'taxable_formatted'       => formatCurrency(round($totalTaxable)),
+                'cgst_amount'             => round($cgst),
+                'sgst_amount'             => round($sgst),
+                'igst_amount'             => round($igst),
+                'tax_amount'              => round($taxAmount),
+                'tax_amount_formatted'    => formatCurrency(round($taxAmount)),
+                'grand_total'             => round($grandTotal),
+                'grand_total_formatted'   => formatCurrency(round($grandTotal)),
+                'paid_amount'             => round($paidAmt),
+                'paid_amount_formatted'   => formatCurrency(round($paidAmt)),
+                'pending_amount'          => round($pendingAmt),
+                'pending_amount_formatted' => formatCurrency(round($pendingAmt)),
                 'payment_status'              => $payStatus,
                 'last_payment_mode_label'     => $lastPmLabelP,
                 'status'                  => $row->status ?? 'active',
@@ -4936,12 +4936,12 @@ if ($action === 'purchase-list') {
         'total_purchases'                => $statTotalCount,
         'paid_purchases'                 => $statPaidCount,
         'unpaid_purchases'               => $statUnpaidCount,
-        'total_purchase_amount'          => $totPurchaseAmount,
-        'total_purchase_amount_formatted' => formatCurrency($totPurchaseAmount),
-        'paid_purchase_amount'           => $paidPurchaseAmount,
-        'paid_purchase_amount_formatted' => formatCurrency($paidPurchaseAmount),
-        'pending_purchase_amount'        => $pendingPurchaseAmount,
-        'pending_purchase_amount_formatted' => formatCurrency($pendingPurchaseAmount),
+        'total_purchase_amount'          => round($totPurchaseAmount),
+        'total_purchase_amount_formatted' => formatCurrency(round($totPurchaseAmount)),
+        'paid_purchase_amount'           => round($paidPurchaseAmount),
+        'paid_purchase_amount_formatted' => formatCurrency(round($paidPurchaseAmount)),
+        'pending_purchase_amount'        => round($pendingPurchaseAmount),
+        'pending_purchase_amount_formatted' => formatCurrency(round($pendingPurchaseAmount)),
         'purchases'                      => $list
     ]);
 }
@@ -5388,7 +5388,7 @@ if ($action === 'purchase-add') {
         }
     }
 
-    $grand_total = $totalTaxable + $totalTax;
+    $grand_total = round($totalTaxable + $totalTax);
     $paid_amount = ($payment_status === 'Paid') ? $grand_total : 0.00;
 
     $safePartyName = mysqli_real_escape_string($ai_conn, $party_name);
@@ -5837,7 +5837,7 @@ if ($action === 'purchase-update') {
         $totalTax = (float)$currPur->tax_amount;
     }
 
-    $grand_total = $totalTaxable + $totalTax;
+    $grand_total = round($totalTaxable + $totalTax);
     $curPaidAmount = floatval($currPur->paid_amount ?? 0);
     $paid_amount = ($payment_status === 'Paid') ? $grand_total : $curPaidAmount;
 
