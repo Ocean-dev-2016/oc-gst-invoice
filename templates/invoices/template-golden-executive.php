@@ -157,7 +157,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
 
         .invoice-card {
             max-width: 860px;
-            min-height: 1120px;
+            min-height: unset;
             margin: 0 auto;
             background: #ffffff;
             box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
