@@ -1,6 +1,7 @@
-<?php
+﻿<?php
 
 require_once __DIR__ . '/../root/config.php';
+require_once __DIR__ . '/../includes/quotation-status.php';
 
 function apiResponse($status, $message, $data = [])
 {
@@ -1475,15 +1476,18 @@ if ($action === 'quotation-list') {
     $input = getApiInput();
     $company = authenticateCompany($input);
     $cId = (int)$company['id'];
+    if (!ensureQuotationStatusSchema($ai_conn)) {
+        apiResponse(500, 'Failed to prepare quotation status schema: ' . mysqli_error($ai_conn));
+    }
 
-    // Auto-update expired Draft quotations for this authenticated company to Rejected (due_date < today)
+    // Auto-update expired Draft/Sent quotations to Rejected (due_date < today)
     $todayYmd = date('Y-m-d');
-    @mysqli_query($ai_conn, "UPDATE tbl_quotation SET quotation_status='Rejected' WHERE company_id={$cId} AND quotation_status='Draft' AND due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '{$todayYmd}' AND (converted_invoice_id IS NULL OR converted_invoice_id = 0)");
+    @mysqli_query($ai_conn, "UPDATE tbl_quotation SET quotation_status='Rejected' WHERE company_id={$cId} AND quotation_status IN ('Draft','Send') AND due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '{$todayYmd}' AND (converted_invoice_id IS NULL OR converted_invoice_id = 0)");
 
-    // Optional filter by quotation_status (Draft, Accepted, Rejected)
+    // Optional filter by quotation_status
     $filterQuotationStatus = trim($input['quotation_status'] ?? ($_GET['quotation_status'] ?? ''));
     $quoStatusCond = "";
-    if (in_array($filterQuotationStatus, ['Draft', 'Accepted', 'Rejected'], true)) {
+    if (in_array($filterQuotationStatus, getQuotationStatuses(), true)) {
         $quoStatusCond = " AND q.quotation_status = '{$filterQuotationStatus}'";
     }
 
@@ -1542,6 +1546,8 @@ if ($action === 'quotation-list') {
                         COALESCE(SUM(grand_total), 0) AS total_amount,
                         COUNT(CASE WHEN quotation_status = 'Accepted' THEN 1 END) AS accepted_count,
                         COALESCE(SUM(CASE WHEN quotation_status = 'Accepted' THEN grand_total ELSE 0 END), 0) AS accepted_amount,
+                        COUNT(CASE WHEN quotation_status = 'Send' THEN 1 END) AS sent_count,
+                        COALESCE(SUM(CASE WHEN quotation_status = 'Send' THEN grand_total ELSE 0 END), 0) AS sent_amount,
                         COUNT(CASE WHEN quotation_status = 'Rejected' THEN 1 END) AS rejected_count,
                         COALESCE(SUM(CASE WHEN quotation_status = 'Rejected' THEN grand_total ELSE 0 END), 0) AS rejected_amount
                    FROM tbl_quotation
@@ -1553,6 +1559,8 @@ if ($action === 'quotation-list') {
     $allTotalAmount = (float)($sumData->total_amount ?? 0);
     $acceptedCount = (int)($sumData->accepted_count ?? 0);
     $acceptedAmount = (float)($sumData->accepted_amount ?? 0);
+    $sentCount = (int)($sumData->sent_count ?? 0);
+    $sentAmount = (float)($sumData->sent_amount ?? 0);
     $rejectedCount = (int)($sumData->rejected_count ?? 0);
     $rejectedAmount = (float)($sumData->rejected_amount ?? 0);
 
@@ -1629,7 +1637,7 @@ if ($action === 'quotation-list') {
                 'id'                     => $qid,
                 'quotation_no'           => $row->quotation_no ?? '',
                 'company_id'             => (int)$row->company_id,
-                'template_id'            => (int)$row->template_id,
+                'template_id'            => (int)($company['invoice_template_id'] ?? 1),
                 'company_name'           => $row->company_name ?? ($company['company_name'] ?? ''),
                 'party_id'               => (int)$row->party_id,
                 'party_name'             => $row->party_name ?? '',
@@ -1686,6 +1694,9 @@ if ($action === 'quotation-list') {
             'accepted_count'            => $acceptedCount,
             'accepted_amount'           => round($acceptedAmount),
             'accepted_amount_formatted' => '₹' . number_format(round($acceptedAmount), 0),
+            'sent_count'                => $sentCount,
+            'sent_amount'               => round($sentAmount),
+            'sent_amount_formatted'     => '₹' . number_format(round($sentAmount), 0),
             'rejected_count'            => $rejectedCount,
             'rejected_amount'           => round($rejectedAmount),
             'rejected_amount_formatted' => '₹' . number_format(round($rejectedAmount), 0)
@@ -1720,6 +1731,9 @@ if ($action === 'quotation-add') {
     $company = authenticateCompany($input);
     $company_id = (int)$company['id'];
     $company_has_gst = (int)($company['gst_applicable'] ?? 0) === 1;
+    if (!ensureQuotationStatusSchema($ai_conn)) {
+        apiResponse(500, 'Failed to prepare quotation status schema: ' . mysqli_error($ai_conn));
+    }
 
     $party_id = (int)($input['party_id'] ?? 0);
     $party_name = trim($input['party_name'] ?? '');
@@ -1782,6 +1796,13 @@ if ($action === 'quotation-add') {
     $due_date = !empty($input['due_date']) ? date('Y-m-d', strtotime($input['due_date'])) : $quotation_date;
     if ($due_date < $quotation_date) {
         apiResponse(400, "Due Date cannot be earlier than Quotation Date ({$quotation_date}).");
+    }
+    $quotation_status = trim($input['quotation_status'] ?? 'Draft');
+    if (!in_array($quotation_status, getQuotationStatuses(), true)) {
+        apiResponse(400, "Invalid quotation status '{$quotation_status}'. Allowed values are: 'Draft', 'Send', 'Accepted', 'Rejected'.");
+    }
+    if ($due_date < date('Y-m-d') && in_array($quotation_status, ['Send', 'Accepted'], true)) {
+        apiResponse(400, "Expired quotations cannot be marked '{$quotation_status}'. Only 'Rejected' is allowed.");
     }
 
     if (!$company_has_gst) {
@@ -1907,12 +1928,9 @@ if ($action === 'quotation-add') {
     $cleanQuoNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $quotation_no);
     $computed_pdf_url = 'uploads/quotation/quotation_' . $cleanQuoNo . '.pdf';
 
-    // Validate template_id: accept from body or query params, check premium status
-    $rawAddTpl = $input['template_id'] ?? ($_GET['template_id'] ?? null);
-    $reqTemplateId = validateApiTemplateId($rawAddTpl, $company['invoice_template_id'] ?? 1);
+    $reqTemplateId = (int)($company['invoice_template_id'] ?? 1);
     $insertQuotationQry = "INSERT INTO tbl_quotation SET
         company_id = {$company_id},
-        template_id = {$reqTemplateId},
         party_id = {$party_id},
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
@@ -1930,6 +1948,7 @@ if ($action === 'quotation-add') {
         igst_amount = {$igst_amount},
         tax_amount = {$totalTax},
         grand_total = {$grand_total},
+        quotation_status = '{$quotation_status}',
         pdf_url = '{$computed_pdf_url}',
         status = '{$status}'";
 
@@ -1982,6 +2001,7 @@ if ($action === 'quotation-add') {
     apiResponse(200, 'Quotation created successfully.', [
         'id'                     => $newQuotationId,
         'quotation_no'           => $quotation_no,
+        'quotation_status'       => $quotation_status,
         'template_id'            => $reqTemplateId,
         'company_id'             => $company_id,
         'party_id'               => $party_id,
@@ -2090,7 +2110,7 @@ if ($action === 'quotation-edit') {
     apiResponse(200, 'Quotation details retrieved successfully.', [
         'id'                       => (int)$q->id,
         'quotation_no'             => $q->quotation_no ?? '',
-        'template_id'              => (int)($q->template_id ?? 1),
+        'template_id'              => (int)($company['invoice_template_id'] ?? 1),
         'company_id'               => (int)$q->company_id,
         'company_name'             => $q->company_name ?? ($company['company_name'] ?? ''),
         'party_id'                 => (int)$q->party_id,
@@ -2139,6 +2159,9 @@ if ($action === 'quotation-update') {
     $company = authenticateCompany($input);
     $company_id = (int)$company['id'];
     $company_has_gst = ((int)($company['gst_applicable'] ?? 0) === 1);
+    if (!ensureQuotationStatusSchema($ai_conn)) {
+        apiResponse(500, 'Failed to prepare quotation status schema: ' . mysqli_error($ai_conn));
+    }
 
     $quotationId = (int)($input['id'] ?? ($input['quotation_id'] ?? ($_GET['id'] ?? ($_GET['quotation_id'] ?? 0))));
     if ($quotationId <= 0) {
@@ -2208,6 +2231,13 @@ if ($action === 'quotation-update') {
     $due_date = !empty($input['due_date']) ? date('Y-m-d', strtotime($input['due_date'])) : (!empty($currQ->due_date) ? $currQ->due_date : $quotation_date);
     if ($due_date < $quotation_date) {
         apiResponse(400, "Due Date cannot be earlier than Quotation Date ({$quotation_date}).");
+    }
+    $quotation_status = trim($input['quotation_status'] ?? ($currQ->quotation_status ?? 'Draft'));
+    if (!in_array($quotation_status, getQuotationStatuses(), true)) {
+        apiResponse(400, "Invalid quotation status '{$quotation_status}'. Allowed values are: 'Draft', 'Send', 'Accepted', 'Rejected'.");
+    }
+    if (isset($input['quotation_status']) && $due_date < date('Y-m-d') && in_array($quotation_status, ['Send', 'Accepted'], true)) {
+        apiResponse(400, "Expired quotations cannot be marked '{$quotation_status}'. Only 'Rejected' is allowed.");
     }
 
     if (!$company_has_gst) {
@@ -2339,11 +2369,8 @@ if ($action === 'quotation-update') {
     $formattedQuoId = str_pad($quotationId, 2, '0', STR_PAD_LEFT);
     $computed_pdf_url = 'uploads/quotation/quotation_' . $formattedQuoId . '_' . $cleanQuoNo . '.pdf';
 
-    // Validate template_id: accept from body or query params, check premium status
-    $rawTplInput = $input['template_id'] ?? ($_GET['template_id'] ?? null);
-    $finalTemplateId = validateApiTemplateId($rawTplInput, $currQ->template_id ?? 1);
+    $finalTemplateId = (int)($company['invoice_template_id'] ?? 1);
     $updateQuotationQry = "UPDATE tbl_quotation SET
-        template_id = {$finalTemplateId},
         party_id = {$party_id},
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
@@ -2361,6 +2388,7 @@ if ($action === 'quotation-update') {
         igst_amount = {$igst_amount},
         tax_amount = {$totalTax},
         grand_total = {$grand_total},
+        quotation_status = '{$quotation_status}',
         pdf_url = '{$computed_pdf_url}',
         status = '{$status}'
         WHERE id = {$quotationId} AND company_id = {$company_id}";
@@ -2414,6 +2442,7 @@ if ($action === 'quotation-update') {
     apiResponse(200, 'Quotation updated successfully.', [
         'id'                       => $quotationId,
         'quotation_no'             => $quotation_no,
+        'quotation_status'         => $quotation_status,
         'template_id'              => $finalTemplateId,
         'company_id'               => $company_id,
         'party_id'                 => $party_id,
@@ -2486,10 +2515,6 @@ if ($action === 'quotation-delete') {
     ]);
 }
 
-/* =========================================================================
-   CHANGE QUOTATION STATUS API (action=quotation-status-update / action=quotation-change-status)
-   ========================================================================= */
-
 if ($action === 'quotation-change-status') {
     if ($method !== 'POST' && $method !== 'PUT' && $method !== 'PATCH') {
         apiResponse(405, 'Method not allowed. Use POST, PUT, or PATCH.');
@@ -2498,6 +2523,9 @@ if ($action === 'quotation-change-status') {
     $input = getApiInput();
     $company = authenticateCompany($input);
     $company_id = (int)$company['id'];
+    if (!ensureQuotationStatusSchema($ai_conn)) {
+        apiResponse(500, 'Failed to prepare quotation status schema: ' . mysqli_error($ai_conn));
+    }
 
     $quotationId = (int)($input['id'] ?? ($input['quotation_id'] ?? ($_GET['id'] ?? ($_GET['quotation_id'] ?? 0))));
     if ($quotationId <= 0) {
@@ -2505,14 +2533,8 @@ if ($action === 'quotation-change-status') {
     }
 
     $newStatus = trim($input['quotation_status'] ?? ($input['status'] ?? ($_GET['quotation_status'] ?? ($_GET['status'] ?? ''))));
-    if (!in_array($newStatus, ['Draft', 'Accepted', 'Rejected'], true)) {
-        apiResponse(400, "Invalid quotation status '{$newStatus}'. Allowed values are: 'Draft', 'Accepted', 'Rejected'.");
-    }
-
-    // Auto-heal column if not exists in tbl_quotation
-    $chkCol = mysqli_query($ai_conn, "SHOW COLUMNS FROM `tbl_quotation` LIKE 'quotation_status'");
-    if (!$chkCol || mysqli_num_rows($chkCol) === 0) {
-        @mysqli_query($ai_conn, "ALTER TABLE `tbl_quotation` ADD COLUMN `quotation_status` ENUM('Draft','Accepted','Rejected') NOT NULL DEFAULT 'Draft' AFTER `converted_invoice_id`");
+    if (!in_array($newStatus, getQuotationStatuses(), true)) {
+        apiResponse(400, "Invalid quotation status '{$newStatus}'. Allowed values are: 'Draft', 'Send', 'Accepted', 'Rejected'.");
     }
 
     $existing = $ai_db->aiGetQueryObj("SELECT id, quotation_no, due_date, quotation_status, converted_invoice_id FROM tbl_quotation WHERE id = {$quotationId} AND company_id = {$company_id} LIMIT 1");
@@ -2527,18 +2549,18 @@ if ($action === 'quotation-change-status') {
         apiResponse(400, "Cannot change status because Quotation '{$qRow->quotation_no}' has already been converted to an invoice.");
     }
 
-    // Due date validation: When changing status from Draft to Accepted, Due Date must NOT have passed
+    // Send and Accepted require an unexpired due date; Accepted also requires a due date.
     $today = date('Y-m-d');
     $qDueDate = !empty($qRow->due_date) ? date('Y-m-d', strtotime($qRow->due_date)) : '';
     $isExpired = (!empty($qDueDate) && $qDueDate < $today);
 
-    if ($newStatus === 'Accepted') {
-        if (empty($qDueDate)) {
-            apiResponse(400, "Quotation cannot be accepted because Due Date is not set.");
-        }
+    if ($newStatus === 'Accepted' && empty($qDueDate)) {
+        apiResponse(400, "Quotation cannot be accepted because Due Date is not set.");
+    }
+    if (in_array($newStatus, ['Send', 'Accepted'], true)) {
         if ($isExpired) {
             $formattedDue = date('d-m-Y', strtotime($qDueDate));
-            apiResponse(400, "Quotation cannot be accepted because its Due Date ({$formattedDue}) has already expired. Only 'Rejected' is allowed.");
+            apiResponse(400, "Quotation cannot be marked '{$newStatus}' because its Due Date ({$formattedDue}) has already expired. Only 'Rejected' is allowed.");
         }
     }
 
@@ -3458,7 +3480,7 @@ if ($action === 'invoice-list') {
                 'id'                     => $iid,
                 'quotation_id'           => (int)($row->quotation_id ?? 0),
                 'invoice_no'             => $row->invoice_no ?? '',
-                'template_id'            => (int)($row->template_id ?? 1),
+                'template_id'            => (int)($company['invoice_template_id'] ?? 1),
                 'company_id'             => (int)$row->company_id,
                 'company_name'           => $row->company_name ?? ($company['company_name'] ?? ''),
                 'party_id'               => (int)$row->party_id,
@@ -4006,11 +4028,9 @@ if ($action === 'invoice-add') {
     $cleanInvNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $invoice_no);
     $computed_pdf_url = 'uploads/invoices/invoice_' . $cleanInvNo . '.pdf';
 
-    $rawAddTpl = $input['template_id'] ?? ($_GET['template_id'] ?? null);
-    $reqTemplateId = validateApiTemplateId($rawAddTpl, $company['invoice_template_id'] ?? 1);
+    $reqTemplateId = (int)($company['invoice_template_id'] ?? 1);
 
     $insertInvoiceQry = "INSERT INTO tbl_invoice SET
-        template_id = {$reqTemplateId},
         company_id = {$company_id},
         party_id = {$party_id},
         party_name = '{$safePartyName}',
@@ -4262,7 +4282,7 @@ if ($action === 'invoice-edit') {
         'status'                 => $q->status ?? 'active',
         'is_overdue'             => ($payStatus !== 'Paid' && !empty($q->due_date) && $q->due_date < $todayDate),
         'is_locked'              => $isPaid,
-        'template_id'            => (int)($q->template_id ?? 1),
+        'template_id'            => (int)($company['invoice_template_id'] ?? 1),
         'pdf_url'                => $fullPdfUrl,
         'items'                  => $itemsList,
         'payments'               => $paymentsList
@@ -4504,9 +4524,8 @@ if ($action === 'invoice-update') {
     $cleanInvNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $invoice_no);
     $computed_pdf_url = 'uploads/invoices/invoice_' . $invoiceId . '_' . $cleanInvNo . '.pdf';
 
-    $rawTplInput = $input['template_id'] ?? ($_GET['template_id'] ?? null);
-    $finalTemplateId = validateApiTemplateId($rawTplInput, $currInv->template_id ?? 1);
-    $tplUpdateSql = "template_id = " . $finalTemplateId . ", ";
+    $finalTemplateId = (int)($company['invoice_template_id'] ?? 1);
+    $tplUpdateSql = "";
 
     $updateInvoiceQry = "UPDATE tbl_invoice SET
         {$tplUpdateSql}
@@ -4913,7 +4932,7 @@ if ($action === 'purchase-list') {
             $itemData = [
                 'id'                      => $pid,
                 'purchase_no'             => $row->purchase_no ?? '',
-                'template_id'             => (int)($row->template_id ?? 1),
+                'template_id'             => (int)($company['invoice_template_id'] ?? 1),
                 'company_id'              => (int)$row->company_id,
                 'company_name'            => $row->company_name ?? ($company['company_name'] ?? ''),
                 'party_id'                => (int)$row->party_id,
@@ -5429,14 +5448,12 @@ if ($action === 'purchase-add') {
     $safePurNo = mysqli_real_escape_string($ai_conn, $purchase_no);
     $safeAddress = mysqli_real_escape_string($ai_conn, $address);
     $dueSql = $due_date ? "'{$due_date}'" : "NULL";
-    $rawAddTpl = $input['template_id'] ?? ($_GET['template_id'] ?? null);
-    $reqTemplateId = validateApiTemplateId($rawAddTpl, $company['invoice_template_id'] ?? 1);
+    $reqTemplateId = (int)($company['invoice_template_id'] ?? 1);
 
     $cleanPurNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $purchase_no);
     $computed_pdf_url = 'uploads/purchase/purchase_' . $cleanPurNo . '.pdf';
 
     $insertPurchaseQry = "INSERT INTO tbl_purchase SET
-        template_id = {$reqTemplateId},
         company_id = {$company_id},
         party_id = {$party_id},
         party_name = '{$safePartyName}',
@@ -5887,9 +5904,8 @@ if ($action === 'purchase-update') {
     $cleanPurNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $purchase_no);
     $computed_pdf_url = 'uploads/purchase/purchase_' . $cleanPurNo . '.pdf';
 
-    $rawTplInput = $input['template_id'] ?? ($_GET['template_id'] ?? null);
-    $finalTemplateId = validateApiTemplateId($rawTplInput, $currPur->template_id ?? 1);
-    $tplUpdateSql = "template_id = " . $finalTemplateId . ", ";
+    $finalTemplateId = (int)($company['invoice_template_id'] ?? 1);
+    $tplUpdateSql = "";
 
     $updatePurchaseQry = "UPDATE tbl_purchase SET
         {$tplUpdateSql}
@@ -6052,10 +6068,6 @@ if ($action === 'purchase-delete') {
         'deleted'      => true
     ]);
 }
-
-/* =========================================================================
-   LEDGER API (action=ledger)
-   ========================================================================= */
 
 if ($action === 'ledger') {
     if ($method !== 'GET' && $method !== 'POST') {
@@ -6340,10 +6352,6 @@ if ($action === 'ledger') {
     ]);
 }
 
-/* =========================================================================
-   DASHBOARD API (action=dashboard)
-   ========================================================================= */
-
 if ($action === 'dashboard') {
     if ($method !== 'GET' && $method !== 'POST') {
         apiResponse(405, 'Method not allowed. Use GET or POST.');
@@ -6576,10 +6584,6 @@ if ($action === 'dashboard') {
     ]);
 }
 
-/* =========================================================================
-   PAYMENT MODES API (action=payment-modes / action=payment-mode-list)
-   ========================================================================= */
-
 if ($action === 'payment-mode-list') {
     if ($method !== 'GET' && $method !== 'POST') {
         apiResponse(405, 'Method not allowed. Use GET or POST.');
@@ -6607,16 +6611,6 @@ if ($action === 'payment-mode-list') {
     ]);
 }
 
-
-/* =========================================================================
-   INVOICE TEMPLATES APIS FOR MOBILE APP
-   ========================================================================= */
-
-/**
- * 1. Get List of all active Invoice Templates + Current Company Selected Template
- * Action: invoice-template-list
- * Method: GET / POST
- */
 if ($action === 'invoice-template-list') {
     if ($method !== 'GET' && $method !== 'POST') {
         apiResponse(405, 'Method not allowed. Use GET or POST.');
@@ -6688,93 +6682,15 @@ if ($action === 'invoice-template-set-default') {
         apiResponse(400, "Template '{$tplFind[0]->template_name}' is a Premium template and cannot be used.");
     }
 
-    // Check if specific document ID is provided to update that document's template
-    $invoiceId = (int)($input['invoice_id'] ?? ($_GET['invoice_id'] ?? 0));
-    $quotationId = (int)($input['quotation_id'] ?? ($_GET['quotation_id'] ?? 0));
-    $purchaseId = (int)($input['purchase_id'] ?? ($_GET['purchase_id'] ?? 0));
+    // Update template_id directly in the logged-in company's record
+    $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id={$templateId} WHERE id={$cId}");
 
-    require_once __DIR__ . '/../includes/server-pdf-generator.php';
-
-    // 1. If invoice_id is passed
-    if ($invoiceId > 0) {
-        $invRow = $ai_db->aiGetQueryObj("SELECT id, invoice_no FROM tbl_invoice WHERE id={$invoiceId} AND company_id={$cId} LIMIT 1");
-        if (empty($invRow)) {
-            apiResponse(404, "Invoice with ID {$invoiceId} not found for your company.");
-        }
-
-        $upd = $ai_db->aiQuery("UPDATE tbl_invoice SET template_id={$templateId} WHERE id={$invoiceId} AND company_id={$cId}");
-        if ($upd) {
-            $pdfRel = generateDocumentPdfServerSide($invoiceId, 'invoice');
-            $fullPdfUrl = $pdfRel ? (rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/')) : '';
-
-            apiResponse(200, 'Invoice template updated successfully.', [
-                'company_id'    => $cId,
-                'document_type' => 'invoice',
-                'invoice_id'    => $invoiceId,
-                'invoice_no'    => $invRow[0]->invoice_no ?? '',
-                'template_id'   => $templateId,
-                'template_name' => (string)$tplFind[0]->template_name,
-                'pdf_url'       => $fullPdfUrl
-            ]);
-        } else {
-            apiResponse(500, 'Failed to update invoice template.');
-        }
-    }
-
-    // 2. If quotation_id is passed
-    if ($quotationId > 0) {
-        $quoRow = $ai_db->aiGetQueryObj("SELECT id, quotation_no FROM tbl_quotation WHERE id={$quotationId} AND company_id={$cId} LIMIT 1");
-        if (empty($quoRow)) {
-            apiResponse(404, "Quotation with ID {$quotationId} not found for your company.");
-        }
-
-        $upd = $ai_db->aiQuery("UPDATE tbl_quotation SET template_id={$templateId} WHERE id={$quotationId} AND company_id={$cId}");
-        if ($upd) {
-            $pdfRel = generateDocumentPdfServerSide($quotationId, 'quotation');
-            $fullPdfUrl = $pdfRel ? (rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/')) : '';
-
-            apiResponse(200, 'Quotation template updated successfully.', [
-                'company_id'    => $cId,
-                'document_type' => 'quotation',
-                'quotation_id'  => $quotationId,
-                'quotation_no'  => $quoRow[0]->quotation_no ?? '',
-                'template_id'   => $templateId,
-                'template_name' => (string)$tplFind[0]->template_name,
-                'pdf_url'       => $fullPdfUrl
-            ]);
-        } else {
-            apiResponse(500, 'Failed to update quotation template.');
-        }
-    }
-
-    // 3. If purchase_id is passed
-    if ($purchaseId > 0) {
-        $purRow = $ai_db->aiGetQueryObj("SELECT id, purchase_no FROM tbl_purchase WHERE id={$purchaseId} AND company_id={$cId} LIMIT 1");
-        if (empty($purRow)) {
-            apiResponse(404, "Purchase bill with ID {$purchaseId} not found for your company.");
-        }
-
-        $upd = $ai_db->aiQuery("UPDATE tbl_purchase SET template_id={$templateId} WHERE id={$purchaseId} AND company_id={$cId}");
-        if ($upd) {
-            $pdfRel = generateDocumentPdfServerSide($purchaseId, 'purchase');
-            $fullPdfUrl = $pdfRel ? (rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/')) : '';
-
-            apiResponse(200, 'Purchase template updated successfully.', [
-                'company_id'    => $cId,
-                'document_type' => 'purchase',
-                'purchase_id'   => $purchaseId,
-                'purchase_no'   => $purRow[0]->purchase_no ?? '',
-                'template_id'   => $templateId,
-                'template_name' => (string)$tplFind[0]->template_name,
-                'pdf_url'       => $fullPdfUrl
-            ]);
-        } else {
-            apiResponse(500, 'Failed to update purchase template.');
-        }
-    }
-
-    // If none of invoice_id, quotation_id, or purchase_id was provided
-    apiResponse(400, 'Please provide invoice_id, quotation_id, or purchase_id along with template_id to update.');
+    apiResponse(200, 'Invoice template updated successfully for your company.', [
+        'company_id'    => $cId,
+        'company_name'  => (string)($company['company_name'] ?? ''),
+        'template_id'   => $templateId,
+        'template_name' => (string)$tplFind[0]->template_name
+    ]);
 }
 
 apiResponse(404, 'Invalid API action.');

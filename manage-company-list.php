@@ -7,10 +7,11 @@ $table = "tbl_company";
 
 ai_handle_status_toggle($table, $pageUrl, 'active', 'deactive');
 
-$qry = "SELECT c.*, s.state_name, s.state_code, ct.city_name 
+$qry = "SELECT c.*, s.state_name, s.state_code, ct.city_name, t.template_name 
         FROM tbl_company c 
         LEFT JOIN tbl_state s ON c.state_id = s.id 
         LEFT JOIN tbl_city ct ON c.city_id = ct.id 
+        LEFT JOIN tbl_invoice_templates t ON c.invoice_template_id = t.id 
         ORDER BY c.id DESC";
 $team = $ai_db->aiGetQueryObj($qry);
 ?>
@@ -43,6 +44,7 @@ $team = $ai_db->aiGetQueryObj($qry);
                                             <th>Owner / Contact</th>
                                             <th>State & City</th>
                                             <th>Username</th>
+                                            <th>Template</th>
                                             <th>Status</th>
                                             <th style="width:100px;">Action</th>
                                         </tr>
@@ -101,6 +103,13 @@ $team = $ai_db->aiGetQueryObj($qry);
                                                         <?php } else { ?>
                                                             <span class="text-muted">-</span>
                                                         <?php } ?>
+                                                    </td>
+
+                                                    <!-- Template -->
+                                                    <td>
+                                                        <span class="badge bg-label-primary">
+                                                            <i class="ti ti-template me-1"></i><?= htmlspecialchars($cat->template_name ?? 'Classic Professional') ?>
+                                                        </span>
                                                     </td>
 
                                                     <!-- Status -->

@@ -24,6 +24,33 @@ if (isset($_GET['msg']) && $_GET['msg'] == '2') {
     $success_msg = 'Profile updated successfully!';
 }
 
+// Fetch active invoice templates
+$templates = $ai_db->aiGetQueryObj("SELECT id, template_name, preview_image, is_premium FROM tbl_invoice_templates WHERE status='active' ORDER BY id ASC");
+
+// Handle Admin updating Company Template from Profile page
+if (!$isCompany && isset($_POST['btn_save_company_template'])) {
+    $sel_company_id = intval($_POST['company_id'] ?? 0);
+    $sel_template_id = intval($_POST['invoice_template_id'] ?? 1);
+    if ($sel_template_id <= 0) $sel_template_id = 1;
+
+    if ($sel_company_id <= 0) {
+        $err_msg = "Please select a Company!";
+    } else {
+        $upd = $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id='$sel_template_id' WHERE id='$sel_company_id'");
+        if ($upd) {
+            $success_msg = "Company invoice & quotation template updated successfully!";
+        } else {
+            $err_msg = "Failed to update company template.";
+        }
+    }
+}
+
+// Fetch active companies (for Admin template selection - fetched AFTER update so updated template_id is used)
+$allCompanies = [];
+if (!$isCompany) {
+    $allCompanies = $ai_db->aiGetQueryObj("SELECT id, company_name, gst_no, invoice_template_id FROM tbl_company WHERE status='active' ORDER BY company_name ASC");
+}
+
 // Fetch active states for dropdown (for company)
 $states = [];
 if ($isCompany) {
@@ -31,7 +58,7 @@ if ($isCompany) {
 }
 
 // ===================== UPDATE PROFILE =====================
-if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
+if (isset($_POST['btn_submit'])) {
     if ($isCompany) {
         // Handle Company Profile Update
         $company_name = addslashes(trim($_POST['company_name'] ?? ''));
@@ -45,6 +72,8 @@ if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
         $mobile_no = addslashes(trim($_POST['mobile_no'] ?? ''));
         $email = addslashes(trim($_POST['email'] ?? ''));
         $username = addslashes(trim($_POST['username'] ?? ''));
+        $invoice_template_id = intval($_POST['invoice_template_id'] ?? 1);
+        if ($invoice_template_id <= 0) $invoice_template_id = 1;
         $password = $_POST['password'] ?? '';
         $confirm_password = $_POST['confirm_password'] ?? '';
 
@@ -125,7 +154,8 @@ if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
                     owner_name='" . $owner_name . "',
                     mobile_no='" . $mobile_no . "',
                     email='" . $email . "',
-                    username='" . $username . "'
+                    username='" . $username . "',
+                    invoice_template_id='" . $invoice_template_id . "'
                     $pass_sql
                     $logo_sql
                     $sign_sql
@@ -145,6 +175,8 @@ if (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         // Handle Admin Profile Update (Admin has NO GST fields)
         $username = addslashes(trim($_POST['username'] ?? ''));
+        $invoice_template_id = intval($_POST['invoice_template_id'] ?? 1);
+        if ($invoice_template_id <= 0) $invoice_template_id = 1;
         $email = addslashes(trim($_POST['email'] ?? ''));
         $old_password = $_POST['old_password'] ?? '';
         $new_password = $_POST['new_password'] ?? '';
@@ -220,6 +252,122 @@ if ($isCompany && $profileData) {
 }
 ?>
 
+<style>
+    /* Template Radio Thumbnail Cards */
+    .template-thumb-choice {
+        position: relative;
+        cursor: pointer;
+        display: inline-block;
+        margin: 0;
+    }
+
+    .template-thumb-choice input[type="radio"] {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 3;
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #7367f0;
+    }
+
+    .template-thumb-box {
+        width: 130px;
+        height: 165px;
+        background: #ffffff;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 5px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+        transition: all 0.2s ease-in-out;
+    }
+
+    .template-thumb-box img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 4px;
+        transition: transform 0.2s ease-in-out;
+    }
+
+    .template-thumb-choice:hover .template-thumb-box {
+        border-color: #7367f0;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 14px rgba(115, 103, 240, 0.2);
+    }
+
+    .template-thumb-choice:hover .template-thumb-box img {
+        transform: scale(1.03);
+    }
+
+    .template-thumb-choice input[type="radio"]:checked+.template-thumb-box {
+        border-color: #7367f0;
+        box-shadow: 0 0 0 2px #7367f0, 0 6px 14px rgba(115, 103, 240, 0.25);
+    }
+
+    .template-thumb-badge-check {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        background: #7367f0;
+        color: #fff;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        z-index: 2;
+    }
+
+    .template-thumb-choice input[type="radio"]:checked~.template-thumb-badge-check {
+        display: flex;
+    }
+
+    /* PRO Badge for Premium Templates */
+    .template-pro-badge {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #ffffff;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        box-shadow: 0 2px 6px rgba(217, 119, 6, 0.4);
+        z-index: 4;
+        pointer-events: none;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+    }
+
+    .template-thumb-choice.is-disabled-pro {
+        cursor: not-allowed;
+        opacity: 0.82;
+    }
+
+    .template-thumb-choice.is-disabled-pro .template-thumb-box {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+        cursor: not-allowed;
+    }
+
+    .template-thumb-choice.is-disabled-pro:hover .template-thumb-box {
+        border-color: #f59e0b;
+        transform: none;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
+    }
+</style>
 <body>
     <div class="layout-wrapper layout-content-navbar">
         <div class="layout-container">
@@ -412,6 +560,61 @@ if ($isCompany && $profileData) {
                                                     </div>
                                                 </div>
                                             </div>
+
+                                        </div>
+
+                                        <!-- Invoice / Quotation Template Selection (SVG Thumbnails with Radio buttons) -->
+                                        <div class="row g-3 mt-3">
+                                            <div class="col-12">
+                                                <label class="form-label fw-bold text-uppercase small text-dark d-block mb-2">
+                                                    <i class="ti ti-layout-grid me-1 text-primary"></i> Invoice &amp; Quotation Template (PDF Layout) <span class="text-danger">*</span>
+                                                </label>
+                                                <?php
+                                                $curr_comp_tpl = intval($_POST['invoice_template_id'] ?? $profileData->invoice_template_id ?? 1);
+                                                ?>
+                                                <div class="d-flex flex-wrap gap-3 align-items-center p-3 border rounded bg-light">
+                                                    <?php if (!empty($templates)) {
+                                                        foreach ($templates as $tpl) {
+                                                            $isPrem = (!empty($tpl->is_premium) && (int)$tpl->is_premium === 1);
+                                                            $isRadioChecked = ($curr_comp_tpl == $tpl->id && !$isPrem);
+                                                            $radioId = 'comp_tpl_opt_' . $tpl->id;
+                                                            $imgSrc = !empty($tpl->preview_image) ? SITE_URL . $tpl->preview_image : SITE_URL . 'assets/img/templates/template-classic.svg';
+                                                    ?>
+                                                            <label class="template-thumb-choice <?= $isPrem ? 'is-disabled-pro' : '' ?>" for="<?= $isPrem ? '' : $radioId ?>" title="<?= htmlspecialchars($tpl->template_name) ?><?= $isPrem ? ' (PRO Template)' : '' ?>">
+                                                                <?php if ($isPrem): ?>
+                                                                    <div class="template-pro-badge">
+                                                                        <i class="ti ti-crown"></i> PRO
+                                                                    </div>
+                                                                <?php endif; ?>
+                                                                <input type="radio" name="invoice_template_id" id="<?= $radioId ?>" value="<?= $tpl->id ?>" <?= $isRadioChecked ? 'checked' : '' ?> <?= $isPrem ? 'disabled' : 'required' ?> <?= $isPrem ? 'style="pointer-events:none; cursor:not-allowed;"' : '' ?>>
+                                                                <div class="template-thumb-box">
+                                                                    <img src="<?= $imgSrc ?>" alt="<?= htmlspecialchars($tpl->template_name) ?>">
+                                                                </div>
+                                                                <?php if (!$isPrem): ?>
+                                                                    <div class="template-thumb-badge-check">
+                                                                        <i class="ti ti-check"></i>
+                                                                    </div>
+                                                                <?php endif; ?>
+                                                                <div class="text-center mt-1 small fw-semibold text-truncate" style="max-width: 130px;" title="<?= htmlspecialchars($tpl->template_name) ?>">
+                                                                    <?= htmlspecialchars($tpl->template_name) ?>
+                                                                </div>
+                                                            </label>
+                                                        <?php }
+                                                    } else { ?>
+                                                        <label class="template-thumb-choice" for="comp_tpl_opt_1">
+                                                            <input type="radio" name="invoice_template_id" id="comp_tpl_opt_1" value="1" checked required>
+                                                            <div class="template-thumb-box">
+                                                                <img src="<?= SITE_URL ?>assets/img/templates/template-classic.svg" alt="Classic Template">
+                                                            </div>
+                                                            <div class="template-thumb-badge-check">
+                                                                <i class="ti ti-check"></i>
+                                                            </div>
+                                                            <div class="text-center mt-1 small fw-semibold">Classic Professional</div>
+                                                        </label>
+                                                    <?php } ?>
+                                                </div>
+                                                <small class="text-muted d-block mt-2">All PDF invoices, quotations, and bills generated by your company will automatically follow the selected template layout.</small>
+                                            </div>
                                         </div>
 
                                         <div class="pt-4">
@@ -509,6 +712,104 @@ if ($isCompany && $profileData) {
                                             <a href="manage-profile-list.php" class="btn btn-label-secondary">Cancel</a>
                                         </div>
                                     </form>
+
+                                    <!-- ==================== ADMIN: COMPANY TEMPLATE SELECTION CARD ==================== -->
+                                    <div class="card mt-4 border shadow-sm">
+                                        <div class="card-header bg-light py-3 border-bottom d-flex align-items-center justify-content-between">
+                                            <h6 class="mb-0 fw-bold text-dark">
+                                                <i class="ti ti-template me-2 text-primary"></i> Company-wise Invoice &amp; Quotation Template Setting
+                                            </h6>
+                                            <span class="badge bg-label-primary font-monospace">Company Template Setting</span>
+                                        </div>
+                                        <div class="card-body pt-3">
+                                            <p class="text-muted small mb-3">
+                                                Select a company and choose which invoice &amp; quotation template will be used when generating PDFs for that company.
+                                            </p>
+
+                                            <form method="post" action="manage-profile-form.php" id="adminCompanyTemplateForm">
+                                                <!-- 1. Company Selection Dropdown -->
+                                                <div class="row g-3 mb-3">
+                                                    <div class="col-md-6">
+                                                        <label class="form-label fw-bold" for="admin_sel_company_id">
+                                                            <i class="ti ti-building me-1 text-primary"></i> Select Company <span class="text-danger">*</span>
+                                                        </label>
+                                                        <select name="company_id" id="admin_sel_company_id" class="form-select select2" required>
+                                                            <option value="">-- Choose Company --</option>
+                                                            <?php
+                                                            $last_saved_company_id = intval($_POST['company_id'] ?? 0);
+                                                            if (!empty($allCompanies)) {
+                                                                foreach ($allCompanies as $c) {
+                                                                    $gstText = !empty($c->gst_no) ? ' (' . $c->gst_no . ')' : '';
+                                                                    $isCompSelected = ($last_saved_company_id > 0 && $last_saved_company_id == $c->id) ? 'selected' : '';
+                                                            ?>
+                                                                    <option value="<?= $c->id ?>" data-template-id="<?= (int)($c->invoice_template_id ?? 1) ?>" <?= $isCompSelected ?>>
+                                                                        <?= htmlspecialchars($c->company_name . $gstText) ?>
+                                                                    </option>
+                                                            <?php }
+                                                            } ?>
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <!-- 2. Template Radio Thumbnails (SVG Preview Cards) -->
+                                                <div class="row g-3 mb-3">
+                                                    <div class="col-12">
+                                                        <label class="form-label fw-bold text-uppercase small text-dark d-block mb-2">
+                                                            <i class="ti ti-layout-grid me-1 text-primary"></i> Choose Template for Selected Company <span class="text-danger">*</span>
+                                                        </label>
+                                                        <div class="d-flex flex-wrap gap-3 align-items-center p-3 border rounded bg-light" id="adminTemplateCardsWrapper">
+                                                            <?php if (!empty($templates)) {
+                                                                foreach ($templates as $tpl) {
+                                                                    $isPrem = (!empty($tpl->is_premium) && (int)$tpl->is_premium === 1);
+                                                                    $isFirstChecked = ($tpl->id == 1 && !$isPrem);
+                                                                    $radioId = 'admin_tpl_opt_' . $tpl->id;
+                                                                    $imgSrc = !empty($tpl->preview_image) ? SITE_URL . $tpl->preview_image : SITE_URL . 'assets/img/templates/template-classic.svg';
+                                                            ?>
+                                                                    <label class="template-thumb-choice <?= $isPrem ? 'is-disabled-pro' : '' ?>" for="<?= $isPrem ? '' : $radioId ?>" title="<?= htmlspecialchars($tpl->template_name) ?><?= $isPrem ? ' (PRO Template)' : '' ?>">
+                                                                        <?php if ($isPrem): ?>
+                                                                            <div class="template-pro-badge">
+                                                                                <i class="ti ti-crown"></i> PRO
+                                                                            </div>
+                                                                        <?php endif; ?>
+                                                                        <input type="radio" name="invoice_template_id" class="admin-tpl-radio" id="<?= $radioId ?>" value="<?= $tpl->id ?>" <?= $isFirstChecked ? 'checked' : '' ?> <?= $isPrem ? 'disabled' : 'required' ?> <?= $isPrem ? 'style="pointer-events:none; cursor:not-allowed;"' : '' ?>>
+                                                                        <div class="template-thumb-box">
+                                                                            <img src="<?= $imgSrc ?>" alt="<?= htmlspecialchars($tpl->template_name) ?>">
+                                                                        </div>
+                                                                        <?php if (!$isPrem): ?>
+                                                                            <div class="template-thumb-badge-check">
+                                                                                <i class="ti ti-check"></i>
+                                                                            </div>
+                                                                        <?php endif; ?>
+                                                                        <div class="text-center mt-1 small fw-semibold text-truncate" style="max-width: 130px;" title="<?= htmlspecialchars($tpl->template_name) ?>">
+                                                                            <?= htmlspecialchars($tpl->template_name) ?>
+                                                                        </div>
+                                                                    </label>
+                                                                <?php }
+                                                            } else { ?>
+                                                                <label class="template-thumb-choice" for="admin_tpl_opt_1">
+                                                                    <input type="radio" name="invoice_template_id" id="admin_tpl_opt_1" value="1" checked required>
+                                                                    <div class="template-thumb-box">
+                                                                        <img src="<?= SITE_URL ?>assets/img/templates/template-classic.svg" alt="Classic Template">
+                                                                    </div>
+                                                                    <div class="template-thumb-badge-check">
+                                                                        <i class="ti ti-check"></i>
+                                                                    </div>
+                                                                    <div class="text-center mt-1 small fw-semibold">Classic Professional</div>
+                                                                </label>
+                                                            <?php } ?>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Submit Button -->
+                                                <div>
+                                                    <button type="submit" name="btn_save_company_template" id="btnSaveCompanyTemplate" class="btn btn-success">
+                                                        <i class="ti ti-device-floppy me-1"></i> Save Company Template
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
                                 <?php } ?>
 
                             </div>
@@ -552,6 +853,26 @@ if ($isCompany && $profileData) {
                     reader.readAsDataURL(file);
                 }
             });
+
+            // Admin: When Company changes, auto-check the matching radio button for that company (default to 1)
+            $('#admin_sel_company_id').on('change', function() {
+                var selectedOption = $(this).find('option:selected');
+                var compVal = $(this).val();
+                if (!compVal) return;
+                var tplId = selectedOption.data('template-id') || 1;
+                var $targetRadio = $('#admin_tpl_opt_' + tplId);
+                if ($targetRadio.length) {
+                    $targetRadio.prop('checked', true);
+                } else {
+                    $('#admin_tpl_opt_1').prop('checked', true);
+                }
+            });
+
+            // If a company is already selected on page load (e.g. after save), trigger check
+            if ($('#admin_sel_company_id').val()) {
+                var initTpl = $('#admin_sel_company_id option:selected').data('template-id') || 1;
+                $('#admin_tpl_opt_' + initTpl).prop('checked', true);
+            }
         });
     </script>
 

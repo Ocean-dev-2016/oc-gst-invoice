@@ -1,36 +1,43 @@
-<?php
+﻿<?php
 // Function to generate standardized footer HTML with Left: Terms & Conditions and Right: Signature
-function renderStandardInvoiceFooter($company, $q, $themeColor = '#1e293b') {
+function renderStandardInvoiceFooter($company, $q, $themeColor = '#1e293b', $footerAccentColor = null) {
     $companyName = !empty($company->company_name) ? htmlspecialchars($company->company_name) : 'Company';
     $signImg = !empty($company->signature) ? SITE_URL . $company->signature : '';
     $terms = !empty($q->terms_condition) ? nl2br(htmlspecialchars($q->terms_condition)) : "1. Goods once sold will not be taken back.<br>2. Interest @ 18% p.a. will be charged if payment is not made within due date.<br>3. Subject to local jurisdiction.";
+    $accentColor = $footerAccentColor ?? $themeColor;
+    $accentColor = htmlspecialchars($accentColor, ENT_QUOTES, 'UTF-8');
+    $themeColor = htmlspecialchars($themeColor, ENT_QUOTES, 'UTF-8');
     ?>
     <style>
         .std-invoice-footer {
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
-            margin-top: 15px; padding-top: 12px;
-            gap: 30px;
-            border-top: 1px dashed #e2e8f0;
+            margin-top: 10px;
+            padding-top: 8px;
+            padding-bottom: 4px;
+            gap: 20px;
+            border-top: 1px dashed #cbd5e1;
             page-break-inside: avoid;
+            break-inside: avoid;
+            box-sizing: border-box;
         }
         .std-terms-col {
             flex: 1;
-            max-width: 58%;
+            max-width: 60%;
         }
         .std-terms-title {
-            font-size: 11.5px;
+            font-size: 11px;
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: <?= $themeColor ?>;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
         .std-terms-content {
-            font-size: 11px;
+            font-size: 10px;
             color: #64748b;
-            line-height: 1.6;
+            line-height: 1.4;
         }
         .std-sign-col {
             width: 220px;
@@ -63,6 +70,23 @@ function renderStandardInvoiceFooter($company, $q, $themeColor = '#1e293b') {
             margin-top: 2px;
             text-align: center;
         }
+        .std-footer-accent {
+            display: flex;
+            width: 100%;
+            height: 18px;
+            margin-top: 10px;
+            background: <?= $themeColor ?>;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .std-footer-accent-primary {
+            flex: 1;
+            background: <?= $accentColor ?>;
+        }
+        .std-footer-accent-theme {
+            width: 38%;
+            background: <?= $themeColor ?>;
+        }
         @media screen and (max-width: 768px) {
             .std-invoice-footer {
                 flex-direction: column;
@@ -76,11 +100,14 @@ function renderStandardInvoiceFooter($company, $q, $themeColor = '#1e293b') {
         }
         @media print {
             .std-invoice-footer {
-                page-break-inside: avoid;
-                margin-top: 20px !important;
-                padding-top: 15px !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                page-break-before: avoid !important;
+                margin-top: auto !important;
+                padding-top: 10px !important;
+                padding-bottom: 8px !important;
             }
-            .std-terms-content { font-size: 10px !important; color: #475569 !important; }
+            .std-terms-content { font-size: 10px !important; color: #475569 !important; line-height: 1.4 !important; }
             .std-sign-line { font-size: 11px !important; }
         }
     </style>
@@ -102,6 +129,13 @@ function renderStandardInvoiceFooter($company, $q, $themeColor = '#1e293b') {
             </div>
         </div>
     </div>
+    <?php if ($footerAccentColor !== null): ?>
+        <div class="std-footer-accent">
+            <div class="std-footer-accent-primary"></div>
+            <div class="std-footer-accent-theme"></div>
+        </div>
+    <?php else: ?>
+        <div class="std-footer-accent"></div>
+    <?php endif; ?>
     <?php
 }
-

@@ -4,6 +4,11 @@
 <!-- html2pdf.js for direct client-side PDF download & server-side save -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
+    :root {
+        --invoice-pdf-side-gutter: 16px;
+        --invoice-pdf-header-inset: 12px;
+    }
+
     /* Hide action bar during PDF generation */
     .is-generating-pdf .top-action-bar,
     .is-generating-pdf .top-bar,
@@ -29,8 +34,44 @@
         box-shadow: none !important;
         border: none !important;
         margin: 0 auto !important;
+        padding: 0 var(--invoice-pdf-side-gutter) !important;
         min-height: unset !important;
         height: auto !important;
+    }
+
+    .is-generating-pdf .invoice-wrapper {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    .is-generating-pdf .invoice-card > .modern-content,
+    .is-generating-pdf .invoice-card > .parties-row,
+    .is-generating-pdf .invoice-card > .parties-grid,
+    .is-generating-pdf .invoice-card > .info-section,
+    .is-generating-pdf .invoice-card > .items-wrapper,
+    .is-generating-pdf .invoice-card > .invoice-footer-pin,
+    .is-generating-pdf .invoice-card > div[style*="padding"] {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    .is-generating-pdf .invoice-card > .modern-banner,
+    .is-generating-pdf .invoice-card > .emerald-header,
+    .is-generating-pdf .invoice-card > .crimson-header,
+    .is-generating-pdf .invoice-card > .header-split {
+        margin-left: calc(-1 * var(--invoice-pdf-header-inset)) !important;
+        margin-right: calc(-1 * var(--invoice-pdf-header-inset)) !important;
+        padding-left: var(--invoice-pdf-header-inset) !important;
+        padding-right: var(--invoice-pdf-header-inset) !important;
+    }
+
+    .is-generating-pdf .invoice-card > .header-split > .header-dark {
+        padding-left: var(--invoice-pdf-header-inset) !important;
+    }
+
+    .is-generating-pdf .invoice-card .invoice-footer-pin > .std-invoice-footer {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
     }
 
     .is-generating-pdf .invoice-footer-pin,
@@ -42,17 +83,19 @@
         break-inside: avoid !important;
     }
 
-    /* ===== Browser Print (@media print) ===== */
+    /* ===== Browser Print (@media print) & Server-Side Headless PDF ===== */
     @media print {
         @page {
             size: A4 portrait;
-            margin: 5px;
+            margin: 0 !important;
         }
 
-        body {
+        html, body {
             background: #ffffff !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
         }
 
         .top-action-bar,
@@ -65,26 +108,79 @@
             margin: 0 !important;
             padding: 0 !important;
             max-width: 100% !important;
+            width: 100% !important;
             border: none !important;
             box-shadow: none !important;
+            box-sizing: border-box !important;
+            display: flex !important;
+            flex-direction: column !important;
         }
 
         .invoice-card {
             box-shadow: none !important;
             border: none !important;
-            margin: 0 auto !important;
-            padding: 10px 15px !important;
-            height: auto !important;
+            margin: 0 !important;
+            padding: 0 var(--invoice-pdf-side-gutter) !important;
+            box-sizing: border-box !important;
+            width: 100% !important;
+            max-width: 100% !important;
             display: flex !important;
             flex-direction: column !important;
-            max-width: 100% !important;
-            page-break-inside: avoid;
+            box-sizing: border-box !important;
+            min-height: 0 !important;
+            height: auto !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+        }
+
+        .invoice-card > .modern-content,
+        .invoice-card > .parties-row,
+        .invoice-card > .parties-grid,
+        .invoice-card > .info-section,
+        .invoice-card > .items-wrapper,
+        .invoice-card > .invoice-footer-pin,
+        .invoice-card > div[style*="padding"] {
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        .invoice-card > .modern-banner,
+        .invoice-card > .emerald-header,
+        .invoice-card > .crimson-header,
+        .invoice-card > .header-split {
+            margin-left: calc(-1 * var(--invoice-pdf-header-inset)) !important;
+            margin-right: calc(-1 * var(--invoice-pdf-header-inset)) !important;
+            padding-left: var(--invoice-pdf-header-inset) !important;
+            padding-right: var(--invoice-pdf-header-inset) !important;
+        }
+
+        .invoice-card > .header-split > .header-dark {
+            padding-left: var(--invoice-pdf-header-inset) !important;
+        }
+
+        .std-footer-accent {
+            width: auto !important;
+            margin-left: calc(-1 * var(--invoice-pdf-header-inset)) !important;
+            margin-right: calc(-1 * var(--invoice-pdf-header-inset)) !important;
+        }
+
+        .invoice-card .invoice-footer-pin > .std-invoice-footer {
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+        }
+
+        .modern-content {
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+            box-sizing: border-box !important;
         }
 
         .invoice-footer-pin,
         .std-invoice-footer,
         .invoice-footer {
             margin-top: auto !important;
+            flex-shrink: 0 !important;
             page-break-before: avoid !important;
             break-before: avoid !important;
             page-break-inside: avoid !important;
@@ -101,20 +197,20 @@
     var currentInvoiceId = <?= intval($q->id ?? 0) ?>;
     var currentDocType = <?= json_encode($docType ?? 'invoice') ?>;
     <?php
-        $formattedId = str_pad($q->id ?? 0, 2, '0', STR_PAD_LEFT);
-        if ($docType === 'quotation') {
-            $rawDocNo = $q->quotation_no ?? ($q->invoice_no ?? $q->id);
-            $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $rawDocNo);
-            $finalPdfName = 'quotation_' . $formattedId . '_' . $cleanDocSlug . '.pdf';
-        } elseif ($docType === 'purchase') {
-            $rawDocNo = $q->purchase_no ?? ($q->invoice_no ?? $q->id);
-            $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $rawDocNo);
-            $finalPdfName = 'purchase_' . ($q->id ?? 0) . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $rawDocNo) . '.pdf';
-        } else {
-            $rawDocNo = $q->invoice_no ?? $q->id;
-            $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $rawDocNo);
-            $finalPdfName = 'invoice_' . ($q->id ?? 0) . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $rawDocNo) . '.pdf';
-        }
+    $formattedId = str_pad($q->id ?? 0, 2, '0', STR_PAD_LEFT);
+    if ($docType === 'quotation') {
+        $rawDocNo = $q->quotation_no ?? ($q->invoice_no ?? $q->id);
+        $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $rawDocNo);
+        $finalPdfName = 'quotation_' . $formattedId . '_' . $cleanDocSlug . '.pdf';
+    } elseif ($docType === 'purchase') {
+        $rawDocNo = $q->purchase_no ?? ($q->invoice_no ?? $q->id);
+        $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $rawDocNo);
+        $finalPdfName = 'purchase_' . ($q->id ?? 0) . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $rawDocNo) . '.pdf';
+    } else {
+        $rawDocNo = $q->invoice_no ?? $q->id;
+        $cleanDocSlug = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $rawDocNo);
+        $finalPdfName = 'invoice_' . ($q->id ?? 0) . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $rawDocNo) . '.pdf';
+    }
     ?>
     var invoiceFileName = <?= json_encode($finalPdfName) ?>;
 
@@ -123,7 +219,7 @@
 
     function getPdfOptions() {
         return {
-            margin: [MARGIN_PX_IN_MM, MARGIN_PX_IN_MM, MARGIN_PX_IN_MM, MARGIN_PX_IN_MM],
+            margin: 0,
             filename: invoiceFileName,
             image: {
                 type: 'jpeg',
@@ -140,69 +236,112 @@
                 unit: 'mm',
                 format: 'a4',
                 orientation: 'portrait'
+            },
+            pagebreak: {
+                mode: ['css', 'legacy']
             }
         };
     }
 
     /**
-     * Prepares the invoice container for exact 1-page PDF rendering:
-     * 1. Resets any forced borders/margins that cause overflow.
-     * 2. Calculates exact single-page A4 height available based on element width (A4 ratio = 1.414).
-     * 3. Dynamically adjusts footer spacer so the footer is pinned nicely to the bottom of page 1
-     *    WITHOUT leaving huge blank gaps or pushing onto page 2.
+     * Fits the invoice card to one A4 page and keeps its footer at the bottom.
      */
     function prepareCardForPdf(element) {
         var footer = element.querySelector('.invoice-footer-pin') ||
             element.querySelector('.std-invoice-footer') ||
             element.querySelector('.invoice-footer');
 
-        if (!footer) {
-            return function() {};
-        }
-
+        // Hide any stale spacer divs
         var spacer = element.querySelector('.pdf-footer-spacer');
-        if (!spacer) {
-            spacer = document.createElement('div');
-            spacer.className = 'pdf-footer-spacer';
-            footer.parentNode.insertBefore(spacer, footer);
+        if (spacer) {
+            spacer.style.height = '0px';
+            spacer.style.display = 'none';
         }
 
-        spacer.style.height = '0px';
-        spacer.style.display = 'block';
-        spacer.style.margin = '0';
-        spacer.style.padding = '0';
-        spacer.style.border = 'none';
-
+        // Save original styles
         var originalHeight = element.style.height;
         var originalMinHeight = element.style.minHeight;
-        element.style.height = 'auto';
-        element.style.minHeight = 'unset';
+        var originalPadding = element.style.padding;
+        var originalFooterMargin = footer ? footer.style.marginTop : '';
+        var originalOverflow = element.style.overflow;
+        var originalDisplay = element.style.display;
+        var originalFlexDir = element.style.flexDirection;
+        var originalBoxSizing = element.style.boxSizing;
+        var originalZoom = element.style.zoom;
 
-        // Ratio of A4: 297mm / 210mm = 1.4142
-        var cardWidth = element.offsetWidth || 840;
-        var maxA4Height = Math.floor(cardWidth * 1.4142);
+        // Use the full printable page width and remove template-level card gutters.
+        var originalWidth = element.style.width;
+        var originalMaxWidth = element.style.maxWidth;
+        element.style.setProperty('width', '790px', 'important');
+        element.style.setProperty('max-width', '790px', 'important');
+        element.style.setProperty('padding', '0 16px', 'important');
 
-        // Get natural height of the document content
-        var naturalHeight = element.offsetHeight || element.scrollHeight;
+        element.style.setProperty('height', 'auto', 'important');
+        element.style.setProperty('min-height', 'unset', 'important');
+        element.style.setProperty('zoom', '1', 'important');
+        if (footer) {
+            footer.style.setProperty('margin-top', '15px', 'important');
+        }
 
-        // If content is less than A4 height, add spacer so footer reaches the bottom of page 1
-        // Keep a 40px safety margin to prevent rounding overflow
-        if (naturalHeight > 0 && naturalHeight < (maxA4Height - 40)) {
-            var spaceToAdd = (maxA4Height - 40) - naturalHeight;
-            if (spaceToAdd > 0) {
-                spacer.style.height = spaceToAdd + 'px';
-            }
+        void element.offsetHeight;
+        var naturalH = element.scrollHeight;
+        var targetA4H = 1100;
+        var scale = naturalH > targetA4H ? targetA4H / naturalH : 1;
+        var cardHeight = targetA4H / scale;
+
+        var innerWrapper = element.querySelector('.modern-content');
+        var originalInnerFlex = innerWrapper ? innerWrapper.style.display : null;
+        var originalInnerFlexDir = innerWrapper ? innerWrapper.style.flexDirection : null;
+        var originalInnerGrow = innerWrapper ? innerWrapper.style.flex : null;
+        var originalFooterFlexShrink = footer ? footer.style.flexShrink : '';
+
+        element.style.setProperty('height', cardHeight + 'px', 'important');
+        element.style.setProperty('min-height', cardHeight + 'px', 'important');
+        element.style.setProperty('display', 'flex', 'important');
+        element.style.setProperty('flex-direction', 'column', 'important');
+        element.style.setProperty('box-sizing', 'border-box', 'important');
+        element.style.setProperty('zoom', String(scale), 'important');
+
+        if (footer) {
+            footer.style.setProperty('margin-top', 'auto', 'important');
+            footer.style.setProperty('flex-shrink', '0', 'important');
+        }
+
+        if (innerWrapper) {
+            innerWrapper.style.setProperty('display', 'flex', 'important');
+            innerWrapper.style.setProperty('flex-direction', 'column', 'important');
+            innerWrapper.style.setProperty('flex', '1 1 auto', 'important');
+            innerWrapper.style.setProperty('box-sizing', 'border-box', 'important');
         }
 
         return function() {
-            if (spacer) {
-                spacer.style.height = '0px';
-            }
+            element.style.width = originalWidth;
+            element.style.maxWidth = originalMaxWidth;
             element.style.height = originalHeight;
             element.style.minHeight = originalMinHeight;
+            element.style.padding = originalPadding;
+            element.style.overflow = originalOverflow;
+            element.style.display = originalDisplay;
+            element.style.flexDirection = originalFlexDir;
+            element.style.boxSizing = originalBoxSizing;
+            element.style.zoom = originalZoom;
+            if (footer) {
+                footer.style.marginTop = originalFooterMargin;
+                footer.style.flexShrink = originalFooterFlexShrink;
+            }
+
+            if (innerWrapper) {
+                if (originalInnerFlex !== null) innerWrapper.style.display = originalInnerFlex;
+                if (originalInnerFlexDir !== null) innerWrapper.style.flexDirection = originalInnerFlexDir;
+                if (originalInnerGrow !== null) innerWrapper.style.flex = originalInnerGrow;
+            }
+
+            if (spacer) {
+                spacer.style.height = '0px';
+                spacer.style.display = 'none';
+            }
         };
     }
-
     function uploadPdfBlobToServer(blob) {
         var formData = new FormData();
         formData.append('invoice_id', currentInvoiceId);
@@ -215,6 +354,16 @@
         }).then(function(res) {
             return res.json();
         });
+    }
+
+    function printInvoiceFallback(element) {
+        document.body.classList.add('is-generating-pdf');
+        var restoreCard = prepareCardForPdf(element);
+        window.addEventListener('afterprint', function() {
+            restoreCard();
+            document.body.classList.remove('is-generating-pdf');
+        }, { once: true });
+        window.print();
     }
 
     function saveAndShowPDF() {
@@ -247,7 +396,7 @@
                 topBar.innerHTML = originalBarHtml;
             }
             alert('PDF generation notice: ' + err.message);
-            window.print();
+            printInvoiceFallback(element);
         });
     }
 
@@ -265,12 +414,12 @@
         var opt = getPdfOptions();
 
         html2pdf().set(opt).from(element).outputPdf('blob').then(function(pdfBlob) {
-            restoreCard();
             uploadPdfBlobToServer(pdfBlob).catch(function(e) {
                 console.warn('Background server PDF save failed:', e);
             });
             return html2pdf().set(opt).from(element).save();
         }).then(function() {
+            restoreCard();
             document.body.classList.remove('is-generating-pdf');
             if (btn) {
                 btn.disabled = false;
@@ -284,13 +433,19 @@
                 btn.disabled = false;
                 btn.innerHTML = originalText;
             }
-            window.print();
+            printInvoiceFallback(element);
         });
     }
 
     window.addEventListener('load', function() {
         var urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('silent_gen') === '1') {
+        if (urlParams.get('token') === 'system_auto_pdf') {
+            var element = document.querySelector('.invoice-card');
+            if (element) {
+                document.body.classList.add('is-generating-pdf');
+                prepareCardForPdf(element);
+            }
+        } else if (urlParams.get('silent_gen') === '1') {
             // Background generation without redirecting user away - wait 800ms for template DOM & fonts
             setTimeout(function() {
                 var element = document.querySelector('.invoice-card');

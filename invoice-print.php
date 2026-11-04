@@ -17,13 +17,8 @@ require_once __DIR__ . '/includes/invoice-footer-renderer.php';
 // ==========================================
 $templateIdToUse = 1;
 if (!empty($_GET['preview_template'])) {
-    // 1. Explicit preview parameter from template selection
     $templateIdToUse = intval($_GET['preview_template']);
-} elseif (!empty($q->template_id) && intval($q->template_id) > 0) {
-    // 2. Invoice specific template selection
-    $templateIdToUse = intval($q->template_id);
-} elseif (!empty($company->invoice_template_id)) {
-    // 3. Company's currently ACTIVE template
+} elseif (!empty($company->invoice_template_id) && intval($company->invoice_template_id) > 0) {
     $templateIdToUse = intval($company->invoice_template_id);
 }
 

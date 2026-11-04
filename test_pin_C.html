@@ -1,0 +1,850 @@
+﻿﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quotation - OQ/004/26-27 (Royal Crimson)</title>
+    <link rel="icon" type="image/x-icon" href="http://localhost/OC-GST-invoice/assets/img/favicon/favicon.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="http://localhost/OC-GST-invoice/assets/vendor/fonts/tabler-icons.css" />
+    
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+            font-size: 13px;
+            line-height: 1.5;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .top-action-bar {
+            position: sticky; top: 0; z-index: 1000;
+            background: #ffffff; border-bottom: 1px solid #e2e8f0;
+            padding: 12px 24px; display: flex; justify-content: flex-end; align-items: center;
+        }
+        .action-btns { display: flex; gap: 10px; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 18px; font-size: 13px; font-weight: 600;
+            border-radius: 6px; text-decoration: none; cursor: pointer; border: 1px solid transparent;
+        }
+        .btn-primary { background-color: #e11d48; color: #fff; }
+        .btn-success { background-color: #881337; color: #fff; }
+        .btn-secondary { background-color: #f1f5f9; color: #1e293b; }
+
+        .invoice-card {
+            max-width: 860px; min-height: unset; margin: 25px auto; background: #ffffff;
+            border-radius: 12px; overflow: hidden;
+            box-shadow: 0 10px 30px rgba(136, 19, 55, 0.08);
+            border: 1px solid #ffe4e6;
+            display: flex; flex-direction: column;
+        }
+
+        /* Top Crimson Header */
+        .crimson-header {
+            background: linear-gradient(135deg, #881337 0%, #be123c 100%);
+            color: #ffffff; padding: 32px 40px 28px 40px;
+            display: flex; justify-content: space-between; align-items: flex-start;
+            position: relative;
+        }
+        .crimson-header::after {
+            content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+            height: 5px; background: #fb7185;
+        }
+        .comp-brand-title {
+            font-size: 24px; font-weight: 800; letter-spacing: -0.5px;
+            color: #ffffff; margin-bottom: 4px;
+        }
+        .comp-brand-sub { font-size: 12.5px; color: #fecdd3; line-height: 1.4; }
+
+        .doc-title-block { text-align: right; }
+        .doc-badge-title {
+            font-size: 26px; font-weight: 900; letter-spacing: 2px;
+            color: #ffffff; text-transform: uppercase; margin-bottom: 6px;
+        }
+        .doc-meta-item { font-size: 12.5px; color: #ffe4e6; margin-bottom: 2px; }
+        .doc-meta-item strong { color: #ffffff; }
+
+        /* Parties Info Cards */
+        .parties-row {
+            display: flex; justify-content: space-between; gap: 24px;
+            padding: 24px 35px 15px 35px;
+        }
+        .party-card {
+            flex: 1; min-width: 0;
+            background: #fff1f2; border: 1px solid #fecdd3;
+            border-radius: 8px; padding: 14px 18px;
+        }
+        .party-card-title {
+            font-size: 11px; font-weight: 800; text-transform: uppercase;
+            letter-spacing: 0.5px; color: #e11d48; margin-bottom: 8px;
+        }
+        .party-card-name { font-size: 14px; font-weight: 700; color: #881337; margin-bottom: 4px; }
+        .party-card-detail { font-size: 12px; color: #475569; line-height: 1.5; }
+
+        @media print {
+            @page { size: A4 portrait; margin: 0 !important; }
+            .top-action-bar { display: none !important; }
+            body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+            .invoice-card {
+                box-shadow: none !important; border: none !important;
+                margin: 0 !important; width: 100% !important; max-width: 100% !important;
+                min-height: unset !important; height: auto !important;
+                display: flex !important; flex-direction: column !important;
+            }
+            .invoice-footer-pin {
+                margin-top: auto !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+        }
+    </style>
+<style id="test-pin-css">
+@page { size: A4 portrait; margin: 0 !important; }
+@media print {
+    html, body {
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    .top-action-bar, .no-print { display: none !important; }
+    .invoice-wrapper {
+        width: 100% !important;
+        height: 280mm !important;
+        max-height: 280mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        box-sizing: border-box !important;
+    }
+    .invoice-card {
+        width: 100% !important;
+        height: 280mm !important;
+        max-height: 280mm !important;
+        margin: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        box-sizing: border-box !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }
+    .modern-content {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 1 auto !important;
+        box-sizing: border-box !important;
+    }
+    .invoice-footer-pin,
+    .std-invoice-footer {
+        margin-top: auto !important;
+        flex-shrink: 0 !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-before: avoid !important;
+        break-before: avoid !important;
+    }
+}
+</style>
+</head>
+<body>
+
+    <div class="top-action-bar">
+        <div class="action-btns">
+            <button onclick="saveAndShowPDF()" class="btn btn-primary"><i class="ti ti-printer"></i> Print</button>
+            <button onclick="downloadPDF()" id="btnDownloadPdf" class="btn btn-success"><i class="ti ti-download"></i> Save as PDF</button>
+            <button onclick="window.close()" class="btn btn-secondary"><i class="ti ti-x"></i> Cancel</button>
+        </div>
+    </div>
+
+    <div class="invoice-card">
+        <!-- Header -->
+        <div class="crimson-header">
+            <div>
+                                    <img src="http://localhost/OC-GST-invoice/uploads/company/logo_1793272475_326.png" alt="Company Logo" style="max-height: 50px; max-width: 180px; object-fit: contain; margin-bottom: 8px; filter: brightness(0) invert(1);">
+                                <div class="comp-brand-title">Keshav Infotech</div>
+                <div class="comp-brand-sub">Rajkot</div>
+                                    <div class="comp-brand-sub"><strong>GSTIN:</strong> 24AAAAA0000A1Z8</div>
+                            </div>
+
+            <div class="doc-title-block">
+                <div class="doc-badge-title">QUOTATION</div>
+                <div class="doc-meta-item">Quotation No: <strong>OQ/004/26-27</strong></div>
+                <div class="doc-meta-item">Date: <strong>03 Nov 2026</strong></div>
+                                    <div class="doc-meta-item">Due Date: <strong>04 Nov 2026</strong></div>
+                            </div>
+        </div>
+
+        <!-- Parties Section -->
+        <div class="parties-row">
+            <div class="party-card">
+                <div class="party-card-title">Billed By / Supplier</div>
+                <div class="party-card-name">Keshav Infotech</div>
+                <div class="party-card-detail">Rajkot</div>
+                <div class="party-card-detail">Phone: 9898747410</div>
+                                    <div class="party-card-detail">Email: keshav1@gmail.com</div>
+                            </div>
+
+            <div class="party-card">
+                <div class="party-card-title">Billed To / Customer</div>
+                <div class="party-card-name">Keshav Enterprise</div>
+                <div class="party-card-detail">rajkot</div>
+                <div class="party-card-detail">Phone: 1478523690</div>
+                                    <div class="party-card-detail"><strong>GSTIN:</strong> 24AAAAA7000A1Z5</div>
+                            </div>
+        </div>
+
+        <!-- Items & Totals Block -->
+        <div style="padding: 0 35px;">
+                <style>
+        :root {
+            --tpl-theme-color: #e11d48;
+            --tpl-strip-bg: rgba(225,29,72, 0.08);
+        }
+        .ref-items-table {
+            width: 100%; border-collapse: collapse; margin-bottom: 24px;
+            border: 1px solid #dbeafe; font-size: 13px; background: #ffffff;
+            table-layout: auto;
+        }
+        .ref-items-table th {
+            background-color: #f0f7ff; color: #1e293b; padding: 8px 5px;
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.5px; border: 1px solid #dbeafe; text-align: center;
+            white-space: nowrap;
+        }
+        .ref-items-table td {
+            padding: 6px 5px; border: 1px solid #dbeafe; color: #1e293b;
+            vertical-align: middle; font-size: 12px;
+            word-break: normal;
+        }
+        .ref-calc-box {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            margin-top: 10px; margin-bottom: 12px; gap: 20px;
+        }
+        .ref-words-card {
+            flex: 1; min-width: 0; background: #f8fafc; border: 1px solid #e2e8f0;
+            border-radius: 8px; padding: 14px 16px;
+        }
+        .ref-words-label {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            color: #64748b; margin-bottom: 6px; letter-spacing: 0.5px;
+        }
+        .ref-words-text {
+            font-size: 13px; font-weight: 700; color: #1e293b; line-height: 1.5;
+        }
+        .ref-totals-table {
+            width: 100%; max-width: 340px; font-size: 13px; border-collapse: collapse;
+        }
+        .ref-totals-table td { padding: 5px 0; }
+        .ref-totals-table td.label { color: #475569; font-weight: 500; }
+        .ref-totals-table td.val { text-align: right; font-weight: 600; color: #1e293b; white-space: nowrap; }
+        .ref-grand-total-strip {
+            background: rgba(225,29,72, 0.08); border-radius: 6px; padding: 10px 14px;
+            margin-top: 8px; display: flex; justify-content: space-between; align-items: center;
+            border-top: 1px solid #e11d48; white-space: nowrap;
+        }
+        .ref-grand-label { font-size: 14px; font-weight: 800; color: #e11d48; }
+        .ref-grand-val { font-size: 16px; font-weight: 800; color: #e11d48; }
+        .ref-table-responsive {
+            width: 100%;
+            overflow: visible;
+            margin-bottom: 10px;
+        }
+        @media screen and (max-width: 768px) {
+            .ref-calc-box {
+                flex-direction: column !important;
+                gap: 15px !important;
+            }
+            .ref-words-card, .ref-calc-box > div {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+            .ref-totals-table {
+                max-width: 100% !important;
+            }
+        }
+        
+        @media print {
+            .ref-items-table {
+                width: 100% !important;
+                border-collapse: collapse !important;
+                page-break-inside: auto;
+            }
+            .ref-items-table tr {
+                page-break-inside: avoid;
+                page-break-after: auto;
+            }
+            .ref-items-table th, .ref-items-table td {
+                padding: 6px 6px !important;
+                font-size: 11px !important;
+            }
+            .ref-calc-box {
+                page-break-inside: avoid;
+                gap: 15px !important;
+            }
+            .ref-totals-table td.val, .ref-grand-val {
+                white-space: nowrap !important;
+            }
+        }
+    </style>
+
+    <!-- Product Details Table -->
+    <div class="ref-table-responsive">
+    <table class="ref-items-table">
+        <thead>
+            <tr>
+                <th style="width: 4%;">#</th>
+                <th style="text-align: left; padding-left: 10px;">ITEM DESCRIPTION</th>
+                <th style="width: 10%;">HSN/SAC</th>
+                <th style="width: 11%;">RATE</th>
+                <th style="width: 7%;">QTY</th>
+                <th style="width: 12%;">DISCOUNT</th>
+                <th style="width: 12%;">TAXABLE AMT</th>
+                                    <th style="width: 7%;">GST</th>
+                                <th style="width: 12%;">TOTAL</th>
+            </tr>
+        </thead>
+        <tbody>
+                        <tr>
+                <td style="text-align: center; color: #64748b;">1</td>
+                <td style="text-align: left; padding-left: 14px;">
+                    <div style="font-weight: 700; color: #0f172a; font-size: 13px;">Wireless Mouse</div>
+                                            <div style="font-size: 11px; color: #64748b; margin-top: 1px;">SKU: ELE-MOU-001</div>
+                                                                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Wireless Mouse</div>
+                                    </td>
+                <td style="text-align: center; color: #475569;">8471</td>
+                <td style="text-align: center;">₹499.00</td>
+                <td style="text-align: center;">1.00</td>
+                <td style="text-align: center;">-</td>
+                <td style="text-align: center;">₹499.00</td>
+                                    <td style="text-align: center; font-weight: 600;">18%</td>
+                                <td style="text-align: center; font-weight: 800; color: #0f172a;">₹588.82</td>
+            </tr>
+                        <tr>
+                <td style="text-align: center; color: #64748b;">2</td>
+                <td style="text-align: left; padding-left: 14px;">
+                    <div style="font-weight: 700; color: #0f172a; font-size: 13px;">USB Keyboard</div>
+                                            <div style="font-size: 11px; color: #64748b; margin-top: 1px;">SKU: ELE-KEY-002</div>
+                                                                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">USB Keyboard</div>
+                                    </td>
+                <td style="text-align: center; color: #475569;">SDF65SD</td>
+                <td style="text-align: center;">₹1,500.00</td>
+                <td style="text-align: center;">1.00</td>
+                <td style="text-align: center;">-</td>
+                <td style="text-align: center;">₹1,500.00</td>
+                                    <td style="text-align: center; font-weight: 600;">18%</td>
+                                <td style="text-align: center; font-weight: 800; color: #0f172a;">₹1,770.00</td>
+            </tr>
+                    </tbody>
+    </table>
+    </div>
+
+    <!-- Calculation Section -->
+    <div class="ref-calc-box">
+        <!-- Amount in Words -->
+        <div class="ref-words-card">
+            <div class="ref-words-label">AMOUNT IN WORDS:</div>
+            <div class="ref-words-text">Two Thousand Three Hundred  and Fifty Nine  Rupees  Only</div>
+        </div>
+
+        <!-- Totals Table -->
+        <div style="width: 320px; flex-shrink: 0;">
+            <table class="ref-totals-table">
+                <tr>
+                    <td class="label">Sub Total (Taxable):</td>
+                    <td class="val">₹1,999.00</td>
+                </tr>
+                                                            <tr>
+                            <td class="label">CGST Amount:</td>
+                            <td class="val">₹179.91</td>
+                        </tr>
+                        <tr>
+                            <td class="label">SGST Amount:</td>
+                            <td class="val">₹179.91</td>
+                        </tr>
+                                                </table>
+
+            <div class="ref-grand-total-strip">
+                <span class="ref-grand-label">Grand Total:</span>
+                <span class="ref-grand-val">₹2,359.00</span>
+            </div>
+        </div>
+    </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="invoice-footer-pin" style="margin-top: 15px; flex-shrink: 0; padding: 0 35px 25px 35px;">
+                <style>
+        .std-invoice-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-top: 10px;
+            padding-top: 8px;
+            padding-bottom: 4px;
+            gap: 20px;
+            border-top: 1px dashed #cbd5e1;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            box-sizing: border-box;
+        }
+        .std-terms-col {
+            flex: 1;
+            max-width: 60%;
+        }
+        .std-terms-title {
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #e11d48;
+            margin-bottom: 4px;
+        }
+        .std-terms-content {
+            font-size: 10px;
+            color: #64748b;
+            line-height: 1.4;
+        }
+        .std-sign-col {
+            width: 220px;
+            flex-shrink: 0;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .std-sign-preview {
+            max-height: 50px;
+            max-width: 150px;
+            object-fit: contain;
+            margin-bottom: 6px;
+        }
+        .std-sign-line {
+            width: 180px;
+            border-top: 1.5px solid #e11d48;
+            padding-top: 5px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #0f172a;
+            text-align: center;
+        }
+        .std-sign-subtitle {
+            font-size: 10.5px;
+            font-weight: 500;
+            color: #64748b;
+            margin-top: 2px;
+            text-align: center;
+        }
+        @media screen and (max-width: 768px) {
+            .std-invoice-footer {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 20px;
+            }
+            .std-terms-col { max-width: 100%; }
+            .std-sign-col { width: 100%; align-items: flex-start; }
+            .std-sign-line { text-align: left; margin: 0; }
+            .std-sign-subtitle { text-align: left; }
+        }
+        @media print {
+            .std-invoice-footer {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                page-break-before: avoid !important;
+                margin-top: auto !important;
+                padding-top: 10px !important;
+                padding-bottom: 8px !important;
+            }
+            .std-terms-content { font-size: 10px !important; color: #475569 !important; line-height: 1.4 !important; }
+            .std-sign-line { font-size: 11px !important; }
+        }
+    </style>
+    <div class="std-invoice-footer">
+        <!-- Left Side: Terms & Conditions -->
+        <div class="std-terms-col">
+            <div class="std-terms-title">Terms &amp; Conditions</div>
+            <div class="std-terms-content">1. Goods once sold will not be taken back.<br>2. Interest @ 18% p.a. will be charged if payment is not made within due date.<br>3. Subject to local jurisdiction.</div>
+        </div>
+
+        <!-- Right Side: Signature -->
+        <div class="std-sign-col">
+                            <img src="http://localhost/OC-GST-invoice/uploads/company/sign_1793272475_893.png" alt="Signature" class="std-sign-preview">
+                        <div class="std-sign-line">
+                For Keshav Infotech                <div class="std-sign-subtitle">Authorized Signatory</div>
+            </div>
+        </div>
+    </div>
+            </div>
+    </div>
+
+    <!-- html2pdf.js for direct client-side PDF download & server-side save -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+    /* Hide action bar during PDF generation */
+    .is-generating-pdf .top-action-bar,
+    .is-generating-pdf .top-bar,
+    .is-generating-pdf .no-print {
+        display: none !important;
+    }
+
+    .is-generating-pdf body {
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .is-generating-pdf .invoice-wrapper {
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+        max-width: 100% !important;
+    }
+
+    .is-generating-pdf .invoice-card {
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 auto !important;
+        min-height: unset !important;
+        height: auto !important;
+    }
+
+    .is-generating-pdf .invoice-footer-pin,
+    .is-generating-pdf .std-invoice-footer,
+    .is-generating-pdf .ref-calc-box,
+    .is-generating-pdf .ref-items-table,
+    .is-generating-pdf .bottom-bar {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+
+    /* ===== Browser Print (@media print) & Server-Side Headless PDF ===== */
+    @media print {
+        @page {
+            size: A4 portrait;
+            margin: 0 !important;
+        }
+
+        html, body {
+            background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .top-action-bar,
+        .top-bar,
+        .no-print {
+            display: none !important;
+        }
+
+        .invoice-wrapper {
+            margin: 0 !important;
+            padding: 0 !important;
+            max-width: 100% !important;
+            width: 100% !important;
+            border: none !important;
+            box-shadow: none !important;
+            box-sizing: border-box !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        .invoice-card {
+            box-shadow: none !important;
+            border: none !important;
+            margin: 0 !important;
+            padding: 15px 25px 10px 25px !important;
+            box-sizing: border-box !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            box-sizing: border-box !important;
+            page-break-inside: avoid;
+        }
+
+        .modern-content {
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 1 auto !important;
+            box-sizing: border-box !important;
+        }
+
+        .invoice-footer-pin,
+        .std-invoice-footer,
+        .invoice-footer {
+            margin-top: auto !important;
+            flex-shrink: 0 !important;
+            page-break-before: avoid !important;
+            break-before: avoid !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+        }
+
+        .bottom-bar {
+            page-break-before: avoid !important;
+            break-before: avoid !important;
+        }
+    }
+</style>
+<script>
+    var currentInvoiceId = 6;
+    var currentDocType = "quotation";
+        var invoiceFileName = "quotation_06_OQ_004_26_27.pdf";
+
+    // 5px margin in mm for jsPDF (96 dpi: 5px / (96 / 25.4) = ~1.32 mm)
+    var MARGIN_PX_IN_MM = 5 * 25.4 / 96;
+
+    function getPdfOptions() {
+        return {
+            margin: 0,
+            filename: invoiceFileName,
+            image: {
+                type: 'jpeg',
+                quality: 0.98
+            },
+            html2canvas: {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                scrollX: 0,
+                scrollY: 0
+            },
+            jsPDF: {
+                unit: 'mm',
+                format: 'a4',
+                orientation: 'portrait'
+            },
+            pagebreak: {
+                mode: ['avoid-all', 'css', 'legacy']
+            }
+        };
+    }
+
+    /**
+     * Prepares the invoice container for exact 1-page PDF rendering.
+     * Sets card height to A4 (if content is shorter) so flex margin-top:auto
+     * on the footer pushes it to the page bottom without creating a 2nd page.
+     */
+    function prepareCardForPdf(element) {
+        var footer = element.querySelector('.invoice-footer-pin') ||
+            element.querySelector('.std-invoice-footer') ||
+            element.querySelector('.invoice-footer');
+
+        if (!footer) {
+            return function() {};
+        }
+
+        // Hide any stale spacer divs
+        var spacer = element.querySelector('.pdf-footer-spacer');
+        if (spacer) {
+            spacer.style.height = '0px';
+            spacer.style.display = 'none';
+        }
+
+        // Save original styles
+        var originalHeight = element.style.height;
+        var originalMinHeight = element.style.minHeight;
+        var originalFooterMargin = footer.style.marginTop;
+        var originalOverflow = element.style.overflow;
+        var originalDisplay = element.style.display;
+        var originalFlexDir = element.style.flexDirection;
+
+        // Standardize card width to 800px during PDF generation for exact A4 1:1.4142 calculation
+        var originalWidth = element.style.width;
+        var originalMaxWidth = element.style.maxWidth;
+        element.style.setProperty('width', '800px', 'important');
+        element.style.setProperty('max-width', '800px', 'important');
+
+        // Reset height to measure natural size
+        element.style.height = 'auto';
+        element.style.minHeight = 'unset';
+        footer.style.marginTop = '15px';
+
+        // Force browser layout reflow
+        void element.offsetHeight;
+        var naturalH = element.scrollHeight;
+
+        // A4 page height for 800px width: 800 * (297/210) = 1131.4px
+        // Subtract 45px safety buffer so html2pdf NEVER splits the card across pages
+        var targetA4H = 1086;
+
+        // If inner content wrapper exists (e.g., .modern-content), handle its flex layout
+        var innerWrapper = element.querySelector('.modern-content');
+        var originalInnerFlex = innerWrapper ? innerWrapper.style.display : null;
+        var originalInnerFlexDir = innerWrapper ? innerWrapper.style.flexDirection : null;
+        var originalInnerGrow = innerWrapper ? innerWrapper.style.flex : null;
+
+        if (naturalH < targetA4H) {
+            // Fits cleanly on 1 single page:
+            element.style.setProperty('height', targetA4H + 'px', 'important');
+            element.style.setProperty('display', 'flex', 'important');
+            element.style.setProperty('flex-direction', 'column', 'important');
+            element.style.setProperty('box-sizing', 'border-box', 'important');
+            element.style.setProperty('overflow', 'hidden', 'important');
+
+            if (innerWrapper) {
+                innerWrapper.style.setProperty('display', 'flex', 'important');
+                innerWrapper.style.setProperty('flex-direction', 'column', 'important');
+                innerWrapper.style.setProperty('flex', '1 1 auto', 'important');
+                innerWrapper.style.setProperty('box-sizing', 'border-box', 'important');
+            }
+
+            // Margin-top: auto pushes footer & dashed line down to bottom
+            footer.style.setProperty('margin-top', 'auto', 'important');
+            footer.style.setProperty('flex-shrink', '0', 'important');
+        } else {
+            // Multi-page: let it flow naturally
+            footer.style.setProperty('margin-top', '15px', 'important');
+        }
+
+        return function() {
+            element.style.width = originalWidth;
+            element.style.maxWidth = originalMaxWidth;
+            element.style.height = originalHeight;
+            element.style.minHeight = originalMinHeight;
+            element.style.overflow = originalOverflow;
+            element.style.display = originalDisplay;
+            element.style.flexDirection = originalFlexDir;
+            footer.style.marginTop = originalFooterMargin;
+
+            if (innerWrapper) {
+                if (originalInnerFlex !== null) innerWrapper.style.display = originalInnerFlex;
+                if (originalInnerFlexDir !== null) innerWrapper.style.flexDirection = originalInnerFlexDir;
+                if (originalInnerGrow !== null) innerWrapper.style.flex = originalInnerGrow;
+            }
+
+            if (spacer) {
+                spacer.style.height = '0px';
+                spacer.style.display = 'none';
+            }
+        };
+    }
+    function uploadPdfBlobToServer(blob) {
+        var formData = new FormData();
+        formData.append('invoice_id', currentInvoiceId);
+        formData.append('doc_type', currentDocType);
+        formData.append('pdf_blob', blob, invoiceFileName);
+
+        return fetch('save-invoice-pdf.php', {
+            method: 'POST',
+            body: formData
+        }).then(function(res) {
+            return res.json();
+        });
+    }
+
+    function saveAndShowPDF() {
+        var topBar = document.querySelector('.top-action-bar') || document.querySelector('.top-bar');
+        var originalBarHtml = topBar ? topBar.innerHTML : '';
+        if (topBar) {
+            topBar.innerHTML = '<div style="color: #1e293b; font-weight: 600; padding: 10px;"><i class="ti ti-loader ti-spin me-2"></i> PDF બનાવી રહ્યા છીએ, કૃપા કરીને થોડી રાહ જુઓ...</div>';
+        }
+
+        document.body.classList.add('is-generating-pdf');
+        var element = document.querySelector('.invoice-card');
+        var restoreCard = prepareCardForPdf(element);
+        var opt = getPdfOptions();
+
+        html2pdf().set(opt).from(element).outputPdf('blob').then(function(pdfBlob) {
+            restoreCard();
+            return uploadPdfBlobToServer(pdfBlob);
+        }).then(function(data) {
+            document.body.classList.remove('is-generating-pdf');
+            if (data && data.status && data.pdf_url) {
+                window.location.replace(data.pdf_url);
+            } else {
+                throw new Error(data && data.message ? data.message : 'Server upload failed');
+            }
+        }).catch(function(err) {
+            restoreCard();
+            document.body.classList.remove('is-generating-pdf');
+            console.error('Save & Show PDF error:', err);
+            if (topBar) {
+                topBar.innerHTML = originalBarHtml;
+            }
+            alert('PDF generation notice: ' + err.message);
+            window.print();
+        });
+    }
+
+    function downloadPDF() {
+        var btn = document.getElementById('btnDownloadPdf');
+        var originalText = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="ti ti-loader"></i> Processing...';
+        }
+
+        document.body.classList.add('is-generating-pdf');
+        var element = document.querySelector('.invoice-card');
+        var restoreCard = prepareCardForPdf(element);
+        var opt = getPdfOptions();
+
+        html2pdf().set(opt).from(element).outputPdf('blob').then(function(pdfBlob) {
+            restoreCard();
+            uploadPdfBlobToServer(pdfBlob).catch(function(e) {
+                console.warn('Background server PDF save failed:', e);
+            });
+            return html2pdf().set(opt).from(element).save();
+        }).then(function() {
+            document.body.classList.remove('is-generating-pdf');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }).catch(function(err) {
+            restoreCard();
+            document.body.classList.remove('is-generating-pdf');
+            console.error('PDF error:', err);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+            window.print();
+        });
+    }
+
+    window.addEventListener('load', function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('silent_gen') === '1') {
+            // Background generation without redirecting user away - wait 800ms for template DOM & fonts
+            setTimeout(function() {
+                var element = document.querySelector('.invoice-card');
+                if (!element) {
+                    console.error('silent_gen: .invoice-card not found in DOM');
+                    return;
+                }
+                document.body.classList.add('is-generating-pdf');
+                var restoreCard = prepareCardForPdf(element);
+                var opt = getPdfOptions();
+                html2pdf().set(opt).from(element).outputPdf('blob').then(function(pdfBlob) {
+                    restoreCard();
+                    document.body.classList.remove('is-generating-pdf');
+                    return uploadPdfBlobToServer(pdfBlob);
+                }).then(function(data) {
+                    console.log('Background PDF saved successfully:', data);
+                }).catch(function(err) {
+                    restoreCard();
+                    document.body.classList.remove('is-generating-pdf');
+                    console.error('Background PDF save error:', err);
+                });
+            }, 800);
+        } else if (urlParams.get('store_and_show') === '1' || urlParams.get('save_and_show') === '1') {
+            setTimeout(saveAndShowPDF, 400);
+        } else if (urlParams.get('download') === '1') {
+            setTimeout(downloadPDF, 600);
+        }
+    });
+</script>
+
+</body>
+</html>
+

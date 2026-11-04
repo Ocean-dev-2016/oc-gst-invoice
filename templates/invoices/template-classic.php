@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once dirname(dirname(__DIR__)) . '/root/config.php';
 
 // Check login or internal system token
@@ -459,8 +459,8 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                 border: none !important;
                 box-shadow: none !important;
                 padding: 0 !important;
-                min-height: 297mm !important;
-                height: 297mm !important;
+                min-height: unset !important;
+                height: auto !important;
                 display: flex !important;
                 flex-direction: column !important;
             }
@@ -546,7 +546,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                         if (!empty($q->quotation_status)) { ?>
                         <div class="meta-line">
                             <strong>Status:</strong>
-                            <span style="font-weight: 700; color: <?= ($q->quotation_status === 'Accepted') ? '#10b981' : (($q->quotation_status === 'Rejected') ? '#ef4444' : '#6b7280') ?>">
+                            <span style="font-weight: 700; color: <?= ($q->quotation_status === 'Accepted') ? '#10b981' : (($q->quotation_status === 'Rejected') ? '#ef4444' : (($q->quotation_status === 'Send') ? '#0284c7' : '#6b7280')) ?>">
                                 <?= htmlspecialchars($q->quotation_status) ?>
                             </span>
                         </div>
@@ -710,7 +710,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
             </div>
 
             <!-- Footer pinned to bottom -->
-            <div class="invoice-footer-pin" style="margin-top: auto; flex-shrink: 0;">
+            <div class="invoice-footer-pin" style="margin-top: 15px; flex-shrink: 0;">
                 <?php renderStandardInvoiceFooter($company, $q, '#7367f0'); ?>
             </div>
 

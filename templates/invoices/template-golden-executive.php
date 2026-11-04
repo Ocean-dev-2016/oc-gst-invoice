@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once dirname(dirname(__DIR__)) . '/root/config.php';
 require_once dirname(dirname(__DIR__)) . '/includes/invoice-data-loader.php';
 require_once dirname(dirname(__DIR__)) . '/includes/invoice-table-renderer.php';
@@ -391,20 +391,9 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
             color: #1a1a1a;
         }
 
-        /* Bottom Decorative Bar */
-        .bottom-bar {
-            height: 25px;
-            background: #1a1a1a;
-            display: flex;
-        }
-
-        .bottom-bar-dark {
-            flex: 1;
-        }
-
-        .bottom-bar-gold {
-            width: 320px;
-            background: #e5ad45;
+        .invoice-card .invoice-footer-pin > .std-invoice-footer {
+            margin: 0 25px;
+            padding-bottom: 15px;
         }
 
         @media print {
@@ -428,8 +417,8 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                 margin: 0 auto !important;
                 width: 100% !important;
                 max-width: 100% !important;
-                min-height: 297mm !important;
-                height: 297mm !important;
+                min-height: unset !important;
+                height: auto !important;
                 display: flex !important;
                 flex-direction: column !important;
                 padding: 0 !important;
@@ -442,11 +431,6 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
                 margin-top: auto !important;
-            }
-
-            .bottom-bar {
-                page-break-before: avoid !important;
-                break-before: avoid !important;
             }
 
             .info-section {
@@ -510,15 +494,6 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
                 padding: 0 15px 25px 15px;
             }
 
-            .bottom-bar {
-                flex-direction: column;
-                height: auto;
-            }
-
-            .bottom-bar-gold {
-                width: 100%;
-                height: 10px;
-            }
         }
     </style>
 </head>
@@ -640,20 +615,13 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
         </div>
 
         <!-- Items Table (grows to fill space) -->
-        <div style="flex: 1 0 auto; padding: 0 25px;">
+        <div style="padding: 0 25px;">
             <?php renderInvoiceProductTableAndTotals($items, $q, $isGst, $hasCgstSgst, $hasIgst, $amountInWords, '#e5ad45'); ?>
         </div>
 
         <!-- Footer pinned to bottom -->
-        <div class="invoice-footer-pin" style="margin-top: auto; flex-shrink: 0;">
-            <div style="padding: 0 25px 15px 25px;">
-                <?php renderStandardInvoiceFooter($company, $q, '#e5ad45'); ?>
-            </div>
-            <!-- Bottom Accent Bar -->
-            <div class="bottom-bar">
-                <div class="bottom-bar-dark"></div>
-                <div class="bottom-bar-gold"></div>
-            </div>
+        <div class="invoice-footer-pin" style="margin-top: 15px; flex-shrink: 0;">
+            <?php renderStandardInvoiceFooter($company, $q, '#e5ad45', '#1a1a1a'); ?>
         </div>
     </div>
 

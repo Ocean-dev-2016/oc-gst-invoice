@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // Function to generate and save PDF for quotation, invoice, or purchase
 function generateDocumentPdfServerSide($docId, $docType = 'quotation')
 {
@@ -72,13 +72,23 @@ function generateDocumentPdfServerSide($docId, $docType = 'quotation')
         $row = $ai_db->aiGetQueryObj("SELECT id, quotation_no as doc_no, company_id FROM tbl_quotation WHERE id='$docId' LIMIT 1");
         if (empty($row)) return false;
         $doc = $row[0];
+
+        // Fetch company template_id to guarantee exact user-selected template is loaded
+        $tplParam = "";
+        if (!empty($doc->company_id)) {
+            $compRow = $ai_db->aiGetQueryObj("SELECT invoice_template_id FROM tbl_company WHERE id='{$doc->company_id}' LIMIT 1");
+            if (!empty($compRow) && !empty($compRow[0]->invoice_template_id)) {
+                $tplParam = "&preview_template=" . intval($compRow[0]->invoice_template_id);
+            }
+        }
+
         $formattedId = str_pad($doc->id, 2, '0', STR_PAD_LEFT);
         $cleanNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $doc->doc_no ?? $doc->id);
         $fileName = 'quotation_' . $formattedId . '_' . $cleanNo . '.pdf';
-        $printUrl = $baseUrl . 'quotation-print.php?id=' . $docId . '&token=system_auto_pdf';
+        $printUrl = $baseUrl . 'quotation-print.php?id=' . $docId . '&token=system_auto_pdf' . $tplParam;
     } elseif ($docType === 'purchase') {
         $targetFolder = 'purchase';
-        $row = $ai_db->aiGetQueryObj("SELECT id, purchase_no as doc_no, company_id FROM tbl_purchase WHERE id='$docId' LIMIT 1");
+        $row = $ai_db->aiGetQueryObj("SELECT id, purchase_no as doc_no FROM tbl_purchase WHERE id='$docId' LIMIT 1");
         if (empty($row)) return false;
         $doc = $row[0];
         $cleanNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $doc->doc_no ?? $doc->id);
@@ -89,9 +99,19 @@ function generateDocumentPdfServerSide($docId, $docType = 'quotation')
         $row = $ai_db->aiGetQueryObj("SELECT id, invoice_no as doc_no, company_id FROM tbl_invoice WHERE id='$docId' LIMIT 1");
         if (empty($row)) return false;
         $doc = $row[0];
+
+        // Fetch company template_id to guarantee exact user-selected template is loaded
+        $tplParam = "";
+        if (!empty($doc->company_id)) {
+            $compRow = $ai_db->aiGetQueryObj("SELECT invoice_template_id FROM tbl_company WHERE id='{$doc->company_id}' LIMIT 1");
+            if (!empty($compRow) && !empty($compRow[0]->invoice_template_id)) {
+                $tplParam = "&preview_template=" . intval($compRow[0]->invoice_template_id);
+            }
+        }
+
         $cleanNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $doc->doc_no ?? $doc->id);
         $fileName = 'invoice_' . $doc->id . '_' . $cleanNo . '.pdf';
-        $printUrl = $baseUrl . 'invoice-print.php?id=' . $docId . '&token=system_auto_pdf';
+        $printUrl = $baseUrl . 'invoice-print.php?id=' . $docId . '&token=system_auto_pdf' . $tplParam;
     }
 
     $uploadDir = __DIR__ . '/../uploads/' . $targetFolder . '/';

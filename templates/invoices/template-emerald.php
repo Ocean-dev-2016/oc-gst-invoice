@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once dirname(dirname(__DIR__)) . '/root/config.php';
 require_once dirname(dirname(__DIR__)) . '/includes/invoice-data-loader.php';
 require_once dirname(dirname(__DIR__)) . '/includes/invoice-table-renderer.php';
@@ -144,7 +144,7 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
             .invoice-card {
                 box-shadow: none !important; border: none !important;
                 margin: 0 !important; width: 100% !important; max-width: 100% !important;
-                min-height: 297mm !important; height: 297mm !important;
+                min-height: unset !important; height: auto !important;
                 display: flex !important; flex-direction: column !important;
             }
             .invoice-footer-pin {
@@ -213,12 +213,12 @@ $docNumberLabel = ($docType === "quotation") ? "Quotation No" : (($docType === "
         </div>
 
         <!-- Items & Totals Block -->
-        <div style="flex: 1 0 auto; padding: 0 35px;">
+        <div style="padding: 0 35px;">
             <?php renderInvoiceProductTableAndTotals($items, $q, $isGst, $hasCgstSgst, $hasIgst, $amountInWords, '#059669'); ?>
         </div>
 
         <!-- Footer -->
-        <div class="invoice-footer-pin" style="margin-top: auto; flex-shrink: 0; padding: 0 35px 25px 35px;">
+        <div class="invoice-footer-pin" style="margin-top: 15px; flex-shrink: 0; padding: 0 35px 25px 35px;">
             <?php renderStandardInvoiceFooter($company, $q, '#059669'); ?>
         </div>
     </div>

@@ -666,12 +666,24 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
 
             if (!columnExists('tbl_quotation', 'quotation_status')) {
                 runMigrationQuery(
-                    "ALTER TABLE `tbl_quotation` ADD COLUMN `quotation_status` ENUM('Draft','Accepted','Rejected') NOT NULL DEFAULT 'Draft' AFTER `converted_invoice_id`",
+                    "ALTER TABLE `tbl_quotation` ADD COLUMN `quotation_status` ENUM('Draft','Send','Accepted','Rejected') NOT NULL DEFAULT 'Draft' AFTER `converted_invoice_id`",
                     "Added `quotation_status` column to `tbl_quotation` table successfully.",
                     "Failed to add `quotation_status` to `tbl_quotation`"
                 );
             } else {
-                echo '<div class="log-item log-info">ℹ `tbl_quotation`.`quotation_status` column already exists.</div>';
+                $quotationStatusColumn = mysqli_query($conn, "SHOW COLUMNS FROM `tbl_quotation` LIKE 'quotation_status'");
+                $quotationStatusDefinition = $quotationStatusColumn ? mysqli_fetch_assoc($quotationStatusColumn) : null;
+                if (!$quotationStatusDefinition) {
+                    echo '<div class="log-item log-error">✗ Failed to inspect `tbl_quotation`.`quotation_status`: ' . htmlspecialchars(mysqli_error($conn)) . '</div>';
+                } elseif (stripos($quotationStatusDefinition['Type'] ?? '', "'Send'") === false) {
+                    runMigrationQuery(
+                        "ALTER TABLE `tbl_quotation` MODIFY COLUMN `quotation_status` ENUM('Draft','Send','Accepted','Rejected') NOT NULL DEFAULT 'Draft'",
+                        "Added 'Send' to `tbl_quotation`.`quotation_status` successfully.",
+                        "Failed to add 'Send' to `tbl_quotation`.`quotation_status`"
+                    );
+                } else {
+                    echo '<div class="log-item log-info">ℹ `tbl_quotation`.`quotation_status` already includes &quot;Send&quot;.</div>';
+                }
             }
 
             if (!columnExists('tbl_quotation', 'pdf_url')) {
@@ -851,7 +863,7 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
             echo '<div class="log-item log-info">ℹ `tbl_invoice_templates` table already exists.</div>';
         }
 
-        // Add invoice_template_id to tbl_company
+        // Add invoice_template_id to tbl_company and default all existing companies to 1
         if (tableExists('tbl_company')) {
             if (!columnExists('tbl_company', 'invoice_template_id')) {
                 runMigrationQuery(
@@ -862,31 +874,48 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
             } else {
                 echo '<div class="log-item log-info">ℹ `tbl_company`.`invoice_template_id` already exists.</div>';
             }
+            // Ensure all companies have default 1st template selected
+            runMigrationQuery(
+                "UPDATE `tbl_company` SET `invoice_template_id` = 1 WHERE `invoice_template_id` IS NULL OR `invoice_template_id` = 0",
+                "Updated all companies to have default Template 1.",
+                "Failed to update companies default template"
+            );
         }
 
-        // Add template_id to tbl_invoice
+        // Drop template_id from tbl_invoice if exists
         if (tableExists('tbl_invoice')) {
-            if (!columnExists('tbl_invoice', 'template_id')) {
+            if (columnExists('tbl_invoice', 'template_id')) {
                 runMigrationQuery(
-                    "ALTER TABLE `tbl_invoice` ADD COLUMN `template_id` INT(11) NOT NULL DEFAULT 1 AFTER `company_id`",
-                    "Added `template_id` to `tbl_invoice` successfully.",
-                    "Failed to add `template_id` to `tbl_invoice`"
+                    "ALTER TABLE `tbl_invoice` DROP COLUMN `template_id`",
+                    "Dropped `template_id` from `tbl_invoice` successfully.",
+                    "Failed to drop `template_id` from `tbl_invoice`"
                 );
             } else {
-                echo '<div class="log-item log-info">ℹ `tbl_invoice`.`template_id` already exists.</div>';
+                echo '<div class="log-item log-info">ℹ `tbl_invoice`.`template_id` already removed.</div>';
             }
         }
 
-        // Add template_id to tbl_quotation
+        // Drop template_id from tbl_quotation if exists
         if (tableExists('tbl_quotation')) {
-            if (!columnExists('tbl_quotation', 'template_id')) {
+            if (columnExists('tbl_quotation', 'template_id')) {
                 runMigrationQuery(
-                    "ALTER TABLE `tbl_quotation` ADD COLUMN `template_id` INT(11) NOT NULL DEFAULT 1 AFTER `company_id`",
-                    "Added `template_id` to `tbl_quotation` successfully.",
-                    "Failed to add `template_id` to `tbl_quotation`"
+                    "ALTER TABLE `tbl_quotation` DROP COLUMN `template_id`",
+                    "Dropped `template_id` from `tbl_quotation` successfully.",
+                    "Failed to drop `template_id` from `tbl_quotation`"
                 );
             } else {
-                echo '<div class="log-item log-info">ℹ `tbl_quotation`.`template_id` already exists.</div>';
+                echo '<div class="log-item log-info">ℹ `tbl_quotation`.`template_id` already removed.</div>';
+            }
+        }
+
+        // Drop template_id from tbl_purchase if exists
+        if (tableExists('tbl_purchase')) {
+            if (columnExists('tbl_purchase', 'template_id')) {
+                runMigrationQuery(
+                    "ALTER TABLE `tbl_purchase` DROP COLUMN `template_id`",
+                    "Dropped `template_id` from `tbl_purchase` successfully.",
+                    "Failed to drop `template_id` from `tbl_purchase`"
+                );
             }
         }
 

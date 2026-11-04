@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/root/config.php';
+require_once __DIR__ . '/includes/quotation-status.php';
 
-// Handle AJAX Quotation Workflow Status (Draft, Accepted, Rejected) Update
+// Handle AJAX Quotation Workflow Status (Draft, Send, Accepted, Rejected) Update
 if (isset($_POST['action']) && $_POST['action'] === 'update_quotation_status') {
     if (ob_get_level()) {
         ob_clean();
@@ -9,13 +10,16 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_quotation_status') {
     header('Content-Type: application/json; charset=utf-8');
 
     $quotId = intval($_POST['id'] ?? 0);
-    $newStatus = in_array($_POST['quotation_status'] ?? '', ['Draft', 'Accepted', 'Rejected'], true) ? $_POST['quotation_status'] : 'Draft';
+    $newStatus = $_POST['quotation_status'] ?? '';
 
     if ($quotId > 0) {
-        // Auto-heal column if not exists in database table
-        $chkCol = mysqli_query($ai_conn, "SHOW COLUMNS FROM `tbl_quotation` LIKE 'quotation_status'");
-        if (!$chkCol || mysqli_num_rows($chkCol) === 0) {
-            @mysqli_query($ai_conn, "ALTER TABLE `tbl_quotation` ADD COLUMN `quotation_status` ENUM('Draft','Accepted','Rejected') NOT NULL DEFAULT 'Draft' AFTER `converted_invoice_id`");
+        if (!in_array($newStatus, getQuotationStatuses(), true)) {
+            echo json_encode(['status' => false, 'message' => 'Invalid quotation status.']);
+            exit;
+        }
+        if (!ensureQuotationStatusSchema($ai_conn)) {
+            echo json_encode(['status' => false, 'message' => 'Failed to prepare quotation status database field: ' . mysqli_error($ai_conn)]);
+            exit;
         }
 
         $qRow = $ai_db->aiGetQueryObj("SELECT id, converted_invoice_id, due_date FROM tbl_quotation WHERE id='$quotId' LIMIT 1");
@@ -32,7 +36,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_quotation_status') {
         $qDueDate = !empty($qRow[0]->due_date) ? date('Y-m-d', strtotime($qRow[0]->due_date)) : '';
         $isExpired = (!empty($qDueDate) && $qDueDate < $today);
 
-        if ($isExpired && $newStatus === 'Accepted') {
+        if ($isExpired && in_array($newStatus, ['Send', 'Accepted'], true)) {
             echo json_encode([
                 'status' => false,
                 'message' => 'Due date has expired (' . date('d-m-Y', strtotime($qDueDate)) . '). This quotation can only be Rejected.'
@@ -90,9 +94,9 @@ if (isset($_GET['toggle']) && isset($_GET['id'])) {
     }
 }
 
-// Auto update expired Draft quotations to Rejected in database where due_date < today
+// Auto update expired Draft/Sent quotations to Rejected in database where due_date < today
 $todayYmd = date('Y-m-d');
-@mysqli_query($ai_conn, "UPDATE tbl_quotation SET quotation_status='Rejected' WHERE quotation_status='Draft' AND due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '$todayYmd' AND (converted_invoice_id IS NULL OR converted_invoice_id = 0)");
+@mysqli_query($ai_conn, "UPDATE tbl_quotation SET quotation_status='Rejected' WHERE quotation_status IN ('Draft','Send') AND due_date IS NOT NULL AND due_date != '' AND due_date != '0000-00-00' AND due_date < '$todayYmd' AND (converted_invoice_id IS NULL OR converted_invoice_id = 0)");
 
 // Handle delete
 if (isset($_GET['action']) && $_GET['action'] === 'delete') {
@@ -128,7 +132,7 @@ if (($_SESSION['user_type'] ?? '') === 'company' && !empty($_SESSION['company_id
 
 $filter_status = $_GET['quotation_status'] ?? 'all';
 $status_where = "";
-if (in_array($filter_status, ['Draft', 'Accepted', 'Rejected'], true)) {
+if (in_array($filter_status, getQuotationStatuses(), true)) {
     $status_where = " AND q.quotation_status = '{$filter_status}'";
 }
 
@@ -228,6 +232,7 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                         <select id="filterQuotationStatus" class="form-select form-select-sm me-2" style="width: auto; min-width: 135px; border-color: #dbdade; color: #5d596c; font-size: 0.875rem; height: 47px; border-radius: 10px;" onchange="window.location.href='manage-quotation-list.php?quotation_status=' + this.value + '&due_status=<?= urlencode($filter_due_status) ?>';">
                                             <option value="all" <?= ($filter_status === 'all') ? 'selected' : '' ?>>All Status</option>
                                             <option value="Draft" <?= ($filter_status === 'Draft') ? 'selected' : '' ?>>Draft</option>
+                                            <option value="Send" <?= ($filter_status === 'Send') ? 'selected' : '' ?>>Send</option>
                                             <option value="Accepted" <?= ($filter_status === 'Accepted') ? 'selected' : '' ?>>Accepted</option>
                                             <option value="Rejected" <?= ($filter_status === 'Rejected') ? 'selected' : '' ?>>Rejected</option>
                                         </select>
@@ -270,18 +275,11 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                                 <tr>
                                                     <!-- 1. Print / View Icon -->
                                                     <td>
-                                                        <?php
-                                                        $formattedId = str_pad($q->id, 2, '0', STR_PAD_LEFT);
-                                                        $safeQuoNoIcon = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->quotation_no ?? ('quotation_' . $q->id));
-                                                        $iconPdfRel = !empty($q->pdf_url) ? $q->pdf_url : ('uploads/quotation/quotation_' . $formattedId . '_' . $safeQuoNoIcon . '.pdf');
-                                                        $iconPdfDisk = __DIR__ . '/' . $iconPdfRel;
-                                                        $iconViewUrl = file_exists($iconPdfDisk) ? ($iconPdfRel) : ('quotation-print.php?id=' . $q->id . '&store_and_show=1');
-                                                        ?>
+                                                        <?php $iconViewUrl = 'quotation-print.php?id=' . $q->id . '&store_and_show=1'; ?>
                                                         <a href="<?= $iconViewUrl ?>" target="_blank" class="text-primary" title="Print / View" style="font-size: 20px;">
                                                             <i class="ti ti-printer"></i>
                                                         </a>
                                                     </td>
-
                                                     <!-- 2. Party Name -->
                                                     <td class="text-start">
                                                         <strong><?= htmlspecialchars($q->party_name) ?></strong>
@@ -317,7 +315,7 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                                         ?>
                                                     </td>
 
-                                                    <!-- 6. Status (Draft/Accepted/Rejected) + GENERATE INVOICE button -->
+                                                    <!-- 6. Status (Draft/Send/Accepted/Rejected) + GENERATE INVOICE button -->
                                                     <td>
                                                         <div class="d-inline-flex align-items-center justify-content-center gap-2">
                                                             <?php
@@ -340,6 +338,8 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                                                 $badgeClass = 'bg-label-success';
                                                             } elseif ($quoStatus === 'Rejected') {
                                                                 $badgeClass = 'bg-label-danger';
+                                                            } elseif ($quoStatus === 'Send') {
+                                                                $badgeClass = 'bg-label-info';
                                                             } else {
                                                                 $badgeClass = 'bg-label-secondary';
                                                             }
@@ -366,9 +366,11 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                                                         <?php
                                                                         if ($quoStatus === 'Accepted') echo 'background-color:#dcfce7; color:#15803d; border-color:#86efac;';
                                                                         elseif ($quoStatus === 'Rejected') echo 'background-color:#fee2e2; color:#b91c1c; border-color:#fca5a5;';
+                                                                        elseif ($quoStatus === 'Send') echo 'background-color:#e0f2fe; color:#0369a1; border-color:#7dd3fc;';
                                                                         else echo 'background-color:#f1f5f9; color:#475569; border-color:#cbd5e1;';
                                                                         ?>">
                                                                     <option value="Draft" <?= ($quoStatus === 'Draft') ? 'selected' : '' ?>>Draft</option>
+                                                                    <option value="Send" <?= ($quoStatus === 'Send') ? 'selected' : '' ?>>Send</option>
                                                                     <option value="Accepted" <?= ($quoStatus === 'Accepted') ? 'selected' : '' ?>>Accepted</option>
                                                                     <option value="Rejected" <?= ($quoStatus === 'Rejected') ? 'selected' : '' ?>>Rejected</option>
                                                                 </select>
@@ -412,15 +414,7 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                                             </button>
                                                             <div class="dropdown-menu dropdown-menu-end">
                                                                 <?php
-                                                                $formattedIdDrop = str_pad($q->id, 2, '0', STR_PAD_LEFT);
-                                                                $safeQuoNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->quotation_no ?? ('quotation_' . $q->id));
-                                                                $pdfRelPath = !empty($q->pdf_url) ? $q->pdf_url : ('uploads/quotation/quotation_' . $formattedIdDrop . '_' . $safeQuoNo . '.pdf');
-                                                                $pdfDiskPath = __DIR__ . '/' . $pdfRelPath;
-                                                                if (file_exists($pdfDiskPath)) {
-                                                                    $viewUrl = $pdfRelPath;
-                                                                } else {
-                                                                    $viewUrl = 'quotation-print.php?id=' . $q->id . '&store_and_show=1';
-                                                                }
+                                                                $viewUrl = 'quotation-print.php?id=' . $q->id . '&store_and_show=1';
                                                                 ?>
                                                                 <a class="dropdown-item" href="<?= $viewUrl ?>" target="_blank">
                                                                     <i class="ti ti-printer me-1"></i> Print / View
@@ -482,7 +476,7 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                 }]
             });
 
-            // AJAX Handler for Quotation Status Change (Draft, Accepted, Rejected)
+            // AJAX Handler for Quotation Status Change (Draft, Send, Accepted, Rejected)
             $(document).on('change', '.quotation-status-dropdown', function() {
                 var $select = $(this);
                 var quotationId = $select.data('id');
@@ -515,6 +509,13 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                     'background-color': '#fee2e2',
                                     'color': '#b91c1c',
                                     'border-color': '#fca5a5'
+                                });
+                                $convBtn.attr('style', 'display: none !important;');
+                            } else if (newStatus === 'Send') {
+                                $select.css({
+                                    'background-color': '#e0f2fe',
+                                    'color': '#0369a1',
+                                    'border-color': '#7dd3fc'
                                 });
                                 $convBtn.attr('style', 'display: none !important;');
                             } else {

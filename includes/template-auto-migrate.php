@@ -19,23 +19,25 @@ if (isset($ai_db)) {
     if (empty($checkCompCol)) {
         @$ai_db->aiQuery("ALTER TABLE `tbl_company` ADD COLUMN `invoice_template_id` INT(11) NOT NULL DEFAULT 1 AFTER `status`");
     }
+    // Ensure all existing companies have default 1st template selected
+    @$ai_db->aiQuery("UPDATE `tbl_company` SET `invoice_template_id` = 1 WHERE `invoice_template_id` IS NULL OR `invoice_template_id` = 0");
 
-    // 3. Ensure template_id exists in tbl_invoice
+    // Drop template_id from tbl_invoice if exists
     $checkInvCol = @$ai_db->aiGetQueryObj("SHOW COLUMNS FROM `tbl_invoice` LIKE 'template_id'");
-    if (empty($checkInvCol)) {
-        @$ai_db->aiQuery("ALTER TABLE `tbl_invoice` ADD COLUMN `template_id` INT(11) NOT NULL DEFAULT 1 AFTER `company_id`");
+    if (!empty($checkInvCol)) {
+        @$ai_db->aiQuery("ALTER TABLE `tbl_invoice` DROP COLUMN `template_id`");
     }
 
-    // Ensure template_id exists in tbl_quotation
+    // Drop template_id from tbl_quotation if exists
     $checkQuoCol = @$ai_db->aiGetQueryObj("SHOW COLUMNS FROM `tbl_quotation` LIKE 'template_id'");
-    if (empty($checkQuoCol)) {
-        @$ai_db->aiQuery("ALTER TABLE `tbl_quotation` ADD COLUMN `template_id` INT(11) NOT NULL DEFAULT 1 AFTER `company_id`");
+    if (!empty($checkQuoCol)) {
+        @$ai_db->aiQuery("ALTER TABLE `tbl_quotation` DROP COLUMN `template_id`");
     }
 
-    // Ensure template_id exists in tbl_purchase
+    // Drop template_id from tbl_purchase if exists
     $checkPurCol = @$ai_db->aiGetQueryObj("SHOW COLUMNS FROM `tbl_purchase` LIKE 'template_id'");
-    if (empty($checkPurCol)) {
-        @$ai_db->aiQuery("ALTER TABLE `tbl_purchase` ADD COLUMN `template_id` INT(11) NOT NULL DEFAULT 1 AFTER `company_id`");
+    if (!empty($checkPurCol)) {
+        @$ai_db->aiQuery("ALTER TABLE `tbl_purchase` DROP COLUMN `template_id`");
     }
 
     // Ensure is_premium exists in tbl_invoice_templates
