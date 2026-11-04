@@ -1183,6 +1183,54 @@ if ($action === 'customer-edit') {
     $custOverdueAmt = (float)($custOverdueRes[0]->overdue_amount ?? 0);
     $custOverdueCount = (int)($custOverdueRes[0]->overdue_invoices_count ?? 0);
 
+    $invoiceHistoryRows = $ai_db->aiGetQueryObj("
+        SELECT id, invoice_no, invoice_date, grand_total, payment_status
+        FROM tbl_invoice
+        WHERE company_id = {$company_id} AND party_id = {$customerId}
+        ORDER BY invoice_date DESC, id DESC
+    ");
+    $invoiceHistory = [];
+    if (!empty($invoiceHistoryRows)) {
+        foreach ($invoiceHistoryRows as $invoiceRow) {
+            $invoiceHistory[] = [
+                'invoice_id' => (int)$invoiceRow->id,
+                'invoice_no' => $invoiceRow->invoice_no ?? '',
+                'invoice_date' => $invoiceRow->invoice_date ?? '',
+                'invoice_date_formatted' => !empty($invoiceRow->invoice_date) ? date('d-m-Y', strtotime($invoiceRow->invoice_date)) : '',
+                'amount' => (float)($invoiceRow->grand_total ?? 0),
+                'amount_formatted' => '₹' . number_format((float)($invoiceRow->grand_total ?? 0), 2),
+                'payment_status' => $invoiceRow->payment_status ?? 'Pending'
+            ];
+        }
+    }
+
+    $paymentHistoryRows = $ai_db->aiGetQueryObj("
+        SELECT ip.id, ip.invoice_id, ip.payment_date, ip.payment_mode, ip.amount,
+               inv.invoice_no, inv.invoice_date
+        FROM tbl_invoice_payments ip
+        INNER JOIN tbl_invoice inv ON inv.id = ip.invoice_id
+        WHERE ip.company_id = {$company_id} AND ip.party_id = {$customerId}
+        ORDER BY ip.payment_date DESC, ip.id DESC
+    ");
+    $paymentHistory = [];
+    if (!empty($paymentHistoryRows)) {
+        foreach ($paymentHistoryRows as $paymentRow) {
+            $paymentHistory[] = [
+                'payment_id' => (int)$paymentRow->id,
+                'invoice_id' => (int)$paymentRow->invoice_id,
+                'invoice_no' => $paymentRow->invoice_no ?? '',
+                'invoice_date' => $paymentRow->invoice_date ?? '',
+                'invoice_date_formatted' => !empty($paymentRow->invoice_date) ? date('d-m-Y', strtotime($paymentRow->invoice_date)) : '',
+                'payment_date' => $paymentRow->payment_date ?? '',
+                'payment_date_formatted' => !empty($paymentRow->payment_date) ? date('d-m-Y', strtotime($paymentRow->payment_date)) : '',
+                'payment_mode_id' => (int)(function_exists('getPaymentModeId') ? getPaymentModeId($paymentRow->payment_mode ?? '') : ($paymentRow->payment_mode ?? 0)),
+                'payment_mode' => function_exists('getPaymentModeName') ? getPaymentModeName($paymentRow->payment_mode ?? '') : ($paymentRow->payment_mode ?? ''),
+                'amount' => (float)($paymentRow->amount ?? 0),
+                'amount_formatted' => '₹' . number_format((float)($paymentRow->amount ?? 0), 2)
+            ];
+        }
+    }
+
     $sameAsBilling = (!empty($cust->address) && $cust->address === $cust->shipping_address)
         && ((int)$cust->state_id === (int)$cust->shipping_state_id)
         && ((int)$cust->city_id === (int)$cust->shipping_city_id)
@@ -1237,6 +1285,8 @@ if ($action === 'customer-edit') {
         'shipping_city_id'    => (int)($cust->shipping_city_id ?? 0),
         'shipping_city_name'  => $cust->shipping_city_name ?? '',
         'shipping_pincode'    => $cust->shipping_pincode ?? '',
+        'invoice_history'     => $invoiceHistory,
+        'payment_history'     => $paymentHistory,
         'created_at'          => $cust->created_at ?? ''
     ]);
 }
