@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/root/config.php';
 
 // Check login or internal system token
@@ -9,40 +9,9 @@ if (empty($_SESSION['aid']) && !$isInternalCall) {
 }
 
 $docType = 'purchase';
-require_once __DIR__ . '/includes/template-auto-migrate.php';
-require_once __DIR__ . '/includes/invoice-data-loader.php';
 require_once __DIR__ . '/includes/invoice-footer-renderer.php';
 
-// ==========================================
-// DYNAMIC_TEMPLATE_ROUTER: Load Purchase Specific / Company Template
-// ==========================================
-$templateIdToUse = 1;
-if (!empty($_GET['preview_template'])) {
-    $templateIdToUse = intval($_GET['preview_template']);
-} elseif (!empty($q->template_id) && intval($q->template_id) > 0) {
-    $templateIdToUse = intval($q->template_id);
-} elseif (!empty($company->invoice_template_id)) {
-    $templateIdToUse = intval($company->invoice_template_id);
-}
-
-// Fetch template file from DB
-$tplObj = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates WHERE id='$templateIdToUse' LIMIT 1");
-if (!empty($tplObj) && !empty($tplObj[0]->file_path)) {
-    $tplRelativePath = $tplObj[0]->file_path;
-    $fullTemplatePath = __DIR__ . '/' . ltrim($tplRelativePath, '/');
-    if (file_exists($fullTemplatePath) && basename($fullTemplatePath) !== 'purchase-print.php') {
-        include $fullTemplatePath;
-        exit;
-    }
-}
-require_once __DIR__ . '/root/config.php';
-
-// Check login or internal system token
-$isInternalCall = (!empty($_GET['token']) && $_GET['token'] === 'system_auto_pdf');
-if (empty($_SESSION['aid']) && !$isInternalCall) {
-    header('Location: index.php');
-    exit;
-}
+// Purchase bill uses its dedicated clean & simple format directly (no fancy colored invoice templates)
 
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if ($id <= 0) {
@@ -91,6 +60,7 @@ if (!empty($q->party_id)) {
 }
 
 // Helper: Convert numbers to Indian Rupees in words
+if (!function_exists('getIndianCurrencyWords')) {
 function getIndianCurrencyWords(float $number)
 {
     $decimal = round($number - ($no = floor($number)), 2) * 100;
@@ -150,6 +120,7 @@ function getIndianCurrencyWords(float $number)
         $paise = " and " . ($d < 21 ? ($words[$d] ?? "") : (($words[(int)floor($d / 10) * 10] ?? "") . " " . ($words[$d % 10] ?? ""))) . " Paise";
     }
     return ($Rupees ? $Rupees . 'Rupees ' : '') . $paise . " Only";
+}
 }
 
 $isCompanyGst = (!empty($company) && isset($company->gst_applicable)) ? ((int)$company->gst_applicable === 1) : true;

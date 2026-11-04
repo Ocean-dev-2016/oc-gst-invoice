@@ -711,7 +711,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'set_company_invoice_templat
     $update = $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id='$templateId' WHERE id='$companyId'");
     if ($update) {
         // Also update existing invoices of this company so they use the new template
-        $ai_db->aiQuery("UPDATE tbl_invoice SET template_id='$templateId' WHERE company_id='$companyId'");
 
         // Invalidate/delete old generated PDFs for this company so new template PDFs are freshly generated
         $invList = $ai_db->aiGetQueryObj("SELECT invoice_no FROM tbl_invoice WHERE company_id='$companyId'");

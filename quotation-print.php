@@ -19,8 +19,6 @@ require_once __DIR__ . '/includes/invoice-footer-renderer.php';
 $templateIdToUse = 1;
 if (!empty($_GET['preview_template'])) {
     $templateIdToUse = intval($_GET['preview_template']);
-} elseif (!empty($q->template_id) && intval($q->template_id) > 0) {
-    $templateIdToUse = intval($q->template_id);
 } elseif (!empty($company->invoice_template_id) && intval($company->invoice_template_id) > 0) {
     $templateIdToUse = intval($company->invoice_template_id);
 }
@@ -528,7 +526,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                     <?php if (!empty($q->quotation_status)) { ?>
                     <div class="meta-line">
                         <strong>Status:</strong> 
-                        <span style="font-weight: 700; color: <?= ($q->quotation_status === 'Accepted') ? '#10b981' : (($q->quotation_status === 'Rejected') ? '#ef4444' : '#6b7280') ?>">
+                        <span style="font-weight: 700; color: <?= ($q->quotation_status === 'Accepted') ? '#10b981' : (($q->quotation_status === 'Rejected') ? '#ef4444' : (($q->quotation_status === 'Send') ? '#0284c7' : '#6b7280')) ?>">
                             <?= htmlspecialchars($q->quotation_status) ?>
                         </span>
                     </div>

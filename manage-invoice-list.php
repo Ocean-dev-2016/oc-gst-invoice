@@ -527,14 +527,7 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                             </button>
                                                             <div class="dropdown-menu dropdown-menu-end">
                                                                 <?php
-                                                                $safeInvNo = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $q->invoice_no ?? ('invoice_' . $q->id));
-                                                                $pdfRelPath = 'uploads/invoices/invoice_' . $safeInvNo . '.pdf';
-                                                                $pdfDiskPath = __DIR__ . '/' . $pdfRelPath;
-                                                                if (file_exists($pdfDiskPath)) {
-                                                                    $viewUrl = $pdfRelPath;
-                                                                } else {
-                                                                    $viewUrl = 'invoice-print.php?id=' . $q->id . '&store_and_show=1';
-                                                                }
+                                                                $viewUrl = 'invoice-print.php?id=' . $q->id . '&store_and_show=1';
                                                                 ?>
                                                                 <a class="dropdown-item" href="<?= $viewUrl ?>" target="_blank">
                                                                     <i class="ti ti-printer me-1"></i> Print / View

@@ -38,6 +38,7 @@ function validatePasswordComplexity($password, $confirm_password)
 
 // Fetch active states for dropdown
 $states = $ai_db->aiGetQueryObj("SELECT id, state_name, state_code FROM tbl_state WHERE status='active' ORDER BY order_no ASC, state_name ASC");
+$templates = $ai_db->aiGetQueryObj("SELECT id, template_name, preview_image, is_premium FROM tbl_invoice_templates WHERE status='active' ORDER BY id ASC");
 
 // ===================== ADD =====================
 if ($mode === 'add' && ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit']))) {
@@ -235,6 +236,8 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
 
             $pass_sql = !empty($password) ? ", password='" . md5($password) . "'" : "";
 
+            $invoice_template_id = intval($_POST['invoice_template_id'] ?? 1);
+    if ($invoice_template_id <= 0) $invoice_template_id = 1;
             $edit_qry = "UPDATE $table SET 
                 company_name='" . $company_name . "',
                 gst_applicable='" . $gst_applicable . "',
@@ -250,6 +253,7 @@ if ($mode === 'edit' && (isset($_POST['btn_submit']) || $_SERVER['REQUEST_METHOD
                 $pass_sql
                 $logo_sql
                 $sign_sql,
+                invoice_template_id='" . $invoice_template_id . "',
                 status='" . $status . "'
                 WHERE id='" . intval($id) . "'";
 
@@ -365,6 +369,30 @@ if ($selected_state_id > 0) {
                                                     <option value="active" <?= ((($_POST['status'] ?? $categoryData->status ?? 'active') == 'active')) ? 'selected' : '' ?>>Active</option>
                                                     <option value="deactive" <?= ((($_POST['status'] ?? $categoryData->status ?? '') == 'deactive')) ? 'selected' : '' ?>>Deactive</option>
                                                 </select>
+                                            </div>
+
+                                            <!-- Invoice & Quotation PDF Template -->
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-bold">
+                                                    <i class="ti ti-template me-1 text-primary"></i> Invoice / Quotation Template <span class="text-danger">*</span>
+                                                </label>
+                                                <?php
+                                                $selected_tpl_id = intval($_POST['invoice_template_id'] ?? $categoryData->invoice_template_id ?? 1);
+                                                ?>
+                                                <select name="invoice_template_id" id="invoice_template_id" class="form-select select2" required>
+                                                    <?php if (!empty($templates)) {
+                                                        foreach ($templates as $tpl) {
+                                                            $isPrem = (!empty($tpl->is_premium) && (int)$tpl->is_premium === 1);
+                                                    ?>
+                                                            <option value="<?= $tpl->id ?>" <?= ($selected_tpl_id === (int)$tpl->id) ? 'selected' : '' ?>>
+                                                                <?= htmlspecialchars($tpl->template_name) ?><?= $isPrem ? ' (PRO)' : '' ?>
+                                                            </option>
+                                                    <?php }
+                                                    } else { ?>
+                                                        <option value="1">Classic Professional GST</option>
+                                                    <?php } ?>
+                                                </select>
+                                                <small class="text-muted">PDF invoices and quotations for this company will use this template.</small>
                                             </div>
 
                                             <?php
