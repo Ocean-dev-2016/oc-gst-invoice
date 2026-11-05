@@ -504,7 +504,12 @@ $statOverdueAmt = floatval($m->overdue_amt ?? 0);
                                                             </button>
                                                             <div class="dropdown-menu dropdown-menu-end">
                                                                 <?php
-                                                                $viewUrl = 'purchase-print.php?id=' . $q->id . '&store_and_show=1';
+                                                                $diskPdf = !empty($q->pdf_url) ? (__DIR__ . '/' . ltrim($q->pdf_url, '/')) : '';
+                                                                if (!empty($diskPdf) && file_exists($diskPdf) && filesize($diskPdf) > 500) {
+                                                                    $viewUrl = ltrim($q->pdf_url, '/');
+                                                                } else {
+                                                                    $viewUrl = 'view-pdf.php?type=purchase&id=' . $q->id;
+                                                                }
                                                                 ?>
                                                                 <a class="dropdown-item" href="<?= $viewUrl ?>" target="_blank">
                                                                     <i class="ti ti-printer me-1"></i> Print / View

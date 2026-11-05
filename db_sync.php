@@ -189,6 +189,16 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
 
         // 1. tbl_company -> api_token and pincode column
         if (tableExists('tbl_company')) {
+            if (!columnExists('tbl_company', 'token_expires_at')) {
+                runMigrationQuery(
+                    "ALTER TABLE `tbl_company` ADD COLUMN `token_expires_at` DATETIME NULL DEFAULT NULL AFTER `api_token`",
+                    "Added `token_expires_at` column to `tbl_company` table successfully.",
+                    "Failed to add `token_expires_at` column to `tbl_company`"
+                );
+            } else {
+                echo '<div class="log-item log-info">ℹ `tbl_company`.`token_expires_at` column already exists.</div>';
+            }
+
             if (!columnExists('tbl_company', 'api_token')) {
                 runMigrationQuery(
                     "ALTER TABLE `tbl_company` ADD COLUMN `api_token` VARCHAR(255) NULL DEFAULT NULL AFTER `password`",
