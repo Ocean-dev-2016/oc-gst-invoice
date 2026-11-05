@@ -145,7 +145,12 @@ function authenticateCompany($input = [], $includeLocation = false)
         $safeToken = mysqli_real_escape_string($ai_conn, $token);
         $res = $ai_db->aiGetQuery("{$compSelect} WHERE {$wherePrefix}api_token='{$safeToken}' LIMIT 1");
         if (!empty($res)) {
-            $company = $res[0];
+            $matchedComp = $res[0];
+            // Check if token has expired (3 days expiry)
+            if (!empty($matchedComp['token_expires_at']) && strtotime($matchedComp['token_expires_at']) < time()) {
+                apiResponse(401, 'Token has expired. Please login again.');
+            }
+            $company = $matchedComp;
         }
     } elseif ($companyId > 0) {
         $res = $ai_db->aiGetQuery("{$compSelect} WHERE {$wherePrefix}id={$companyId} LIMIT 1");
@@ -276,8 +281,9 @@ if ($action === 'register') {
     }
 
     // Insert into tbl_company with api_token
-    $insertQry = "INSERT INTO tbl_company (username, email, mobile_no, password, api_token, status, created_at) 
-                  VALUES ('{$safeUsername}', '{$safeEmail}', '{$safeMobile}', '{$hashedPassword}', '{$safeToken}', 'active', NOW())";
+    $tokenExpiresAt = date('Y-m-d H:i:s', strtotime('+3 days'));
+    $insertQry = "INSERT INTO tbl_company (username, email, mobile_no, password, api_token, token_expires_at, status, created_at) 
+                  VALUES ('{$safeUsername}', '{$safeEmail}', '{$safeMobile}', '{$hashedPassword}', '{$safeToken}', '{$tokenExpiresAt}', 'active', NOW())";
 
     $result = mysqli_query($ai_conn, $insertQry);
     if (!$result) {
@@ -343,18 +349,28 @@ if ($action === 'login') {
         apiResponse(403, 'Your company account is not active. Please contact administrator.');
     }
 
-    // Generate API token and update in tbl_company directly
+    // Generate API token and update in tbl_company and tbl_api_tokens with 3-day expiry
     $token = bin2hex(random_bytes(32));
     $safeToken = mysqli_real_escape_string($ai_conn, $token);
     $companyId = (int)$company['id'];
+    $expiresAt = date('Y-m-d H:i:s', strtotime('+3 days'));
 
-    mysqli_query($ai_conn, "UPDATE tbl_company SET api_token='{$safeToken}' WHERE id={$companyId}");
+    mysqli_query($ai_conn, "UPDATE tbl_company SET api_token='{$safeToken}', token_expires_at='{$expiresAt}' WHERE id={$companyId}");
+
+    // Also record in tbl_api_tokens if table exists
+    mysqli_query($ai_conn, "INSERT INTO tbl_api_tokens (user_id, user_type, token, expires_at, created_at) 
+                           VALUES ({$companyId}, 'company', '{$safeToken}', '{$expiresAt}', NOW()) 
+                           ON DUPLICATE KEY UPDATE token='{$safeToken}', expires_at='{$expiresAt}'");
 
     unset($company['password']);
     $company['api_token'] = $token;
+    $company['token_expires_at'] = $expiresAt;
 
     apiResponse(200, 'Login successful.', [
-        'company'    => $company
+        'company'          => $company,
+        'token'            => $token,
+        'expires_at'       => $expiresAt,
+        'expires_in_days'  => 3
     ]);
 }
 
@@ -368,7 +384,8 @@ if ($action === 'logout') {
 
     $cId = (int)$company['id'];
     // Invalidate the token in database
-    mysqli_query($ai_conn, "UPDATE tbl_company SET api_token=NULL WHERE id={$cId}");
+    mysqli_query($ai_conn, "UPDATE tbl_company SET api_token=NULL, token_expires_at=NULL WHERE id={$cId}");
+    mysqli_query($ai_conn, "DELETE FROM tbl_api_tokens WHERE user_id={$cId} AND user_type='company'");
 
     apiResponse(200, 'Logged out successfully.');
 }
@@ -2041,9 +2058,10 @@ if ($action === 'quotation-add') {
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
     $pdfSaved = generateDocumentPdfServerSide($newQuotationId, 'quotation');
-    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    $actualRelPath = !empty($pdfSaved) ? $pdfSaved : $computed_pdf_url;
+    $diskPdfPath = __DIR__ . '/../' . ltrim($actualRelPath, '/');
     if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
-        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($actualRelPath, '/');
     } else {
         $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=quotation&id=' . $newQuotationId;
     }
@@ -2482,9 +2500,10 @@ if ($action === 'quotation-update') {
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
     $pdfSaved = generateDocumentPdfServerSide($quotationId, 'quotation');
-    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    $actualRelPath = !empty($pdfSaved) ? $pdfSaved : $computed_pdf_url;
+    $diskPdfPath = __DIR__ . '/../' . ltrim($actualRelPath, '/');
     if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
-        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($actualRelPath, '/');
     } else {
         $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=quotation&id=' . $quotationId;
     }
@@ -4142,12 +4161,12 @@ if ($action === 'invoice-add') {
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
     $pdfSaved = generateDocumentPdfServerSide($newInvoiceId, 'invoice');
-    $computed_pdf_url = 'uploads/invoices/invoice_' . $newInvoiceId . '_' . $cleanInvNo . '.pdf';
-    mysqli_query($ai_conn, "UPDATE tbl_invoice SET pdf_url='{$computed_pdf_url}' WHERE id={$newInvoiceId}");
+    $actualRelPath = !empty($pdfSaved) ? $pdfSaved : ('uploads/invoices/invoice_' . $newInvoiceId . '_' . $cleanInvNo . '.pdf');
+    mysqli_query($ai_conn, "UPDATE tbl_invoice SET pdf_url='{$actualRelPath}' WHERE id={$newInvoiceId}");
 
-    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    $diskPdfPath = __DIR__ . '/../' . ltrim($actualRelPath, '/');
     if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
-        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($actualRelPath, '/');
     } else {
         $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=invoice&id=' . $newInvoiceId;
     }
@@ -4230,11 +4249,10 @@ if ($action === 'invoice-edit') {
     }
     $isPaid = ($payStatus === 'Paid');
 
-    $cleanInvSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->invoice_no ?? $invoiceId);
-    $computedPdfRel = 'uploads/invoices/invoice_' . $invoiceId . '_' . $cleanInvSlug . '.pdf';
-    $diskPdfPath = __DIR__ . '/../' . $computedPdfRel;
+    $invPdfRel = !empty($q->pdf_url) ? $q->pdf_url : ('uploads/invoices/invoice_' . $invoiceId . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $q->invoice_no ?? $invoiceId) . '.pdf');
+    $diskPdfPath = __DIR__ . '/../' . ltrim($invPdfRel, '/');
     if (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500) {
-        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computedPdfRel, '/');
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($invPdfRel, '/');
     } else {
         $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=invoice&id=' . $invoiceId;
     }
@@ -4648,9 +4666,13 @@ if ($action === 'invoice-update') {
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
     $pdfSaved = generateDocumentPdfServerSide($invoiceId, 'invoice');
-    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    $actualRelPath = !empty($pdfSaved) ? $pdfSaved : $computed_pdf_url;
+    if ($pdfSaved) {
+        mysqli_query($ai_conn, "UPDATE tbl_invoice SET pdf_url='{$actualRelPath}' WHERE id={$invoiceId}");
+    }
+    $diskPdfPath = __DIR__ . '/../' . ltrim($actualRelPath, '/');
     if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
-        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($actualRelPath, '/');
     } else {
         $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=invoice&id=' . $invoiceId;
     }
@@ -4975,7 +4997,7 @@ if ($action === 'purchase-list') {
             $printUrl = rtrim(ADMIN_URL, '/') . '/purchase-print.php?id=' . $pid;
 
             $cleanPurSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $row->purchase_no ?? $pid);
-            $computedPdfRel = 'uploads/purchase/purchase_' . $pid . '_' . $cleanPurSlug . '.pdf';
+            $computedPdfRel = 'uploads/purchase/purchase_' . str_pad($pid, 2, '0', STR_PAD_LEFT) . '_' . $cleanPurSlug . '.pdf';
             $pdfRel = !empty($row->pdf_url) ? $row->pdf_url : $computedPdfRel;
             $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
 
@@ -5565,12 +5587,13 @@ if ($action === 'purchase-add') {
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
     $pdfSaved = generateDocumentPdfServerSide($newPurchaseId, 'purchase');
-    $computed_pdf_url = 'uploads/purchase/purchase_' . $newPurchaseId . '_' . $cleanPurNo . '.pdf';
-    mysqli_query($ai_conn, "UPDATE tbl_purchase SET pdf_url='{$computed_pdf_url}' WHERE id={$newPurchaseId}");
+    $formattedPurId = str_pad($newPurchaseId, 2, '0', STR_PAD_LEFT);
+    $actualRelPath = !empty($pdfSaved) ? $pdfSaved : ('uploads/purchase/purchase_' . $formattedPurId . '_' . $cleanPurNo . '.pdf');
+    mysqli_query($ai_conn, "UPDATE tbl_purchase SET pdf_url='{$actualRelPath}' WHERE id={$newPurchaseId}");
 
-    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    $diskPdfPath = __DIR__ . '/../' . ltrim($actualRelPath, '/');
     if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
-        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($actualRelPath, '/');
     } else {
         $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=purchase&id=' . $newPurchaseId;
     }
@@ -5655,7 +5678,7 @@ if ($action === 'purchase-edit') {
     $isPaid = ($payStatus === 'Paid');
 
     $cleanPurSlug = preg_replace('/[^a-zA-Z0-9_]/', '_', $q->purchase_no ?? $purchaseId);
-    $computedPdfRel = 'uploads/purchase/purchase_' . $purchaseId . '_' . $cleanPurSlug . '.pdf';
+    $computedPdfRel = 'uploads/purchase/purchase_' . str_pad($purchaseId, 2, '0', STR_PAD_LEFT) . '_' . $cleanPurSlug . '.pdf';
     $pdfRel = !empty($q->pdf_url) ? $q->pdf_url : $computedPdfRel;
     $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($pdfRel, '/');
 
@@ -6028,12 +6051,13 @@ if ($action === 'purchase-update') {
     // Auto generate physical PDF file on server
     require_once __DIR__ . '/../includes/server-pdf-generator.php';
     $pdfSaved = generateDocumentPdfServerSide($purchaseId, 'purchase');
-    $computed_pdf_url = 'uploads/purchase/purchase_' . $purchaseId . '_' . $cleanPurNo . '.pdf';
-    mysqli_query($ai_conn, "UPDATE tbl_purchase SET pdf_url='{$computed_pdf_url}' WHERE id={$purchaseId}");
+    $formattedPurId = str_pad($purchaseId, 2, '0', STR_PAD_LEFT);
+    $actualRelPath = !empty($pdfSaved) ? $pdfSaved : ('uploads/purchase/purchase_' . $formattedPurId . '_' . $cleanPurNo . '.pdf');
+    mysqli_query($ai_conn, "UPDATE tbl_purchase SET pdf_url='{$actualRelPath}' WHERE id={$purchaseId}");
 
-    $diskPdfPath = __DIR__ . '/../' . $computed_pdf_url;
+    $diskPdfPath = __DIR__ . '/../' . ltrim($actualRelPath, '/');
     if ($pdfSaved || (file_exists($diskPdfPath) && filesize($diskPdfPath) > 500)) {
-        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($computed_pdf_url, '/');
+        $fullPdfUrl = rtrim(SITE_URL, '/') . '/' . ltrim($actualRelPath, '/');
     } else {
         $fullPdfUrl = rtrim(SITE_URL, '/') . '/view-pdf.php?type=purchase&id=' . $purchaseId;
     }

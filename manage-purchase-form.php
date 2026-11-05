@@ -201,10 +201,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
 
             // Common server-side PDF generator (identical format for Web & API)
             require_once __DIR__ . '/includes/server-pdf-generator.php';
-            generateDocumentPdfServerSide($newPurchaseId, 'purchase');
-            $cleanPurNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $purchase_no);
-            $computed_pdf_url = 'uploads/purchase/purchase_' . $newPurchaseId . '_' . $cleanPurNo . '.pdf';
-            $ai_db->aiQuery("UPDATE tbl_purchase SET pdf_url='$computed_pdf_url' WHERE id='$newPurchaseId'");
+            $pdfSaved = generateDocumentPdfServerSide($newPurchaseId, 'purchase');
+            if ($pdfSaved) {
+                $ai_db->aiQuery("UPDATE tbl_purchase SET pdf_url='" . addslashes($pdfSaved) . "' WHERE id='$newPurchaseId'");
+            }
 
             $ai_core->aiGoPage($redirection_url . '?msg=1');
             exit;
@@ -302,7 +302,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
 
             // Common server-side PDF generator (identical format for Web & API)
             require_once __DIR__ . '/includes/server-pdf-generator.php';
-            generateDocumentPdfServerSide($id, 'purchase');
+            $pdfSaved = generateDocumentPdfServerSide($id, 'purchase');
+            if ($pdfSaved) {
+                $ai_db->aiQuery("UPDATE tbl_purchase SET pdf_url='" . addslashes($pdfSaved) . "' WHERE id='$id'");
+            }
 
             $ai_core->aiGoPage($redirection_url . '?msg=2');
             exit;

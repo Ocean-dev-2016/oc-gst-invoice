@@ -275,7 +275,14 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                                 <tr>
                                                     <!-- 1. Print / View Icon -->
                                                     <td>
-                                                        <?php $iconViewUrl = 'quotation-print.php?id=' . $q->id . '&store_and_show=1'; ?>
+                                                        <?php
+    $diskPdf = !empty($q->pdf_url) ? (__DIR__ . '/' . ltrim($q->pdf_url, '/')) : '';
+    if (!empty($diskPdf) && file_exists($diskPdf) && filesize($diskPdf) > 500) {
+        $iconViewUrl = ltrim($q->pdf_url, '/');
+    } else {
+        $iconViewUrl = 'view-pdf.php?type=quotation&id=' . $q->id;
+    }
+?>
                                                         <a href="<?= $iconViewUrl ?>" target="_blank" class="text-primary" title="Print / View" style="font-size: 20px;">
                                                             <i class="ti ti-printer"></i>
                                                         </a>
@@ -414,7 +421,12 @@ $statOverdueAmt = floatval($m->expired_amt ?? 0);
                                                             </button>
                                                             <div class="dropdown-menu dropdown-menu-end">
                                                                 <?php
-                                                                $viewUrl = 'quotation-print.php?id=' . $q->id . '&store_and_show=1';
+                                                                $diskPdf = !empty($q->pdf_url) ? (__DIR__ . '/' . ltrim($q->pdf_url, '/')) : '';
+if (!empty($diskPdf) && file_exists($diskPdf) && filesize($diskPdf) > 500) {
+    $viewUrl = ltrim($q->pdf_url, '/');
+} else {
+    $viewUrl = 'view-pdf.php?type=quotation&id=' . $q->id;
+}
                                                                 ?>
                                                                 <a class="dropdown-item" href="<?= $viewUrl ?>" target="_blank">
                                                                     <i class="ti ti-printer me-1"></i> Print / View

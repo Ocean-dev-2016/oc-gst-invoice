@@ -36,8 +36,9 @@ if ($docType === 'quotation') {
     $row = $ai_db->aiGetQueryObj("SELECT id, purchase_no as doc_no, pdf_url FROM tbl_purchase WHERE id='$id' LIMIT 1");
     if (!empty($row)) {
         $doc = $row[0];
+        $formattedId = str_pad($doc->id, 2, '0', STR_PAD_LEFT);
         $cleanNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $doc->doc_no ?? $doc->id);
-        $expectedFile = 'purchase_' . $doc->id . '_' . $cleanNo . '.pdf';
+        $expectedFile = !empty($doc->pdf_url) ? basename($doc->pdf_url) : ('purchase_' . $formattedId . '_' . $cleanNo . '.pdf');
     }
 } else {
     $folder = 'invoices';
