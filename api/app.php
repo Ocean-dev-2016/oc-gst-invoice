@@ -6743,4 +6743,274 @@ if ($action === 'invoice-template-set-default') {
     ]);
 }
 
+if ($action === 'mpdf-demo-pdf') {
+    $vendorAutoload = dirname(__DIR__) . '/vendor/autoload.php';
+    if (!file_exists($vendorAutoload)) {
+        apiResponse(500, 'mPDF library is not installed. Please run composer require mpdf/mpdf.');
+    }
+    require_once $vendorAutoload;
+
+    $input = getApiInput();
+
+    // Custom or sample demo data
+    $title        = htmlspecialchars($input['title'] ?? ($_GET['title'] ?? 'GST Invoice / Document'));
+    $docNo        = htmlspecialchars($input['doc_no'] ?? ($_GET['doc_no'] ?? 'DEMO/' . date('Y') . '/' . rand(1001, 9999)));
+    $companyName  = htmlspecialchars($input['company_name'] ?? ($_GET['company_name'] ?? 'Demo Company Pvt Ltd'));
+    $customerName = htmlspecialchars($input['customer_name'] ?? ($_GET['customer_name'] ?? 'Demo Customer / Client'));
+    $date         = htmlspecialchars($input['date'] ?? ($_GET['date'] ?? date('d-m-Y')));
+    $amount       = (float)($input['amount'] ?? ($_GET['amount'] ?? 5499.00));
+    $tax          = round($amount * 0.18, 2);
+    $grandTotal   = $amount + $tax;
+
+    // Build sample clean HTML for mPDF
+    $html = '
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {
+                font-family: sans-serif;
+                color: #1e293b;
+                font-size: 13px;
+                line-height: 1.5;
+            }
+            .header-table {
+                width: 100%;
+                border-bottom: 2px solid #2563eb;
+                padding-bottom: 12px;
+                margin-bottom: 20px;
+            }
+            .header-title {
+                font-size: 24px;
+                font-weight: bold;
+                color: #1e40af;
+            }
+            .meta-text {
+                font-size: 12px;
+                color: #64748b;
+            }
+            .info-table {
+                width: 100%;
+                margin-bottom: 20px;
+            }
+            .info-box {
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 6px;
+                padding: 12px;
+                vertical-align: top;
+                width: 48%;
+            }
+            .info-box h4 {
+                margin: 0 0 6px 0;
+                color: #2563eb;
+                font-size: 13px;
+            }
+            .items-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+            }
+            .items-table th {
+                background: #2563eb;
+                color: #ffffff;
+                padding: 8px 10px;
+                text-align: left;
+                font-size: 12px;
+            }
+            .items-table td {
+                padding: 8px 10px;
+                border-bottom: 1px solid #e2e8f0;
+                font-size: 12px;
+            }
+            .total-table {
+                width: 40%;
+                margin-left: auto;
+                border-collapse: collapse;
+                margin-bottom: 30px;
+            }
+            .total-table td {
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            .grand-total-row {
+                background: #eff6ff;
+                font-weight: bold;
+                color: #1e40af;
+                font-size: 14px;
+            }
+            .footer-section {
+                border-top: 1px dashed #cbd5e1;
+                padding-top: 15px;
+                margin-top: 20px;
+            }
+            .terms-box {
+                font-size: 11px;
+                color: #64748b;
+            }
+            .sign-box {
+                text-align: right;
+                font-size: 12px;
+            }
+            .badge-success {
+                background: #dcfce7;
+                color: #166534;
+                padding: 4px 10px;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: bold;
+                display: inline-block;
+            }
+        </style>
+    </head>
+    <body>
+        <table class="header-table">
+            <tr>
+                <td>
+                    <div class="header-title">' . $title . '</div>
+                    <div class="meta-text">Generated using mPDF Engine</div>
+                </td>
+                <td align="right">
+                    <span class="badge-success">CONFIRMED</span>
+                    <div class="meta-text" style="margin-top: 6px;">Doc No: <strong>' . $docNo . '</strong></div>
+                    <div class="meta-text">Date: <strong>' . $date . '</strong></div>
+                </td>
+            </tr>
+        </table>
+
+        <table class="info-table">
+            <tr>
+                <td class="info-box">
+                    <h4>Billed By / Provider:</h4>
+                    <strong>' . $companyName . '</strong><br>
+                    GSTIN: 24AAACC1234A1Z5<br>
+                    Rajkot, Gujarat, India<br>
+                    Email: support@example.com
+                </td>
+                <td style="width: 4%;"></td>
+                <td class="info-box">
+                    <h4>Billed To / Customer:</h4>
+                    <strong>' . $customerName . '</strong><br>
+                    GSTIN: 24BBBDD5678B1Z2<br>
+                    Ahmedabad, Gujarat, India<br>
+                    Email: customer@example.com
+                </td>
+            </tr>
+        </table>
+
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width: 8%;">#</th>
+                    <th style="width: 52%;">Item Description</th>
+                    <th style="width: 15%; text-align: center;">Qty</th>
+                    <th style="width: 25%; text-align: right;">Amount (INR)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td><strong>Demo Service / Product Alpha</strong><br><span style="color:#64748b; font-size:11px;">HSN: 998311 - Standard service package</span></td>
+                    <td align="center">1.00</td>
+                    <td align="right">&#8377;' . number_format($amount, 2) . '</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table class="total-table">
+            <tr>
+                <td>Sub Total:</td>
+                <td align="right">&#8377;' . number_format($amount, 2) . '</td>
+            </tr>
+            <tr>
+                <td>GST (18%):</td>
+                <td align="right">&#8377;' . number_format($tax, 2) . '</td>
+            </tr>
+            <tr class="grand-total-row">
+                <td>Grand Total:</td>
+                <td align="right">&#8377;' . number_format($grandTotal, 2) . '</td>
+            </tr>
+        </table>
+
+        <div class="footer-section">
+            <table style="width: 100%;">
+                <tr>
+                    <td style="width: 60%;" class="terms-box">
+                        <strong>Terms & Conditions:</strong><br>
+                        1. Goods / Services once confirmed are non-refundable.<br>
+                        2. Subject to local jurisdiction.<br>
+                        3. This is a computer generated demo invoice created via mPDF.
+                    </td>
+                    <td style="width: 40%;" class="sign-box">
+                        <br><br>
+                        <strong>For ' . $companyName . '</strong><br>
+                        <span style="font-size: 11px; color: #64748b;">Authorized Signatory</span>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </body>
+    </html>';
+
+    try {
+        // Initialize mPDF
+        $mpdf = new \Mpdf\Mpdf([
+            'mode'          => 'utf-8',
+            'format'        => 'A4',
+            'margin_left'   => 12,
+            'margin_right'  => 12,
+            'margin_top'    => 12,
+            'margin_bottom' => 12,
+            'tempDir'       => sys_get_temp_dir()
+        ]);
+
+        $mpdf->SetTitle($title . ' - ' . $docNo);
+        $mpdf->WriteHTML($html);
+
+        // Check if user requested direct download / stream in browser
+        $streamMode = isset($_GET['stream']) && $_GET['stream'] == '1';
+
+        if ($streamMode) {
+            // Output directly to browser as PDF file stream
+            $mpdf->Output('demo_' . time() . '.pdf', \Mpdf\Output\Destination::INLINE);
+            exit;
+        }
+
+        // Save to uploads/demo/ directory
+        $demoDir = dirname(__DIR__) . '/uploads/demo/';
+        if (!is_dir($demoDir)) {
+            @mkdir($demoDir, 0777, true);
+        }
+
+        $cleanDocNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $docNo);
+        $fileName = 'mpdf_demo_' . time() . '_' . $cleanDocNo . '.pdf';
+        $fullPath = $demoDir . $fileName;
+
+        $mpdf->Output($fullPath, \Mpdf\Output\Destination::FILE);
+
+        $baseUrl = defined('SITE_URL') ? rtrim(SITE_URL, '/') . '/' : 'http://localhost/OC-GST-invoice/';
+        $relPath = 'uploads/demo/' . $fileName;
+        $pdfUrl  = $baseUrl . $relPath;
+
+        apiResponse(200, 'Demo PDF created successfully using mPDF.', [
+            'engine'    => 'mPDF',
+            'file_name' => $fileName,
+            'file_path' => $relPath,
+            'pdf_url'   => $pdfUrl,
+            'stream_url' => $baseUrl . 'api/app.php?action=mpdf-demo-pdf&stream=1',
+            'details'   => [
+                'doc_no'       => $docNo,
+                'title'        => $title,
+                'company_name' => $companyName,
+                'customer_name' => $customerName,
+                'grand_total'  => $grandTotal,
+                'date'         => $date
+            ]
+        ]);
+    } catch (\Exception $e) {
+        apiResponse(500, 'Failed to generate PDF with mPDF: ' . $e->getMessage());
+    }
+}
+
 apiResponse(404, 'Invalid API action.');
