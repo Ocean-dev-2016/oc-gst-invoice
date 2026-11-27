@@ -58,7 +58,7 @@ if ($isCompany) {
 }
 
 // ===================== UPDATE PROFILE =====================
-if (isset($_POST['btn_submit'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['btn_submit']) || isset($_POST['company_name']) || isset($_POST['username']))) {
     if ($isCompany) {
         // Handle Company Profile Update
         $company_name = addslashes(trim($_POST['company_name'] ?? ''));
@@ -409,6 +409,7 @@ if ($isCompany && $profileData) {
                                 <?php if ($isCompany) { ?>
                                     <!-- ==================== COMPANY PROFILE FORM (Includes GST fields) ==================== -->
                                     <form class="card-body p-0" id="mainForm" method="post" action="manage-profile-form.php" enctype="multipart/form-data">
+                                        <input type="hidden" name="btn_submit" value="1">
                                         <input type="hidden" name="id" value="<?= intval($profile_id) ?>">
 
                                         <div class="row g-3">

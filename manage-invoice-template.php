@@ -23,21 +23,25 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
         cursor: pointer;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
+
     .template-thumb-preview:hover {
         transform: scale(1.08);
         box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15);
         border-color: #7367f0;
     }
+
     .template-name-link {
         font-weight: 700;
         color: #1e293b;
         cursor: pointer;
         text-decoration: none;
     }
+
     .template-name-link:hover {
         color: #7367f0;
         text-decoration: underline;
     }
+
     .modal-preview-frame {
         width: 100%;
         height: 80vh;
@@ -98,14 +102,15 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
                                                     </td>
                                                 </tr>
                                             <?php else: ?>
-                                                <?php $i = 1; foreach ($templates as $tpl): 
+                                                <?php $i = 1;
+                                                foreach ($templates as $tpl):
                                                     $imgSrc = !empty($tpl->preview_image) ? SITE_URL . $tpl->preview_image : SITE_URL . 'assets/img/templates/template-classic.svg';
                                                     $livePreviewUrl = "invoice-print.php?sample_preview=1&preview_template=" . $tpl->id;
                                                 ?>
                                                     <tr>
                                                         <td class="text-center fw-bold text-muted"><?= $i++ ?></td>
                                                         <td class="text-center">
-                                                            <a href="javascript:void(0);" class="btn-open-preview" data-url="<?= $livePreviewUrl ?>" data-name="<?= htmlspecialchars($tpl->template_name) ?>" title="Click to Preview Template">
+                                                            <a href="<?= $imgSrc ?>" class="btn-view-image" data-img="<?= $imgSrc ?>" data-name="<?= htmlspecialchars($tpl->template_name) ?>" title="Click to View Image">
                                                                 <img src="<?= $imgSrc ?>" alt="<?= htmlspecialchars($tpl->template_name) ?>" class="template-thumb-preview" />
                                                             </a>
                                                         </td>
@@ -150,12 +155,9 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
                                                         </td>
                                                         <td class="text-center">
                                                             <div class="d-inline-flex gap-2">
-                                                                <button type="button" class="btn btn-sm btn-outline-primary btn-open-preview" data-url="<?= $livePreviewUrl ?>" data-name="<?= htmlspecialchars($tpl->template_name) ?>" title="Live Preview">
-                                                                    <i class="ti ti-eye me-1"></i> Preview
+                                                                <button type="button" class="btn btn-sm btn-outline-warning btn-edit-template-img" data-id="<?= $tpl->id ?>" data-name="<?= htmlspecialchars($tpl->template_name) ?>" data-current-img="<?= $imgSrc ?>" title="Edit Preview Image">
+                                                                    <i class="ti ti-edit me-1"></i> Edit
                                                                 </button>
-                                                                <a href="<?= $livePreviewUrl ?>" target="_blank" class="btn btn-sm btn-icon btn-text-secondary rounded-pill" title="Open in New Tab">
-                                                                    <i class="ti ti-external-link"></i>
-                                                                </a>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -172,6 +174,28 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
 
                 <?php include('includes/footer.php'); ?>
                 <div class="content-backdrop fade"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Direct View Modal -->
+    <div class="modal fade" id="imageDirectViewModal" tabindex="-1" aria-labelledby="imageDirectViewModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered" style="max-width: 800px;">
+            <div class="modal-content">
+                <div class="modal-header border-bottom py-3">
+                    <h5 class="modal-title fw-bold" id="imageDirectViewModalLabel">
+                        <i class="ti ti-photo me-2 text-primary"></i> <span id="imgModalTemplateName">Preview Image</span>
+                    </h5>
+                    <div class="d-flex align-items-center gap-2">
+                        <a href="#" id="imgModalOpenTabBtn" target="_blank" class="btn btn-sm btn-outline-secondary">
+                            <i class="ti ti-external-link me-1"></i> Open Image in New Tab
+                        </a>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-3 text-center" style="background: #f1f5f9; min-height: 400px; display: flex; align-items: center; justify-content: center;">
+                    <img id="imgDirectFullView" src="" alt="Template Full Image" style="max-width: 100%; max-height: 75vh; object-fit: contain; box-shadow: 0 4px 15px rgba(0,0,0,0.15); border-radius: 6px; background: #fff;" />
+                </div>
             </div>
         </div>
     </div>
@@ -202,6 +226,57 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
         </div>
     </div>
 
+    <!-- Edit Template Preview Image Modal -->
+    <div class="modal fade" id="editTemplateImgModal" tabindex="-1" aria-labelledby="editTemplateImgModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form id="formEditTemplateImg" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="update_template_preview_image">
+                    <input type="hidden" name="template_id" id="editTemplateId" value="">
+
+                    <div class="modal-header border-bottom py-3">
+                        <h5 class="modal-title fw-bold" id="editTemplateImgModalLabel">
+                            <i class="ti ti-photo me-2 text-warning"></i> Update Preview Image
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Template Name</label>
+                            <input type="text" class="form-control" id="editTemplateName" readonly style="background-color: #f8fafc;">
+                        </div>
+
+                        <div class="mb-3 text-center">
+                            <label class="form-label fw-bold d-block text-start">Current Preview</label>
+                            <div class="p-2 border rounded bg-light d-inline-block">
+                                <img id="editCurrentImgPreview" src="" alt="Preview" style="max-height: 140px; max-width: 100%; object-fit: contain; border-radius: 4px;">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="editPreviewFileInput" class="form-label fw-bold">Choose New Image (Auto converts to WebP)</label>
+                            <input class="form-control" type="file" id="editPreviewFileInput" name="preview_image" accept="image/png, image/jpeg, image/webp, image/gif" required>
+                            <div class="form-text text-muted">Supports JPG, PNG, GIF, WebP. It will automatically convert to optimized WebP format.</div>
+                        </div>
+
+                        <div id="newImgSelectedPreviewBox" class="mb-2 text-center" style="display: none;">
+                            <label class="form-label fw-bold d-block text-start text-success">New Selected Preview</label>
+                            <div class="p-2 border border-success rounded bg-white d-inline-block">
+                                <img id="newImgSelectedPreview" src="" alt="New Preview" style="max-height: 140px; max-width: 100%; object-fit: contain; border-radius: 4px;">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top py-2">
+                        <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="btnSaveTemplateImg">
+                            <i class="ti ti-check me-1"></i> Upload & Convert to WebP
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="layout-overlay layout-menu-toggle"></div>
     <div class="drag-target"></div>
 
@@ -209,7 +284,21 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
 
     <script>
         $(document).ready(function() {
-            // Open Preview Modal on Thumbnail / Button / Name Click
+            // Open Direct Image View Modal on Thumbnail Click
+            var imgViewModal = new bootstrap.Modal(document.getElementById('imageDirectViewModal'));
+            $(document).on('click', '.btn-view-image', function(e) {
+                e.preventDefault();
+                var imgSrc = $(this).data('img') || $(this).attr('href');
+                var name = $(this).data('name') || 'Preview Image';
+
+                $('#imgModalTemplateName').text(name);
+                $('#imgModalOpenTabBtn').attr('href', imgSrc);
+                $('#imgDirectFullView').attr('src', imgSrc);
+
+                imgViewModal.show();
+            });
+
+            // Open Preview Modal on Button / Name Click
             $(document).on('click', '.btn-open-preview', function(e) {
                 e.preventDefault();
                 var url = $(this).data('url');
@@ -217,7 +306,7 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
 
                 $('#modalTemplateName').text(name);
                 $('#modalOpenExternalBtn').attr('href', url);
-                
+
                 $('#modalLoadingSpinner').show();
                 var iframe = document.getElementById('templatePreviewIframe');
                 iframe.src = url;
@@ -232,6 +321,130 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
             // Clear iframe on modal close to free memory
             $('#templatePreviewModal').on('hidden.bs.modal', function() {
                 $('#templatePreviewIframe').attr('src', '');
+            });
+
+            // Open Edit Template Preview Image Modal
+            var editImgModal = new bootstrap.Modal(document.getElementById('editTemplateImgModal'));
+            $(document).on('click', '.btn-edit-template-img', function(e) {
+                e.preventDefault();
+                var id = $(this).data('id');
+                var name = $(this).data('name');
+                var img = $(this).data('current-img');
+
+                $('#editTemplateId').val(id);
+                $('#editTemplateName').val(name);
+                $('#editCurrentImgPreview').attr('src', img);
+                $('#editPreviewFileInput').val('');
+                $('#newImgSelectedPreviewBox').hide();
+                $('#newImgSelectedPreview').attr('src', '');
+
+                editImgModal.show();
+            });
+
+            // Instant Preview of Selected Image
+            $('#editPreviewFileInput').on('change', function() {
+                var file = this.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        $('#newImgSelectedPreview').attr('src', e.target.result);
+                        $('#newImgSelectedPreviewBox').fadeIn();
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    $('#newImgSelectedPreviewBox').hide();
+                }
+            });
+
+            // Submit Image Update via AJAX
+            $('#formEditTemplateImg').on('submit', function(e) {
+                e.preventDefault();
+
+                var fileInput = document.getElementById('editPreviewFileInput');
+                if (!fileInput.files.length) {
+                    alert('Please select an image file.');
+                    return;
+                }
+
+                var formData = new FormData(this);
+                var saveBtn = $('#btnSaveTemplateImg');
+                var origBtnHtml = saveBtn.html();
+
+                saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1" role="status"></span> Converting to WebP...');
+
+                $.ajax({
+                    url: 'ajax.php',
+                    type: 'POST',
+                    data: formData,
+                    dataType: 'json',
+                    processData: false,
+                    contentType: false,
+                    success: function(res) {
+                        saveBtn.prop('disabled', false).html(origBtnHtml);
+                        if (res && res.status) {
+                            editImgModal.hide();
+
+                            // Update the image in the table directly without needing page reload
+                            var tplId = $('#editTemplateId').val();
+                            $('button[data-id="' + tplId + '"].btn-edit-template-img').data('current-img', res.preview_url);
+                            var $row = $('button[data-id="' + tplId + '"].btn-edit-template-img').closest('tr');
+                            $row.find('img.template-thumb-preview').attr('src', res.preview_url);
+                            $row.find('.btn-view-image').attr('href', res.preview_url).data('img', res.preview_url);
+
+                            if (typeof Swal !== 'undefined') {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Updated Successfully!',
+                                    text: res.message,
+                                    timer: 2000,
+                                    showConfirmButton: false,
+                                    customClass: {
+                                        confirmButton: 'btn btn-primary'
+                                    },
+                                    buttonsStyling: false
+                                });
+                            } else if (typeof toastr !== 'undefined') {
+                                toastr.success(res.message);
+                            } else {
+                                alert(res.message);
+                            }
+                        } else {
+                            if (typeof Swal !== 'undefined') {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Error!',
+                                    text: res.message || 'Failed to update image.',
+                                    customClass: {
+                                        confirmButton: 'btn btn-primary'
+                                    },
+                                    buttonsStyling: false
+                                });
+                            } else if (typeof toastr !== 'undefined') {
+                                toastr.error(res.message || 'Failed to update image.');
+                            } else {
+                                alert(res.message || 'Failed to update image.');
+                            }
+                        }
+                    },
+                    error: function() {
+                        saveBtn.prop('disabled', false).html(origBtnHtml);
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Server Error!',
+                                text: 'Error connecting to server. Please try again.',
+                                customClass: {
+                                    confirmButton: 'btn btn-primary'
+                                },
+                                buttonsStyling: false
+                            });
+                        } else if (typeof toastr !== 'undefined') {
+                            toastr.error('Error connecting to server.');
+                        } else {
+                            alert('Error connecting to server.');
+                        }
+                    }
+                });
             });
 
             // Toggle Is Premium switch
@@ -251,12 +464,32 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
                     },
                     success: function(res) {
                         if (res && res.status) {
-                            if (typeof toastr !== 'undefined') {
+                            if (typeof Swal !== 'undefined') {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Success!',
+                                    text: res.message,
+                                    timer: 1500,
+                                    showConfirmButton: false,
+                                    toast: true,
+                                    position: 'top-end'
+                                });
+                            } else if (typeof toastr !== 'undefined') {
                                 toastr.success(res.message);
                             }
                         } else {
                             chk.prop('checked', !isPremium);
-                            if (typeof toastr !== 'undefined') {
+                            if (typeof Swal !== 'undefined') {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Error!',
+                                    text: res.message || 'Failed to update premium status.',
+                                    customClass: {
+                                        confirmButton: 'btn btn-primary'
+                                    },
+                                    buttonsStyling: false
+                                });
+                            } else if (typeof toastr !== 'undefined') {
                                 toastr.error(res.message || 'Failed to update premium status.');
                             } else {
                                 alert(res.message || 'Failed to update premium status.');
@@ -265,7 +498,17 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
                     },
                     error: function() {
                         chk.prop('checked', !isPremium);
-                        if (typeof toastr !== 'undefined') {
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Server Error!',
+                                text: 'Error connecting to server.',
+                                customClass: {
+                                    confirmButton: 'btn btn-primary'
+                                },
+                                buttonsStyling: false
+                            });
+                        } else if (typeof toastr !== 'undefined') {
                             toastr.error('Error connecting to server.');
                         } else {
                             alert('Error connecting to server.');
@@ -276,4 +519,5 @@ $templates = $ai_db->aiGetQueryObj("SELECT * FROM tbl_invoice_templates ORDER BY
         });
     </script>
 </body>
+
 </html>

@@ -220,7 +220,8 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             padding: 36px 40px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
             min-height: unset;
-            display: flex; flex-direction: column;
+            display: flex;
+            flex-direction: column;
         }
 
         /* Header Layout */
@@ -545,7 +546,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
             <!-- Invoice Header -->
             <div class="invoice-header">
                 <div class="company-brand">
-                    <h2><?= !empty($company->company_name) ? htmlspecialchars($company->company_name) : 'Company Name' ?></h2>
+                    <h2><?= !empty($company->company_name) ? htmlspecialchars($company->company_name) : 'Demo Company' ?></h2>
                     <?php if (!empty($company->address)) { ?>
                         <p><?= nl2br(htmlspecialchars($company->address)) ?></p>
                     <?php } ?>
@@ -613,7 +614,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                         <?php if ($isCompanyGst) { ?>
                             <div><strong>GST Type:</strong> <?= ($q->gst_type === 'with_gst') ? 'With GST' : 'Without GST' ?></div>
                         <?php } ?>
-                        
+
                         <div><strong>Place of Supply:</strong> <?= !empty($q->state_name) ? htmlspecialchars($q->state_name) : 'Gujarat' ?></div>
                     </div>
                 </div>
@@ -732,7 +733,9 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
 
             <!-- Standard Footer pinned to bottom -->
             <div class="invoice-footer-pin" style="margin-top: auto; flex-shrink: 0;">
-                <?php renderStandardInvoiceFooter($company, $q, '#7367f0'); ?>
+
+                <?php $company->company_name = 'Demo Company';
+                renderStandardInvoiceFooter($company, $q, '#7367f0'); ?>
             </div>
 
         </div>
