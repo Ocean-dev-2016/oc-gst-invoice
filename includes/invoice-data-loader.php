@@ -19,15 +19,25 @@ if ($id <= 0 && !$isSamplePreview) {
 }
 
 if ($isSamplePreview) {
-    // Generate clean Dummy / Sample Data for Template Preview
-    $company_id = isset($_GET['company_id']) ? intval($_GET['company_id']) : 0;
-    if ($company_id > 0) {
-        $compRow = $ai_db->aiGetQueryObj("SELECT * FROM tbl_company WHERE id='$company_id' LIMIT 1");
-        $company = !empty($compRow) ? $compRow[0] : null;
-    } else {
-        $compRow = $ai_db->aiGetQueryObj("SELECT * FROM tbl_company LIMIT 1");
-        $company = !empty($compRow) ? $compRow[0] : null;
-    }
+    // Generate clean Dummy / Sample Data for Template Preview with static Demo company
+    $company = (object)[
+        'id' => 0,
+        'company_name' => 'Demo Company',
+        'owner_name' => 'John Doe',
+        'mobile_no' => '+91 98765 43210',
+        'email' => 'contact@democompany.com',
+        'address' => "101, Business Park, Near Ring Road\nAhmedabad, Gujarat - 380015",
+        'gst_applicable' => 1,
+        'gst_no' => '24AAAAA0000A1Z5',
+        'pincode' => '380015',
+        'state_id' => 7,
+        'state_name' => 'Gujarat',
+        'city_id' => 64,
+        'city_name' => 'Ahmedabad',
+        'logo' => '',
+        'signature' => '',
+        'invoice_template_id' => isset($_GET['preview_template']) ? intval($_GET['preview_template']) : 1
+    ];
 
     $q = (object)[
         'id' => 0,

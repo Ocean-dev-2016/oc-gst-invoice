@@ -763,3 +763,100 @@ if ($_POST['action'] == 'toggle_template_premium') {
     }
     exit;
 }
+
+if ($_POST['action'] == 'update_template_preview_image') {
+    $templateId = intval($_POST['template_id'] ?? 0);
+    if ($templateId <= 0) {
+        echo json_encode(['status' => false, 'message' => 'Invalid Template ID.']);
+        exit;
+    }
+
+    $tplCheck = $ai_db->aiGetQueryObj("SELECT id, template_name, preview_image FROM tbl_invoice_templates WHERE id='$templateId' LIMIT 1");
+    if (empty($tplCheck)) {
+        echo json_encode(['status' => false, 'message' => 'Template not found.']);
+        exit;
+    }
+
+    if (!isset($_FILES['preview_image']) || $_FILES['preview_image']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['status' => false, 'message' => 'Please select a valid image file.']);
+        exit;
+    }
+
+    $fileTmp = $_FILES['preview_image']['tmp_name'];
+    $fileInfo = @getimagesize($fileTmp);
+    if (!$fileInfo) {
+        echo json_encode(['status' => false, 'message' => 'Uploaded file is not a valid image.']);
+        exit;
+    }
+
+    $mime = $fileInfo['mime'];
+    $srcImg = null;
+    switch ($mime) {
+        case 'image/jpeg':
+            $srcImg = @imagecreatefromjpeg($fileTmp);
+            break;
+        case 'image/png':
+            $srcImg = @imagecreatefrompng($fileTmp);
+            break;
+        case 'image/webp':
+            $srcImg = @imagecreatefromwebp($fileTmp);
+            break;
+        case 'image/gif':
+            $srcImg = @imagecreatefromgif($fileTmp);
+            break;
+        default:
+            echo json_encode(['status' => false, 'message' => 'Supported formats are JPG, PNG, WebP, GIF.']);
+            exit;
+    }
+
+    if (!$srcImg) {
+        echo json_encode(['status' => false, 'message' => 'Failed to process image.']);
+        exit;
+    }
+
+    $uploadDir = __DIR__ . '/uploads/templates/';
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0777, true);
+    }
+
+    // Convert and save as WebP with transparency support
+    $webpFilename = 'tpl_' . $templateId . '_' . time() . '_' . rand(100, 999) . '.webp';
+    $destination = $uploadDir . $webpFilename;
+
+    imagepalettetotruecolor($srcImg);
+    imagealphablending($srcImg, false);
+    imagesavealpha($srcImg, true);
+
+    $saved = @imagewebp($srcImg, $destination, 90);
+    imagedestroy($srcImg);
+
+    if (!$saved) {
+        echo json_encode(['status' => false, 'message' => 'Failed to convert and save image to WebP format.']);
+        exit;
+    }
+
+    $relativePath = 'uploads/templates/' . $webpFilename;
+    $safePath = mysqli_real_escape_string($ai_conn, $relativePath);
+
+    // Delete old custom upload if it exists in uploads/templates/
+    $oldPreview = $tplCheck[0]->preview_image ?? '';
+    if (!empty($oldPreview) && strpos($oldPreview, 'uploads/templates/') !== false) {
+        $oldFile = __DIR__ . '/' . ltrim($oldPreview, '/');
+        if (file_exists($oldFile)) {
+            @unlink($oldFile);
+        }
+    }
+
+    $upd = $ai_db->aiQuery("UPDATE tbl_invoice_templates SET preview_image='$safePath' WHERE id='$templateId'");
+    if ($upd) {
+        echo json_encode([
+            'status' => true,
+            'message' => 'Template preview image updated successfully (converted to WebP).',
+            'preview_image' => $relativePath,
+            'preview_url' => SITE_URL . $relativePath . '?v=' . time()
+        ]);
+    } else {
+        echo json_encode(['status' => false, 'message' => 'Database update failed.']);
+    }
+    exit;
+}
