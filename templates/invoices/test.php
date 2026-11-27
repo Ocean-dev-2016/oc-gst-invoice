@@ -518,7 +518,7 @@ $amountInWords = getIndianCurrencyWords(floatval($q->grand_total ?? 0));
                         <?php if ($isCompanyGst) { ?>
                             <div><strong>GST Type:</strong> <?= ($q->gst_type === 'with_gst') ? 'With GST' : 'Without GST' ?></div>
                         <?php } ?>
-                        <div><strong>Reverse Charge (RCM):</strong> <?= htmlspecialchars($q->rca ?? 'No') ?></div>
+                        
                         <div><strong>Place of Supply:</strong> <?= !empty($q->state_name) ? htmlspecialchars($q->state_name) : 'Gujarat' ?></div>
                     </div>
                 </div>

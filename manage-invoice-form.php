@@ -93,7 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     if (empty($invoice_no) && $mode === 'add') {
         $invoice_no = generateInvoiceNo($ai_db, $company_id);
     }
-    $rca = addslashes(trim($_POST['rca'] ?? 'No'));
     $address = addslashes(trim($_POST['address'] ?? ''));
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
@@ -196,7 +195,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 party_name='$party_name',
                 gst_no='$gst_no',
                 invoice_no='$invoice_no',
-                rca='$rca',
                 address='$address',
                 state_id='$state_id',
                 city_id='$city_id',
@@ -282,7 +280,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 party_name='$party_name',
                 gst_no='$gst_no',
                 invoice_no='$invoice_no',
-                rca='$rca',
                 address='$address',
                 state_id='$state_id',
                 city_id='$city_id',
@@ -573,13 +570,7 @@ if ($selected_state_id > 0) {
                                         <input type="text" name="invoice_no" id="invoice_no" class="form-control bg-light" placeholder="INV/001/26-27" value="<?= htmlspecialchars($invoiceData->invoice_no ?? $default_invoice_no) ?>" readonly required>
                                     </div>
 
-                                    <div class="col-md-3">
-                                        <label class="form-label fw-bold text-uppercase small text-muted">RCA</label>
-                                        <select name="rca" id="rca" class="form-select">
-                                            <option value="No" <?= (($invoiceData->rca ?? 'No') === 'No') ? 'selected' : '' ?>>No</option>
-                                            <option value="Yes" <?= (($invoiceData->rca ?? '') === 'Yes') ? 'selected' : '' ?>>Yes</option>
-                                        </select>
-                                    </div>
+                                    
                                 </div>
 
 <!-- ROW 2: ADDRESS (4) | STATE (2) | CITY (2) | DATE (2) | DUE DATE (2) -->
