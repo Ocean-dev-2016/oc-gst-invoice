@@ -44,24 +44,35 @@ function validatePasswordPolicy($password)
 
 function getApiInput()
 {
+    // If $_POST is populated (e.g. multipart/form-data or form-urlencoded in POST), use it
+    if (!empty($_POST)) {
+        return $_POST;
+    }
+
     $raw = file_get_contents('php://input');
     if (!empty($raw)) {
-        $input = json_decode($raw, true);
-        if (json_last_error() !== JSON_ERROR_NONE && json_last_error() !== JSON_ERROR_SYNTAX) {
-            // Not JSON
-        } elseif (json_last_error() === JSON_ERROR_SYNTAX) {
-            // Clean trailing commas before } or ]
-            $cleaned = preg_replace('/,\s*([\]}])/m', '$1', $raw);
-            $input = json_decode($cleaned, true);
-            if (!is_array($input)) {
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
+        $isJsonHeader = (stripos($contentType, 'application/json') !== false);
+        $trimmed = trim($raw);
+        $looksLikeJson = ($trimmed !== '' && ($trimmed[0] === '{' || $trimmed[0] === '['));
+
+        if ($isJsonHeader || $looksLikeJson) {
+            $input = json_decode($raw, true);
+            if (json_last_error() === JSON_ERROR_SYNTAX) {
+                // Try cleaning trailing commas
+                $cleaned = preg_replace('/,\s*([\]}])/m', '$1', $raw);
+                $input = json_decode($cleaned, true);
+            }
+            if (is_array($input)) {
+                return $input;
+            }
+            if ($isJsonHeader) {
                 apiResponse(400, 'Invalid JSON format in request body: ' . json_last_error_msg());
             }
         }
     }
-    if (!isset($input) || !is_array($input)) {
-        $input = $_POST;
-    }
-    return is_array($input) ? $input : [];
+
+    return is_array($_POST) ? $_POST : [];
 }
 
 /**
@@ -444,7 +455,6 @@ if ($action === 'profile') {
     $input = getApiInput();
     $company = authenticateCompany($input, true);
     $cId = (int)$company['id'];
-
     if ($method === 'GET') {
         $logoPath = trim($company['logo'] ?? '');
         $logoUrl = !empty($logoPath) ? SITE_URL . ltrim($logoPath, '/') : '';
@@ -1711,7 +1721,6 @@ if ($action === 'quotation-list') {
                 'party_mobile'           => $row->party_mobile ?? '',
                 'party_email'            => $row->party_email ?? '',
                 'gst_no'                 => $row->gst_no ?? '',
-                'rca'                    => $row->rca ?? 'No',
                 'address'                => $row->address ?? '',
                 'state_id'               => (int)($row->state_id ?? 0),
                 'state_name'             => $row->state_name ?? '',
@@ -1856,8 +1865,6 @@ if ($action === 'quotation-add') {
             apiResponse(400, "Quotation Number '{$quotation_no}' already exists for this company.");
         }
     }
-
-    $rca = (isset($input['rca']) && strtolower(trim($input['rca'])) === 'yes') ? 'Yes' : 'No';
     $quotation_date = !empty($input['quotation_date']) ? date('Y-m-d', strtotime($input['quotation_date'])) : (!empty($input['date']) ? date('Y-m-d', strtotime($input['date'])) : date('Y-m-d'));
 
     $due_date = !empty($input['due_date']) ? date('Y-m-d', strtotime($input['due_date'])) : $quotation_date;
@@ -2002,7 +2009,6 @@ if ($action === 'quotation-add') {
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
         quotation_no = '{$safeQNo}',
-        rca = '{$rca}',
         address = '{$safeAddress}',
         state_id = {$state_id},
         city_id = {$city_id},
@@ -2186,7 +2192,6 @@ if ($action === 'quotation-edit') {
         'party_mobile'             => $q->party_mobile ?? '',
         'party_email'              => $q->party_email ?? '',
         'gst_no'                   => $q->gst_no ?? '',
-        'rca'                      => $q->rca ?? 'No',
         'address'                  => $q->address ?? '',
         'state_id'                 => (int)($q->state_id ?? 0),
         'state_name'               => $q->state_name ?? '',
@@ -2293,8 +2298,6 @@ if ($action === 'quotation-update') {
             apiResponse(400, "Quotation Number '{$quotation_no}' is already used by another quotation.");
         }
     }
-
-    $rca = isset($input['rca']) ? ((strtolower(trim($input['rca'])) === 'yes') ? 'Yes' : 'No') : ($currQ->rca ?? 'No');
     $quotation_date = !empty($input['quotation_date']) ? date('Y-m-d', strtotime($input['quotation_date'])) : ($currQ->quotation_date ?? date('Y-m-d'));
     $due_date = !empty($input['due_date']) ? date('Y-m-d', strtotime($input['due_date'])) : (!empty($currQ->due_date) ? $currQ->due_date : $quotation_date);
     if ($due_date < $quotation_date) {
@@ -2443,7 +2446,6 @@ if ($action === 'quotation-update') {
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
         quotation_no = '{$safeQNo}',
-        rca = '{$rca}',
         address = '{$safeAddress}',
         state_id = {$state_id},
         city_id = {$city_id},
@@ -2750,7 +2752,6 @@ if ($action === 'quotation-convert-to-invoice') {
     $safePartyName = mysqli_real_escape_string($ai_conn, $quot->party_name ?? '');
     $company_has_gst = (int)($company['gst_applicable'] ?? 0) === 1;
     $safeGstNo = $company_has_gst ? mysqli_real_escape_string($ai_conn, $quot->gst_no ?? '') : '';
-    $safeRca = mysqli_real_escape_string($ai_conn, $quot->rca ?? 'No');
     $safeAddress = mysqli_real_escape_string($ai_conn, $quot->address ?? '');
     $dueSql = $dueDate ? "'{$dueDate}'" : "NULL";
 
@@ -2762,7 +2763,7 @@ if ($action === 'quotation-convert-to-invoice') {
     $invGrandTotal = $company_has_gst ? floatval($quot->grand_total ?? 0) : $invTotalAmount;
 
     $insInvSql = "INSERT INTO tbl_invoice (
-        quotation_id, company_id, party_id, party_name, gst_no, invoice_no, rca, address,
+        quotation_id, company_id, party_id, party_name, gst_no, invoice_no, address,
         state_id, city_id, invoice_date, due_date,
         total_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, grand_total,
         payment_status, status, created_at
@@ -2773,8 +2774,7 @@ if ($action === 'quotation-convert-to-invoice') {
         '{$safePartyName}',
         '{$safeGstNo}',
         '{$safeInvNo}',
-        '{$safeRca}',
-        '{$safeAddress}',
+                '{$safeAddress}',
         " . intval($quot->state_id ?? 0) . ",
         " . intval($quot->city_id ?? 0) . ",
         '{$invoiceDate}',
@@ -3557,7 +3557,6 @@ if ($action === 'invoice-list') {
                 'party_mobile'           => $row->party_mobile ?? '',
                 'party_email'            => $row->party_email ?? '',
                 'gst_no'                 => $row->gst_no ?? '',
-                'rca'                    => $row->rca ?? 'No',
                 'address'                => $row->address ?? '',
                 'state_id'               => (int)($row->state_id ?? 0),
                 'state_name'             => $row->state_name ?? '',
@@ -3911,7 +3910,6 @@ if ($action === 'invoice-add') {
     $address = trim($input['address'] ?? '');
     $state_id = (int)($input['state_id'] ?? 0);
     $city_id = (int)($input['city_id'] ?? 0);
-    $rca = trim($input['rca'] ?? 'No');
 
     if ($party_id > 0) {
         $pRow = $ai_db->aiGetQueryObj("SELECT party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE id={$party_id} AND company_id={$company_id} LIMIT 1");
@@ -4105,7 +4103,6 @@ if ($action === 'invoice-add') {
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
         invoice_no = '{$safeInvNo}',
-        rca = '{$rca}',
         address = '{$safeAddress}',
         state_id = {$state_id},
         city_id = {$city_id},
@@ -4323,7 +4320,6 @@ if ($action === 'invoice-edit') {
         'party_mobile'           => $q->party_mobile ?? '',
         'party_email'            => $q->party_email ?? '',
         'gst_no'                 => $q->gst_no ?? '',
-        'rca'                    => $q->rca ?? 'No',
         'address'                => $q->address ?? '',
         'state_id'               => (int)($q->state_id ?? 0),
         'state_name'             => $q->state_name ?? '',
@@ -4390,7 +4386,6 @@ if ($action === 'invoice-update') {
     $address = trim($input['address'] ?? ($currInv->address ?? ''));
     $state_id = isset($input['state_id']) ? (int)$input['state_id'] : (int)($currInv->state_id ?? 0);
     $city_id = isset($input['city_id']) ? (int)$input['city_id'] : (int)($currInv->city_id ?? 0);
-    $rca = trim($input['rca'] ?? ($currInv->rca ?? 'No'));
 
     if ($party_id > 0 && empty($input['party_name'])) {
         $pRow = $ai_db->aiGetQueryObj("SELECT party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE id={$party_id} AND company_id={$company_id} LIMIT 1");
@@ -4601,7 +4596,6 @@ if ($action === 'invoice-update') {
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
         invoice_no = '{$safeInvNo}',
-        rca = '{$rca}',
         address = '{$safeAddress}',
         state_id = {$state_id},
         city_id = {$city_id},
@@ -5012,7 +5006,6 @@ if ($action === 'purchase-list') {
                 'party_mobile'            => $row->party_mobile ?? '',
                 'party_email'             => $row->party_email ?? '',
                 'gst_no'                  => $row->gst_no ?? '',
-                'rca'                     => $row->rca ?? 'No',
                 'address'                 => $row->address ?? '',
                 'state_id'                => (int)($row->state_id ?? 0),
                 'state_name'              => $row->state_name ?? '',
@@ -5365,7 +5358,6 @@ if ($action === 'purchase-add') {
     $address = trim($input['address'] ?? '');
     $state_id = (int)($input['state_id'] ?? 0);
     $city_id = (int)($input['city_id'] ?? 0);
-    $rca = trim($input['rca'] ?? 'No');
     if ($party_id > 0) {
         $pRow = $ai_db->aiGetQueryObj("SELECT party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE id={$party_id} AND company_id={$company_id} LIMIT 1");
         if (!empty($pRow)) {
@@ -5531,7 +5523,6 @@ if ($action === 'purchase-add') {
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
         purchase_no = '{$safePurNo}',
-        rca = '{$rca}',
         address = '{$safeAddress}',
         state_id = {$state_id},
         city_id = {$city_id},
@@ -5745,7 +5736,6 @@ if ($action === 'purchase-edit') {
         'party_mobile'            => $q->party_mobile ?? '',
         'party_email'             => $q->party_email ?? '',
         'gst_no'                  => $q->gst_no ?? '',
-        'rca'                     => $q->rca ?? 'No',
         'address'                 => $q->address ?? '',
         'state_id'                => (int)($q->state_id ?? 0),
         'state_name'              => $q->state_name ?? '',
@@ -5808,7 +5798,6 @@ if ($action === 'purchase-update') {
     $address = trim($input['address'] ?? ($currPur->address ?? ''));
     $state_id = isset($input['state_id']) ? (int)$input['state_id'] : (int)($currPur->state_id ?? 0);
     $city_id = isset($input['city_id']) ? (int)$input['city_id'] : (int)($currPur->city_id ?? 0);
-    $rca = trim($input['rca'] ?? ($currPur->rca ?? 'No'));
 
     if ($party_id > 0 && empty($input['party_name'])) {
         $pRow = $ai_db->aiGetQueryObj("SELECT party_name, gst_no, address, state_id, city_id FROM tbl_party WHERE id={$party_id} AND company_id={$company_id} LIMIT 1");
@@ -5986,7 +5975,6 @@ if ($action === 'purchase-update') {
         party_name = '{$safePartyName}',
         gst_no = '{$safeGstNo}',
         purchase_no = '{$safePurNo}',
-        rca = '{$rca}',
         address = '{$safeAddress}',
         state_id = {$state_id},
         city_id = {$city_id},
@@ -6734,17 +6722,53 @@ if ($action === 'invoice-template-list') {
 }
 
 if ($action === 'invoice-template-set-default') {
-    if ($method !== 'POST') {
-        apiResponse(405, 'Only POST method is allowed.');
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
     }
 
+    require_once __DIR__ . '/../includes/company-logo-migrate.php';
+    require_once __DIR__ . '/../includes/image-transparent-helper.php';
+
     $input = getApiInput();
-    $company = authenticateCompany($input);
+    $company = authenticateCompany($input, true);
     $cId = (int)$company['id'];
 
-    $templateId = (int)($input['template_id'] ?? 0);
+    if ($method === 'GET') {
+        $templateId = (int)($company['invoice_template_id'] ?? 0);
+        $tplName = '';
+        $tplPreview = '';
+
+        if ($templateId > 0) {
+            $tplFind = $ai_db->aiGetQueryObj("SELECT id, template_name, preview_image FROM tbl_invoice_templates WHERE id={$templateId} LIMIT 1");
+            if (!empty($tplFind)) {
+                $tplName = (string)$tplFind[0]->template_name;
+                $tplPreview = !empty($tplFind[0]->preview_image) ? SITE_URL . ltrim($tplFind[0]->preview_image, '/') : '';
+            }
+        }
+
+        $logoPath = trim($company['logo'] ?? '');
+        $logoUrl = !empty($logoPath) ? SITE_URL . ltrim($logoPath, '/') : '';
+
+        $signPath = trim($company['signature'] ?? '');
+        $signUrl = !empty($signPath) ? SITE_URL . ltrim($signPath, '/') : '';
+
+        apiResponse(200, 'Invoice template settings retrieved successfully.', [
+            'company_id'          => $cId,
+            'company_name'        => (string)($company['company_name'] ?? ''),
+            'invoice_template_id' => $templateId,
+            'template_name'       => $tplName,
+            'preview_image_url'   => $tplPreview,
+            'logo'                => $logoPath,
+            'logo_url'            => $logoUrl,
+            'signature'           => $signPath,
+            'signature_url'       => $signUrl
+        ]);
+    }
+
+    // Support both invoice_template_id and template_id
+    $templateId = (int)($input['invoice_template_id'] ?? ($input['template_id'] ?? 0));
     if ($templateId <= 0) {
-        apiResponse(400, 'template_id is required.');
+        apiResponse(400, 'invoice_template_id is required.');
     }
 
     $tplFind = $ai_db->aiGetQueryObj("SELECT id, template_name, is_premium FROM tbl_invoice_templates WHERE id={$templateId} AND status='active' LIMIT 1");
@@ -6756,285 +6780,168 @@ if ($action === 'invoice-template-set-default') {
         apiResponse(400, "Template '{$tplFind[0]->template_name}' is a Premium template and cannot be used.");
     }
 
-    // Update template_id directly in the logged-in company's record
-    $ai_db->aiQuery("UPDATE tbl_company SET invoice_template_id={$templateId} WHERE id={$cId}");
+    // Handle file uploads (Logo & Signature) just like profile API
+    $uploadDir = dirname(__DIR__) . '/uploads/company/';
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0777, true);
+    }
 
-    apiResponse(200, 'Invoice template updated successfully for your company.', [
-        'company_id'    => $cId,
-        'company_name'  => (string)($company['company_name'] ?? ''),
-        'template_id'   => $templateId,
-        'template_name' => (string)$tplFind[0]->template_name
+    $logoSql = "";
+    $updatedLogoPath = $company['logo'] ?? '';
+
+    // 1. Logo upload via multipart/form-data $_FILES['logo']
+    if (isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
+        $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
+        if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
+            $newLogoFile = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
+            if (move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . $newLogoFile)) {
+                $updatedLogoPath = 'uploads/company/' . $newLogoFile;
+                $safeLogoPath = mysqli_real_escape_string($ai_conn, $updatedLogoPath);
+                $logoSql = ", logo = '{$safeLogoPath}'";
+            }
+        } else {
+            apiResponse(400, 'Invalid logo format. Allowed formats: jpg, jpeg, png, svg, webp.');
+        }
+    }
+    // 2. Logo upload via Base64 string in JSON / POST
+    elseif (!empty($input['logo_base64']) || !empty($input['logo'])) {
+        $rawLogoData = $input['logo_base64'] ?? $input['logo'];
+        if (is_string($rawLogoData) && preg_match('/^data:image\/(\w+);base64,/', $rawLogoData, $typeMatches)) {
+            $ext = strtolower($typeMatches[1]);
+            if ($ext === 'jpeg') $ext = 'jpg';
+            if (in_array($ext, ['jpg', 'jpeg', 'png', 'svg', 'webp'])) {
+                $base64Str = substr($rawLogoData, strpos($rawLogoData, ',') + 1);
+                $decodedData = base64_decode($base64Str);
+                if ($decodedData !== false) {
+                    $newLogoFile = 'logo_' . time() . '_' . rand(100, 999) . '.' . $ext;
+                    if (file_put_contents($uploadDir . $newLogoFile, $decodedData)) {
+                        $updatedLogoPath = 'uploads/company/' . $newLogoFile;
+                        $safeLogoPath = mysqli_real_escape_string($ai_conn, $updatedLogoPath);
+                        $logoSql = ", logo = '{$safeLogoPath}'";
+                    }
+                }
+            }
+        }
+    }
+
+    $signSql = "";
+    $updatedSignPath = $company['signature'] ?? '';
+
+    // 1. Signature upload via multipart/form-data $_FILES['signature']
+    if (isset($_FILES['signature']) && $_FILES['signature']['error'] === UPLOAD_ERR_OK) {
+        $newSignFile = 'sign_' . time() . '_' . rand(100, 999) . '.png';
+        $destSignPath = $uploadDir . $newSignFile;
+        $tmpPath = $_FILES['signature']['tmp_name'];
+        if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($tmpPath, $destSignPath)) {
+            $updatedSignPath = 'uploads/company/' . $newSignFile;
+            $safeSignPath = mysqli_real_escape_string($ai_conn, $updatedSignPath);
+            $signSql = ", signature = '{$safeSignPath}'";
+        } elseif (move_uploaded_file($tmpPath, $destSignPath)) {
+            $updatedSignPath = 'uploads/company/' . $newSignFile;
+            $safeSignPath = mysqli_real_escape_string($ai_conn, $updatedSignPath);
+            $signSql = ", signature = '{$safeSignPath}'";
+        }
+    }
+    // 2. Signature upload via Base64 string in JSON / POST
+    elseif (!empty($input['signature_base64']) || !empty($input['signature'])) {
+        $rawSignData = $input['signature_base64'] ?? $input['signature'];
+        if (is_string($rawSignData) && preg_match('/^data:image\/(\w+);base64,/', $rawSignData, $typeMatches)) {
+            $base64Str = substr($rawSignData, strpos($rawSignData, ',') + 1);
+            $decodedData = base64_decode($base64Str);
+            if ($decodedData !== false) {
+                $tmpSignFile = $uploadDir . 'temp_sign_' . time() . '_' . rand(100, 999) . '.png';
+                file_put_contents($tmpSignFile, $decodedData);
+                $newSignFile = 'sign_' . time() . '_' . rand(100, 999) . '.png';
+                $destSignPath = $uploadDir . $newSignFile;
+
+                if (function_exists('makeSignatureTransparent') && makeSignatureTransparent($tmpSignFile, $destSignPath)) {
+                    @unlink($tmpSignFile);
+                    $updatedSignPath = 'uploads/company/' . $newSignFile;
+                    $safeSignPath = mysqli_real_escape_string($ai_conn, $updatedSignPath);
+                    $signSql = ", signature = '{$safeSignPath}'";
+                } else {
+                    rename($tmpSignFile, $destSignPath);
+                    $updatedSignPath = 'uploads/company/' . $newSignFile;
+                    $safeSignPath = mysqli_real_escape_string($ai_conn, $updatedSignPath);
+                    $signSql = ", signature = '{$safeSignPath}'";
+                }
+            }
+        }
+    }
+
+    // Update invoice_template_id, logo and signature in tbl_company
+    $updateQry = "UPDATE tbl_company SET 
+                  invoice_template_id = {$templateId}
+                  {$logoSql}
+                  {$signSql},
+                  modified_at = NOW()
+                  WHERE id = {$cId}";
+
+    if (!mysqli_query($ai_conn, $updateQry)) {
+        apiResponse(500, 'Failed to update invoice template and files: ' . mysqli_error($ai_conn));
+    }
+
+    $logoUrl = !empty($updatedLogoPath) ? SITE_URL . ltrim($updatedLogoPath, '/') : '';
+    $signUrl = !empty($updatedSignPath) ? SITE_URL . ltrim($updatedSignPath, '/') : '';
+
+    apiResponse(200, 'Invoice template settings updated successfully.', [
+        'company_id'          => $cId,
+        'company_name'        => (string)($company['company_name'] ?? ''),
+        'invoice_template_id' => $templateId,
+        'template_name'       => (string)$tplFind[0]->template_name,
+        'logo'                => $updatedLogoPath,
+        'logo_url'            => $logoUrl,
+        'signature'           => $updatedSignPath,
+        'signature_url'       => $signUrl
     ]);
 }
 
-if ($action === 'mpdf-demo-pdf') {
-    $vendorAutoload = dirname(__DIR__) . '/vendor/autoload.php';
-    if (!file_exists($vendorAutoload)) {
-        apiResponse(500, 'mPDF library is not installed. Please run composer require mpdf/mpdf.');
+if ($action === 'app-configuration') {
+    if ($method !== 'GET' && $method !== 'POST') {
+        apiResponse(405, 'Method not allowed. Use GET or POST.');
     }
-    require_once $vendorAutoload;
 
     $input = getApiInput();
 
-    // Custom or sample demo data
-    $title        = htmlspecialchars($input['title'] ?? ($_GET['title'] ?? 'GST Invoice / Document'));
-    $docNo        = htmlspecialchars($input['doc_no'] ?? ($_GET['doc_no'] ?? 'DEMO/' . date('Y') . '/' . rand(1001, 9999)));
-    $companyName  = htmlspecialchars($input['company_name'] ?? ($_GET['company_name'] ?? 'Demo Company Pvt Ltd'));
-    $customerName = htmlspecialchars($input['customer_name'] ?? ($_GET['customer_name'] ?? 'Demo Customer / Client'));
-    $date         = htmlspecialchars($input['date'] ?? ($_GET['date'] ?? date('d-m-Y')));
-    $amount       = (float)($input['amount'] ?? ($_GET['amount'] ?? 5499.00));
-    $tax          = round($amount * 0.18, 2);
-    $grandTotal   = $amount + $tax;
-
-    // Build sample clean HTML for mPDF
-    $html = '
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {
-                font-family: sans-serif;
-                color: #1e293b;
-                font-size: 13px;
-                line-height: 1.5;
+    // Fetch all settings from tbl_settings
+    $settingsMap = [];
+    if (function_exists('tableExists') ? tableExists('tbl_settings') : true) {
+        $settingRows = $ai_db->aiGetQueryObj("SELECT setting_key, setting_value FROM tbl_settings");
+        if (!empty($settingRows)) {
+            foreach ($settingRows as $row) {
+                $settingsMap[$row->setting_key] = $row->setting_value;
             }
-            .header-table {
-                width: 100%;
-                border-bottom: 2px solid #2563eb;
-                padding-bottom: 12px;
-                margin-bottom: 20px;
-            }
-            .header-title {
-                font-size: 24px;
-                font-weight: bold;
-                color: #1e40af;
-            }
-            .meta-text {
-                font-size: 12px;
-                color: #64748b;
-            }
-            .info-table {
-                width: 100%;
-                margin-bottom: 20px;
-            }
-            .info-box {
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                border-radius: 6px;
-                padding: 12px;
-                vertical-align: top;
-                width: 48%;
-            }
-            .info-box h4 {
-                margin: 0 0 6px 0;
-                color: #2563eb;
-                font-size: 13px;
-            }
-            .items-table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 20px;
-            }
-            .items-table th {
-                background: #2563eb;
-                color: #ffffff;
-                padding: 8px 10px;
-                text-align: left;
-                font-size: 12px;
-            }
-            .items-table td {
-                padding: 8px 10px;
-                border-bottom: 1px solid #e2e8f0;
-                font-size: 12px;
-            }
-            .total-table {
-                width: 40%;
-                margin-left: auto;
-                border-collapse: collapse;
-                margin-bottom: 30px;
-            }
-            .total-table td {
-                padding: 6px 10px;
-                font-size: 12px;
-            }
-            .grand-total-row {
-                background: #eff6ff;
-                font-weight: bold;
-                color: #1e40af;
-                font-size: 14px;
-            }
-            .footer-section {
-                border-top: 1px dashed #cbd5e1;
-                padding-top: 15px;
-                margin-top: 20px;
-            }
-            .terms-box {
-                font-size: 11px;
-                color: #64748b;
-            }
-            .sign-box {
-                text-align: right;
-                font-size: 12px;
-            }
-            .badge-success {
-                background: #dcfce7;
-                color: #166534;
-                padding: 4px 10px;
-                border-radius: 4px;
-                font-size: 11px;
-                font-weight: bold;
-                display: inline-block;
-            }
-        </style>
-    </head>
-    <body>
-        <table class="header-table">
-            <tr>
-                <td>
-                    <div class="header-title">' . $title . '</div>
-                    <div class="meta-text">Generated using mPDF Engine</div>
-                </td>
-                <td align="right">
-                    <span class="badge-success">CONFIRMED</span>
-                    <div class="meta-text" style="margin-top: 6px;">Doc No: <strong>' . $docNo . '</strong></div>
-                    <div class="meta-text">Date: <strong>' . $date . '</strong></div>
-                </td>
-            </tr>
-        </table>
-
-        <table class="info-table">
-            <tr>
-                <td class="info-box">
-                    <h4>Billed By / Provider:</h4>
-                    <strong>' . $companyName . '</strong><br>
-                    GSTIN: 24AAACC1234A1Z5<br>
-                    Rajkot, Gujarat, India<br>
-                    Email: support@example.com
-                </td>
-                <td style="width: 4%;"></td>
-                <td class="info-box">
-                    <h4>Billed To / Customer:</h4>
-                    <strong>' . $customerName . '</strong><br>
-                    GSTIN: 24BBBDD5678B1Z2<br>
-                    Ahmedabad, Gujarat, India<br>
-                    Email: customer@example.com
-                </td>
-            </tr>
-        </table>
-
-        <table class="items-table">
-            <thead>
-                <tr>
-                    <th style="width: 8%;">#</th>
-                    <th style="width: 52%;">Item Description</th>
-                    <th style="width: 15%; text-align: center;">Qty</th>
-                    <th style="width: 25%; text-align: right;">Amount (INR)</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>1</td>
-                    <td><strong>Demo Service / Product Alpha</strong><br><span style="color:#64748b; font-size:11px;">HSN: 998311 - Standard service package</span></td>
-                    <td align="center">1.00</td>
-                    <td align="right">&#8377;' . number_format($amount, 2) . '</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <table class="total-table">
-            <tr>
-                <td>Sub Total:</td>
-                <td align="right">&#8377;' . number_format($amount, 2) . '</td>
-            </tr>
-            <tr>
-                <td>GST (18%):</td>
-                <td align="right">&#8377;' . number_format($tax, 2) . '</td>
-            </tr>
-            <tr class="grand-total-row">
-                <td>Grand Total:</td>
-                <td align="right">&#8377;' . number_format($grandTotal, 2) . '</td>
-            </tr>
-        </table>
-
-        <div class="footer-section">
-            <table style="width: 100%;">
-                <tr>
-                    <td style="width: 60%;" class="terms-box">
-                        <strong>Terms & Conditions:</strong><br>
-                        1. Goods / Services once confirmed are non-refundable.<br>
-                        2. Subject to local jurisdiction.<br>
-                        3. This is a computer generated demo invoice created via mPDF.
-                    </td>
-                    <td style="width: 40%;" class="sign-box">
-                        <br><br>
-                        <strong>For ' . $companyName . '</strong><br>
-                        <span style="font-size: 11px; color: #64748b;">Authorized Signatory</span>
-                    </td>
-                </tr>
-            </table>
-        </div>
-    </body>
-    </html>';
-
-    try {
-        // Initialize mPDF
-        $mpdf = new \Mpdf\Mpdf([
-            'mode'          => 'utf-8',
-            'format'        => 'A4',
-            'margin_left'   => 12,
-            'margin_right'  => 12,
-            'margin_top'    => 12,
-            'margin_bottom' => 12,
-            'tempDir'       => sys_get_temp_dir()
-        ]);
-
-        $mpdf->SetTitle($title . ' - ' . $docNo);
-        $mpdf->WriteHTML($html);
-
-        // Check if user requested direct download / stream in browser
-        $streamMode = isset($_GET['stream']) && $_GET['stream'] == '1';
-
-        if ($streamMode) {
-            // Output directly to browser as PDF file stream
-            $mpdf->Output('demo_' . time() . '.pdf', \Mpdf\Output\Destination::INLINE);
-            exit;
         }
-
-        // Save to uploads/demo/ directory
-        $demoDir = dirname(__DIR__) . '/uploads/demo/';
-        if (!is_dir($demoDir)) {
-            @mkdir($demoDir, 0777, true);
-        }
-
-        $cleanDocNo = preg_replace('/[^a-zA-Z0-9_]/', '_', $docNo);
-        $fileName = 'mpdf_demo_' . time() . '_' . $cleanDocNo . '.pdf';
-        $fullPath = $demoDir . $fileName;
-
-        $mpdf->Output($fullPath, \Mpdf\Output\Destination::FILE);
-
-        $baseUrl = defined('SITE_URL') ? rtrim(SITE_URL, '/') . '/' : 'http://localhost/OC-GST-invoice/';
-        $relPath = 'uploads/demo/' . $fileName;
-        $pdfUrl  = $baseUrl . $relPath;
-
-        apiResponse(200, 'Demo PDF created successfully using mPDF.', [
-            'engine'    => 'mPDF',
-            'file_name' => $fileName,
-            'file_path' => $relPath,
-            'pdf_url'   => $pdfUrl,
-            'stream_url' => $baseUrl . 'api/app.php?action=mpdf-demo-pdf&stream=1',
-            'details'   => [
-                'doc_no'       => $docNo,
-                'title'        => $title,
-                'company_name' => $companyName,
-                'customer_name' => $customerName,
-                'grand_total'  => $grandTotal,
-                'date'         => $date
-            ]
-        ]);
-    } catch (\Exception $e) {
-        apiResponse(500, 'Failed to generate PDF with mPDF: ' . $e->getMessage());
     }
+
+    $appVersion         = $settingsMap['app_version']         ?? '1.0.0';
+    $minVersion         = $settingsMap['min_version']         ?? '1.0.0';
+    $isUpdateRequired   = ((int)($settingsMap['is_update_required']  ?? 0) === 1);
+    $isMaintenanceMode  = ((int)($settingsMap['is_maintenance_mode'] ?? 0) === 1);
+    $maintenanceTitle   = $settingsMap['maintenance_title']   ?? 'Under Maintenance';
+    $maintenanceMessage = $settingsMap['maintenance_message'] ?? 'Our app is currently under maintenance. We will be back shortly.';
+    $appUpdateUrl       = $settingsMap['app_update_url']      ?? 'https://play.google.com/store/apps/details?id=com.ocgst.invoice';
+
+    // Client version check if provided by client app
+    $clientVersion = trim((string)($input['app_version'] ?? ($_GET['app_version'] ?? ($_SERVER['HTTP_APP_VERSION'] ?? ''))));
+    $forceUpdate = false;
+    if (!empty($clientVersion)) {
+        if (version_compare($clientVersion, $minVersion, '<')) {
+            $forceUpdate = true;
+        }
+    }
+
+    apiResponse(200, 'App configuration retrieved successfully.', [
+        'current_version'  => $appVersion,
+        'min_version'      => $minVersion,
+        'latest_version'   => !empty($clientVersion) ? $clientVersion : null,
+        'is_maintenance_mode'  => $isMaintenanceMode,
+        'maintenance_title'    => $maintenanceTitle,
+        'maintenance_message'  => $maintenanceMessage,
+        'is_update_required'   => ($isUpdateRequired || $forceUpdate),
+        'force_update'   => $forceUpdate,
+        'app_update_url'       => $appUpdateUrl
+    ]);
 }
 
 apiResponse(404, 'Invalid API action.');

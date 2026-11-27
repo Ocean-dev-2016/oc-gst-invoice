@@ -544,7 +544,6 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
         `party_name` varchar(255) DEFAULT '',
         `gst_no` varchar(50) DEFAULT '',
         `invoice_no` varchar(50) DEFAULT '',
-        `rca` varchar(10) DEFAULT 'No',
         `address` text DEFAULT NULL,
         `state_id` int(11) DEFAULT 0,
         `city_id` int(11) DEFAULT 0,
@@ -728,7 +727,6 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
         `party_name` varchar(255) DEFAULT '',
         `gst_no` varchar(50) DEFAULT '',
         `purchase_no` varchar(50) DEFAULT '',
-        `rca` varchar(10) DEFAULT 'No',
         `address` text DEFAULT NULL,
         `state_id` int(11) DEFAULT 0,
         `city_id` int(11) DEFAULT 0,
@@ -828,6 +826,21 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
                         "Dropped obsolete `city_name` column from `{$cleanTable}` successfully.",
                         "Failed to drop `city_name` from `{$cleanTable}`"
                     );
+                }
+            }
+        }
+
+                // 4.9.1 Drop obsolete rca column from tbl_quotation, tbl_invoice, and tbl_purchase
+        foreach (['tbl_quotation', 'tbl_invoice', 'tbl_purchase'] as $rcaTable) {
+            if (tableExists($rcaTable)) {
+                if (columnExists($rcaTable, 'rca')) {
+                    runMigrationQuery(
+                        "ALTER TABLE `{$rcaTable}` DROP COLUMN `rca`",
+                        "Dropped obsolete `rca` column from `{$rcaTable}` successfully.",
+                        "Failed to drop `rca` from `{$rcaTable}`"
+                    );
+                } else {
+                    echo '<div class="log-item log-info">ℹ `' . $rcaTable . '`.`rca` column already removed.</div>';
                 }
             }
         }
@@ -941,6 +954,40 @@ function runMigrationQuery($sql, $successMsg, $failMsg)
         (4, 'Golden Executive Contrast', 'template-golden-executive', 'assets/img/templates/template-golden-executive.jpg', 'templates/invoices/template-golden-executive.php', 'active')";
                 runMigrationQuery($seedSql, "Seeded default templates (Classic, Modern, Minimal) into `tbl_invoice_templates`.", "Failed to seed default templates");
             }
+        }
+
+                // 5.1 tbl_settings (App Configuration, Feature Flags & App Controls)
+        if (!tableExists('tbl_settings')) {
+            $createSettingsSql = "CREATE TABLE IF NOT EXISTS `tbl_settings` (
+                `id` int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                `setting_key` varchar(100) NOT NULL UNIQUE,
+                `setting_value` text DEFAULT NULL,
+                `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+            runMigrationQuery($createSettingsSql, "Created `tbl_settings` table successfully.", "Failed to create `tbl_settings` table");
+
+            $defaultSettings = [
+                'app_name'            => 'OC-GST Invoice',
+                'app_version'         => '1.0.0',
+                'min_version'         => '1.0.0',
+                'is_update_required'  => '0',
+                'is_maintenance_mode' => '0',
+                'maintenance_title'   => 'Under Maintenance',
+                'maintenance_message' => 'Our app is currently under maintenance. We will be back shortly.',
+                'app_update_url'      => 'https://play.google.com/store/apps/details?id=com.ocgst.invoice',
+                'support_email'       => 'info@mail.com',
+                'support_phone'       => '+91 9999999999',
+                'currency_symbol'     => '₹',
+                'currency_code'       => 'INR'
+            ];
+            foreach ($defaultSettings as $k => $v) {
+                $safeK = mysqli_real_escape_string($conn, $k);
+                $safeV = mysqli_real_escape_string($conn, $v);
+                @mysqli_query($conn, "INSERT IGNORE INTO `tbl_settings` (`setting_key`, `setting_value`) VALUES ('{$safeK}', '{$safeV}')");
+            }
+        } else {
+            echo '<div class="log-item log-info">ℹ `tbl_settings` table exists.</div>';
         }
 
         // 5. Ensure upload directories exist

@@ -519,7 +519,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'convert_quotation_to_invoice
 
     // Insert Invoice
     $insInvSql = "INSERT INTO tbl_invoice (
-        quotation_id, company_id, party_id, party_name, gst_no, invoice_no, rca, address,
+        quotation_id, company_id, party_id, party_name, gst_no, invoice_no, address,
         state_id, city_id, invoice_date, due_date, gst_type,
         total_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, grand_total,
         payment_status, status, created_at
@@ -530,8 +530,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'convert_quotation_to_invoice
         '" . addslashes($quot->party_name) . "',
         '" . addslashes($quot->gst_no) . "',
         '" . addslashes($invNo) . "',
-        '" . addslashes($quot->rca) . "',
-        '" . addslashes($quot->address) . "',
+                '" . addslashes($quot->address) . "',
         '{$quot->state_id}',
         '{$quot->city_id}',
         '{$today}',

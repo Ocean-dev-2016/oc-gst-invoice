@@ -39,7 +39,6 @@ if ($isSamplePreview) {
         'bill_date' => date('Y-m-d'),
         'due_date' => date('Y-m-d', strtotime('+15 days')),
         'gst_type' => 'with_gst',
-        'rca' => 'No',
         'party_name' => 'Demo Customer / Business Name',
         'address' => 'Shop 12, Business Commercial Hub, M.G. Road',
         'state_name' => 'Gujarat',

@@ -58,7 +58,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
     if (empty($quotation_no) && $mode === 'add') {
         $quotation_no = generateQuotationNo($ai_db, $company_id);
     }
-    $rca = addslashes(trim($_POST['rca'] ?? 'No'));
     $address = addslashes(trim($_POST['address'] ?? ''));
     $state_id = intval($_POST['state_id'] ?? 0);
     $city_id = intval($_POST['city_id'] ?? 0);
@@ -137,7 +136,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 party_name='$party_name',
                 gst_no='$gst_no',
                 quotation_no='$quotation_no',
-                rca='$rca',
                 address='$address',
                 state_id='$state_id',
                 city_id='$city_id',
@@ -222,7 +220,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_POST['btn_submit'])) {
                 party_name='$party_name',
                 gst_no='$gst_no',
                 quotation_no='$quotation_no',
-                rca='$rca',
                 address='$address',
                 state_id='$state_id',
                 city_id='$city_id',
@@ -507,13 +504,7 @@ if ($selected_state_id > 0) {
                                         <input type="text" name="quotation_no" id="quotation_no" class="form-control bg-light" placeholder="OQ/008/26-27" value="<?= htmlspecialchars($quotationData->quotation_no ?? $default_quotation_no) ?>" readonly required>
                                     </div>
 
-                                    <div class="col-md-3">
-                                        <label class="form-label fw-bold text-uppercase small text-muted">RCA</label>
-                                        <select name="rca" id="rca" class="form-select">
-                                            <option value="No" <?= (($quotationData->rca ?? 'No') === 'No') ? 'selected' : '' ?>>No</option>
-                                            <option value="Yes" <?= (($quotationData->rca ?? '') === 'Yes') ? 'selected' : '' ?>>Yes</option>
-                                        </select>
-                                    </div>
+                                    
                                 </div>
 
 <!-- ROW 2: ADDRESS (3) | STATE (2) | CITY (2) | DATE (2) | DUE DATE (1.5) | STATUS (1.5) -->
